@@ -55,6 +55,27 @@ export const useMenuItem = () => {
       path: '/launches',
     },
     {
+      // reinvestorhub: Studio — content creation hub (additive nav entry)
+      name: t('studio', 'Studio'),
+      icon: (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="22"
+          height="23"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M12 3l1.9 5.7a2 2 0 0 0 1.4 1.4L21 12l-5.7 1.9a2 2 0 0 0-1.4 1.4L12 21l-1.9-5.7a2 2 0 0 0-1.4-1.4L3 12l5.7-1.9a2 2 0 0 0 1.4-1.4L12 3Z" />
+          <path d="M19 3v4M21 5h-4M5 17v2M6 18H4" />
+        </svg>
+      ),
+      path: '/studio',
+    },
+    {
       name: 'Agent',
       icon: (
         <svg
