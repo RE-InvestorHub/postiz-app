@@ -1,6 +1,6 @@
 'use client';
 
-import { FC, ReactNode, useMemo, useRef, useState } from 'react';
+import { FC, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { MediaBox } from '@gitroom/frontend/components/media/media.component';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
@@ -16,7 +16,7 @@ import { generateAsset } from '@gitroom/frontend/components/studio/studio.genera
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
 import {
   StudioTab,
-  STUDIO_MODELS,
+  modelsForKind,
   STUDIO_ASPECT_RATIOS,
   STUDIO_RESOLUTIONS,
 } from '@gitroom/frontend/components/studio/studio.types';
@@ -89,6 +89,16 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
   const { state } = useStudio();
   const generating = state.status === 'generating';
   const tabResults = state.results.filter((r) => r.tab === state.activeTab);
+  // Image models on the Images tab, video models (Veo/Seedance/Kling/…) on Video.
+  const models = modelsForKind(kind);
+
+  // Keep the selected model valid for this tab — when you switch tabs, snap to the
+  // tab's first model if the current one belongs to the other kind.
+  useEffect(() => {
+    if (!models.some((m) => m.value === state.model)) {
+      caps['studio.selectModel'].handler({ model: models[0].value });
+    }
+  }, [kind, state.model, caps, models]);
 
   return (
     <div className="flex flex-col gap-[15px]">
@@ -106,7 +116,7 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
         />
         <div className="flex flex-wrap gap-[10px] items-center">
           <select value={state.model} onChange={(e) => caps['studio.selectModel'].handler({ model: e.target.value })} className={selectCls}>
-            {STUDIO_MODELS.map((m) => (<option key={m.value} value={m.value}>{m.label} ({m.credits})</option>))}
+            {models.map((m) => (<option key={m.value} value={m.value}>{m.label} ({m.credits})</option>))}
           </select>
           <select value={state.aspectRatio} onChange={(e) => caps['studio.setAspectRatio'].handler({ aspectRatio: e.target.value })} className={selectCls}>
             {STUDIO_ASPECT_RATIOS.map((a) => (<option key={a} value={a}>{a}</option>))}
