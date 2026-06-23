@@ -68,7 +68,7 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
 ];
 
 const selectCls =
-  'h-[40px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[13px] text-textItemFocused';
+  'h-[40px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[13px] text-btnText';
 
 const ComingSoon: FC<{ title: string; description: string; via: string }> = ({ title, description, via }) => (
   <div className="rounded-[8px] border border-dashed border-newBorder bg-newBgColor p-[24px] flex flex-col items-center justify-center text-center gap-[10px] min-h-[220px]">
@@ -76,7 +76,7 @@ const ComingSoon: FC<{ title: string; description: string; via: string }> = ({ t
       <span className="w-[6px] h-[6px] rounded-full bg-ai" />
       Coming soon
     </div>
-    <div className="text-[16px] font-[600] text-textItemFocused">{title}</div>
+    <div className="text-[16px] font-[600] text-btnText">{title}</div>
     <div className="text-[13px] text-textItemBlur max-w-[420px] leading-[1.5]">{description}</div>
     <button type="button" disabled className="mt-[6px] h-[40px] px-[18px] rounded-[8px] bg-ai text-white font-[600] opacity-50 cursor-not-allowed">
       {via}
@@ -95,14 +95,14 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
       <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[16px] flex flex-col gap-[12px]">
         <div className="flex items-center gap-[8px]">
           <span className="w-[28px] h-[28px] rounded-[8px] bg-ai/15 text-ai flex items-center justify-center"><IconSpark /></span>
-          <span className="text-[14px] font-[600] text-textItemFocused">Generate {kind} with AI</span>
+          <span className="text-[14px] font-[600] text-btnText">Generate {kind} with AI</span>
         </div>
         <textarea
           value={state.prompt}
           onChange={(e) => caps['studio.setPrompt'].handler({ prompt: e.target.value })}
           placeholder={`Describe the ${kind} you want…`}
           rows={3}
-          className="w-full p-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-textItemFocused placeholder:text-textItemBlur resize-y"
+          className="w-full p-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur resize-y"
         />
         <div className="flex flex-wrap gap-[10px] items-center">
           <select value={state.model} onChange={(e) => caps['studio.selectModel'].handler({ model: e.target.value })} className={selectCls}>
@@ -168,7 +168,7 @@ const StudioInner: FC = () => {
       <div className="flex flex-1 flex-col gap-[15px] p-[20px] overflow-y-auto">
         <div className="flex items-start justify-between gap-[12px]">
           <div className="flex flex-col gap-[4px]">
-            <h1 className="text-[24px] font-[600] text-textItemFocused">{t('studio', 'Studio')}</h1>
+            <h1 className="text-[24px] font-[600] text-btnText">{t('studio', 'Studio')}</h1>
             <p className="text-[13px] text-textItemBlur">
               {t('studio_subtitle', 'Create and manage your images, video, and audio — all in one place.')}
             </p>
