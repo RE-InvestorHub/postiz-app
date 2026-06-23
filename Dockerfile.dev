@@ -1,6 +1,9 @@
 FROM node:22.20-bookworm-slim
 ARG NEXT_PUBLIC_VERSION
 ENV NEXT_PUBLIC_VERSION=$NEXT_PUBLIC_VERSION
+# reinvestorhub: Studio → brain/generation service URL (inlined at build by Next)
+ARG NEXT_PUBLIC_BRAIN_URL
+ENV NEXT_PUBLIC_BRAIN_URL=$NEXT_PUBLIC_BRAIN_URL
 RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
     make \
