@@ -14,7 +14,7 @@ upstream-file **touch-points table**, the upstream-merge runbook, and local dev 
 — is maintained in the parent marketing workspace via `hit-em-with-the-docs`:
 
 - **`.documentation/procedures/postiz-fork-maintenance.md`** (canonical; keep it current)
-- Design-system rules for embedded UI: **`.documentation/features/postiz/design-system.md`**
+- Design-system rules for embedded UI: **`.documentation/postiz/design-system.md`**
   and the enforcing rule **`.claude/rules/postiz-design-system.md`**
 - Initiative plan: **`.planning/postiz-embedded-claude-agent/`**
 
