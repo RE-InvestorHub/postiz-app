@@ -17,6 +17,7 @@ import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.age
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
+import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
 import {
   StudioTab,
   modelsForKind,
@@ -147,6 +148,9 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
           <div className="text-[12px] text-red-400">{state.error}</div>
         )}
       </div>
+
+      {/* Casting: drive a registered avatar into a video (Video tab only). */}
+      {kind === 'video' && <StudioAvatarCast />}
 
       {tabResults.length > 0 && (
         <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
