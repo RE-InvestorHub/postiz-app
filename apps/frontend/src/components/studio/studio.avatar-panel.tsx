@@ -14,6 +14,7 @@ import {
   freshAvatarOnboarding,
 } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioAvatarLibrary } from '@gitroom/frontend/components/studio/studio.avatar-library';
+import { StudioAvatarOnboarding } from '@gitroom/frontend/components/studio/studio.avatar-onboarding';
 
 const IconUserSpark: FC = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -24,7 +25,8 @@ const IconUserSpark: FC = () => (
 );
 
 export const StudioAvatarPanel: FC = () => {
-  const { dispatch } = useStudio();
+  const { state, dispatch } = useStudio();
+  const onboarding = state.avatarOnboarding?.open;
 
   const openOnboarding = () =>
     dispatch({ type: 'SET_AVATAR_ONBOARDING', onboarding: freshAvatarOnboarding() });
@@ -40,18 +42,20 @@ export const StudioAvatarPanel: FC = () => {
             across commercials. Consent is required before a clone can be created or driven.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openOnboarding}
-          className="shrink-0 flex items-center gap-[8px] h-[44px] px-[16px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] hover:opacity-90 transition-opacity"
-        >
-          <IconUserSpark />
-          New avatar
-        </button>
+        {!onboarding && (
+          <button
+            type="button"
+            onClick={openOnboarding}
+            className="shrink-0 flex items-center gap-[8px] h-[44px] px-[16px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] hover:opacity-90 transition-opacity"
+          >
+            <IconUserSpark />
+            New avatar
+          </button>
+        )}
       </div>
 
-      {/* Library — card grid over the brain clone registry. */}
-      <StudioAvatarLibrary />
+      {/* When onboarding is open it takes over the panel; otherwise the library. */}
+      {onboarding ? <StudioAvatarOnboarding /> : <StudioAvatarLibrary />}
     </div>
   );
 };
