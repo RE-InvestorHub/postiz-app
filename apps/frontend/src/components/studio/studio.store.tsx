@@ -20,6 +20,9 @@ import {
   StudioResolution,
   StudioResult,
   UploadedAsset,
+  CloneRecord,
+  AvatarOnboardingState,
+  emptyConsentDraft,
   STUDIO_SLOT_COUNT,
 } from '@gitroom/frontend/components/studio/studio.types';
 
@@ -33,6 +36,9 @@ export type StudioAction =
   | { type: 'ADD_RESULT'; result: StudioResult }
   | { type: 'PLACE_IN_SLOT'; index: number; result: StudioResult | null }
   | { type: 'ADD_UPLOAD'; asset: UploadedAsset }
+  | { type: 'SET_AVATARS'; avatars: CloneRecord[] }
+  | { type: 'SET_AVATAR_ONBOARDING'; onboarding: AvatarOnboardingState | null }
+  | { type: 'PATCH_AVATAR_ONBOARDING'; patch: Partial<AvatarOnboardingState> }
   | { type: 'RESET' };
 
 export const initialStudioState: StudioState = {
@@ -46,7 +52,20 @@ export const initialStudioState: StudioState = {
   error: undefined,
   results: [],
   uploadedAssets: [],
+  avatars: null,
+  avatarOnboarding: null,
 };
+
+/** A fresh onboarding-wizard state (wizard opened at step 0). */
+export function freshAvatarOnboarding(): AvatarOnboardingState {
+  return {
+    open: true,
+    step: 0,
+    consent: { ...emptyConsentDraft },
+    likenessAssetIds: [],
+    voiceAssetIds: [],
+  };
+}
 
 export function studioReducer(state: StudioState, action: StudioAction): StudioState {
   switch (action.type) {
@@ -75,6 +94,15 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
         return state;
       }
       return { ...state, uploadedAssets: [action.asset, ...state.uploadedAssets] };
+    case 'SET_AVATARS':
+      return { ...state, avatars: action.avatars };
+    case 'SET_AVATAR_ONBOARDING':
+      return { ...state, avatarOnboarding: action.onboarding };
+    case 'PATCH_AVATAR_ONBOARDING':
+      // No-op if the wizard is closed; otherwise shallow-merge the patch.
+      return state.avatarOnboarding
+        ? { ...state, avatarOnboarding: { ...state.avatarOnboarding, ...action.patch } }
+        : state;
     case 'RESET':
       return { ...initialStudioState };
     default:
