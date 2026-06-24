@@ -23,8 +23,10 @@ import {
 } from '@gitroom/frontend/components/studio/studio.clone-client';
 import {
   ConsentType,
+  CloneTier,
   UploadedAsset,
 } from '@gitroom/frontend/components/studio/studio.types';
+import { StudioVoiceCapture } from '@gitroom/frontend/components/studio/studio.voice-capture';
 
 const CHANNELS = ['instagram', 'tiktok', 'youtube', 'facebook', 'x', 'linkedin'];
 const STEPS = ['Consent', 'Likeness', 'Voice', 'Review'];
@@ -97,8 +99,11 @@ export const StudioAvatarOnboarding: FC = () => {
   const [attested, setAttested] = useState(false);
   const [likeness, setLikeness] = useState<UploadedAsset[]>([]);
   const [voice, setVoice] = useState<UploadedAsset[]>([]);
+  const [tier, setTier] = useState<CloneTier>('ivc');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // After a PVC create: surface the verification/training requirement before close.
+  const [pvcNote, setPvcNote] = useState<string | null>(null);
 
   if (!ob) return null;
 
@@ -147,24 +152,49 @@ export const StudioAvatarOnboarding: FC = () => {
     setError(null);
     try {
       const cloneId = `clone_${slug(consent.person)}_${Date.now().toString(36)}`;
+      const usingVoice = wantsVoice && voice.length > 0;
       await createClone({
         cloneId,
         person: consent.person,
         consentId: ob.consentId,
         photos: likeness.map((a) => a.url),
         voiceSamples: voice.map((a) => a.url),
-        skipVoice: voice.length === 0,
+        skipVoice: !usingVoice,
+        cloneTier: usingVoice ? tier : undefined,
       });
-      // Refresh the library from the registry, then close.
+      // Refresh the library from the registry.
       const fresh = await listClones();
       dispatch({ type: 'SET_AVATARS', avatars: fresh });
-      close();
+      // PVC needs in-product verification + a training queue — surface that and let
+      // the user close manually. IVC / visual-only is ready immediately, so close.
+      if (usingVoice && tier === 'pvc') {
+        setPvcNote(
+          'Avatar created. The PVC voice is NOT ready yet: the talent must complete voice ' +
+          'verification in ElevenLabs (read the prompted phrase), then training runs (3-6h). ' +
+          'The voice activates once verified + trained.'
+        );
+      } else {
+        close();
+      }
     } catch (e: unknown) {
       setError((e as Error)?.message ?? String(e));
     } finally {
       setBusy(false);
     }
-  }, [ob.consentId, likeness, voice, consent.person, dispatch]);
+  }, [ob.consentId, likeness, voice, consent.person, wantsVoice, tier, dispatch]);
+
+  // PVC post-create takeover: the clone exists but the voice needs verification + training.
+  if (pvcNote) {
+    return (
+      <div className="flex flex-col gap-[14px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[18px]">
+        <h3 className="text-[14px] font-[600] text-btnText">Voice verification required</h3>
+        <p className="text-[13px] text-textItemBlur leading-[1.6]">{pvcNote}</p>
+        <button type="button" onClick={() => { setPvcNote(null); close(); }} className="self-start h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px]">
+          Done
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-[16px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[18px]">
@@ -259,11 +289,30 @@ export const StudioAvatarOnboarding: FC = () => {
         <div className="flex flex-col gap-[14px]">
           <p className="text-[13px] text-textItemBlur leading-[1.5]">
             {wantsVoice
-              ? 'Upload 30–60 min of clean, consented audio for an ElevenLabs PVC voice. Optional — skip to build a visual-only clone.'
+              ? 'Record or upload consented audio to clone this person’s voice. Optional — skip for a visual-only clone.'
               : 'Consent is visual-only, so no voice is needed. You can skip this step.'}
           </p>
           {wantsVoice && (
-            <WizardUploader acceptMime="audio/*" hint="Audio — clean speech, minimal background noise" assets={voice} onUploaded={(a) => setVoice((prev) => [...prev, a])} />
+            <>
+              {/* Clone tier */}
+              <div className="flex flex-col gap-[8px]">
+                <span className={labelCls}>Voice clone quality</span>
+                <div className="flex flex-col gap-[6px]">
+                  <label className="flex items-start gap-[8px] text-[12px] text-textItemBlur leading-[1.45] cursor-pointer">
+                    <input type="radio" name="tier" className="mt-[2px]" checked={tier === 'ivc'} onChange={() => setTier('ivc')} />
+                    <span><span className="text-btnText font-[600]">Instant (IVC)</span> — ready in seconds from ~1-5 min of audio. Great for prototypes and quick lines; lower fidelity.</span>
+                  </label>
+                  <label className="flex items-start gap-[8px] text-[12px] text-textItemBlur leading-[1.45] cursor-pointer">
+                    <input type="radio" name="tier" className="mt-[2px]" checked={tier === 'pvc'} onChange={() => setTier('pvc')} />
+                    <span><span className="text-btnText font-[600]">Professional (PVC)</span> — broadcast quality from 30-60 min of audio. Requires the talent to verify in ElevenLabs + a 3-6h training queue.</span>
+                  </label>
+                </div>
+              </div>
+              <StudioVoiceCapture onUploaded={(a) => setVoice((prev) => [...prev, a])} />
+              {voice.length > 0 && (
+                <span className="text-[11px] text-textItemBlur">{voice.length} voice sample(s) captured</span>
+              )}
+            </>
           )}
           <div className="flex items-center justify-between">
             <button type="button" onClick={() => goto(1)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
@@ -282,7 +331,7 @@ export const StudioAvatarOnboarding: FC = () => {
             <span><span className="text-btnText font-[600]">Consent:</span> {consent.consent_type} · {consent.consent_channels.join(', ') || 'no channels'} · expires {consent.consent_expires}</span>
             <span><span className="text-btnText font-[600]">Consent ref:</span> {consent.consent_ref}</span>
             <span><span className="text-btnText font-[600]">Likeness:</span> {likeness.length} file(s)</span>
-            <span><span className="text-btnText font-[600]">Voice:</span> {voice.length > 0 ? `${voice.length} file(s) (PVC)` : 'none (visual-only)'}</span>
+            <span><span className="text-btnText font-[600]">Voice:</span> {wantsVoice && voice.length > 0 ? `${voice.length} sample(s) (${tier.toUpperCase()})` : 'none (visual-only)'}</span>
           </div>
           <div className="flex items-center justify-between">
             <button type="button" onClick={() => goto(2)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
