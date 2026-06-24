@@ -3,6 +3,38 @@
 
 export type StudioTab = 'images' | 'video' | 'audio' | 'editor';
 
+// ---------------------------------------------------------------------------
+// User-uploaded assets (drag-and-drop)
+// ---------------------------------------------------------------------------
+
+/** A file uploaded by the user via the Studio drag-and-drop zone. */
+export interface UploadedAsset {
+  /** Brain-assigned asset id (e.g. "upload_1234567890") */
+  assetId: string;
+  /** Publicly reachable URL returned by the brain (or blob: URL while pending) */
+  url: string;
+  /** Detected media kind */
+  kind: 'image' | 'video' | 'audio';
+  /** Original filename */
+  filename: string;
+  /** Always 'user_upload' — recorded in the brain's lineage manifest */
+  provenance: 'user_upload';
+}
+
+/** Per-file upload state tracked by the drop zone UI. */
+export interface UploadEntry {
+  /** Local id — used as React key before the brain responds */
+  localId: string;
+  file: File;
+  /** 0–100 */
+  progress: number;
+  status: 'uploading' | 'done' | 'error';
+  /** Set on status === 'done' */
+  asset?: UploadedAsset;
+  /** Set on status === 'error' */
+  error?: string;
+}
+
 // A Higgsfield job_set_type (image or video model id). Selectable options are
 // curated in STUDIO_IMAGE_MODELS / STUDIO_VIDEO_MODELS below.
 export type StudioModel = string;
@@ -28,6 +60,8 @@ export interface StudioState {
   status: 'idle' | 'generating' | 'error';
   error?: string;
   results: StudioResult[];
+  /** User-uploaded assets (drag-and-drop → brain). Durable within the session. */
+  uploadedAssets: UploadedAsset[];
 }
 
 export interface ModelOption {

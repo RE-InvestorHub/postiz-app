@@ -14,6 +14,9 @@ import {
   StudioResult,
   StudioTab,
 } from '@gitroom/frontend/components/studio/studio.types';
+import {
+  submitStoryboard,
+} from '@gitroom/frontend/components/studio/studio.storyboard-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -37,6 +40,12 @@ export interface StudioCapabilityDeps {
     aspectRatio: string;
     resolution: string;
   }) => Promise<StudioResult>;
+  /**
+   * Storyboard assembly transport — submits the brief + current slots to the
+   * workspace brain for video assembly. Defaults to the built-in
+   * `submitStoryboard` from studio.storyboard-client; injectable for tests.
+   */
+  storyboard?: typeof submitStoryboard;
 }
 
 /**
@@ -47,7 +56,7 @@ export interface StudioCapabilityDeps {
 export function buildStudioCapabilities(
   deps: StudioCapabilityDeps
 ): Record<string, Capability> {
-  const { dispatch, getState, generate } = deps;
+  const { dispatch, getState, generate, storyboard = submitStoryboard } = deps;
   const ns = 'studio';
 
   const caps: Capability[] = [
@@ -121,6 +130,38 @@ export function buildStudioCapabilities(
             type: 'SET_STATUS',
             status: 'error',
             error: e?.message || 'Generation failed.',
+          });
+        }
+      },
+    },
+    {
+      id: 'studio.assembleVideo',
+      namespace: ns,
+      label: 'Assemble a video from the current storyboard slots and brief',
+      // brief is optional — the agent may supply it; otherwise falls back to
+      // state-derived context. slots always come from current state.
+      params: ['brief'],
+      handler: async (p?: { brief?: Record<string, unknown> }) => {
+        const s = getState();
+        dispatch({ type: 'SET_STATUS', status: 'generating' });
+        try {
+          const result = await storyboard({
+            brief: p?.brief ?? {},
+            slots: s.slots,
+          });
+          dispatch({ type: 'SET_STATUS', status: 'idle' });
+          if (!result.ok) {
+            dispatch({
+              type: 'SET_STATUS',
+              status: 'error',
+              error: result.message,
+            });
+          }
+        } catch (e: any) {
+          dispatch({
+            type: 'SET_STATUS',
+            status: 'error',
+            error: e?.message || 'Storyboard assembly failed.',
           });
         }
       },

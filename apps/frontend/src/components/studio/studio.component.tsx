@@ -1,8 +1,7 @@
 'use client';
 
-import { FC, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { FC, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { MediaBox } from '@gitroom/frontend/components/media/media.component';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import {
   StudioProvider,
@@ -13,7 +12,10 @@ import {
   Capability,
 } from '@gitroom/frontend/components/studio/studio.capabilities';
 import { generateAsset } from '@gitroom/frontend/components/studio/studio.generate';
+import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.storyboard-client';
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
+import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
+import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import {
   StudioTab,
   modelsForKind,
@@ -149,7 +151,16 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
         </div>
       )}
 
-      <MediaBox setMedia={() => {}} closeModal={() => {}} standalone={true} />
+      {/* Divider between AI generation results and the user-upload zone */}
+      <div className="flex items-center gap-[10px]">
+        <div className="flex-1 h-px bg-newBorder" />
+        <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
+          or upload your own
+        </span>
+        <div className="flex-1 h-px bg-newBorder" />
+      </div>
+
+      <StudioDropZone accept={kind === 'video' ? 'video' : 'image'} />
     </div>
   );
 };
@@ -158,6 +169,8 @@ const StudioInner: FC = () => {
   const t = useT();
   const { state, dispatch } = useStudio();
   const [agentOpen, setAgentOpen] = useState(false);
+  // Storyboard submission feedback: null = idle, string = message to show.
+  const [storyboardMsg, setStoryboardMsg] = useState<string | null>(null);
 
   // getState via ref so capability handlers always read the latest state.
   const stateRef = useRef(state);
@@ -171,6 +184,26 @@ const StudioInner: FC = () => {
         generate: generateAsset,
       }),
     [dispatch]
+  );
+
+  // onCreate — fired when the agent panel's Create button is clicked with a
+  // completed brief. Submits the brief + current slot snapshot to the
+  // storyboard service. Safe when the service isn't up yet (404 is caught and
+  // surfaced as a message, not a crash).
+  const handleCreate = useCallback(
+    async (brief: Record<string, unknown>) => {
+      setStoryboardMsg('Submitting to storyboard service…');
+      const result = await submitStoryboard({
+        brief,
+        slots: stateRef.current.slots,
+      });
+      setStoryboardMsg(result.message);
+      // Auto-clear success messages after 6 s; errors stay until dismissed.
+      if (result.ok) {
+        setTimeout(() => setStoryboardMsg(null), 6000);
+      }
+    },
+    []
   );
 
   return (
@@ -196,6 +229,21 @@ const StudioInner: FC = () => {
           </button>
         </div>
 
+        {/* Storyboard submission status toast */}
+        {storyboardMsg && (
+          <div className="flex items-center justify-between gap-[10px] rounded-[8px] border border-[var(--new-table-border)] bg-newBgColor px-[14px] py-[10px] text-[13px]">
+            <span className="text-btnText leading-[1.4]">{storyboardMsg}</span>
+            <button
+              type="button"
+              onClick={() => setStoryboardMsg(null)}
+              className="shrink-0 text-[var(--new-table-text)] hover:text-btnText text-[16px] leading-none"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-[8px] border-b border-newBorder pb-[12px]">
           {TABS.map((item) => (
             <button
@@ -216,22 +264,34 @@ const StudioInner: FC = () => {
         {state.activeTab === 'images' && <GeneratePanel caps={caps} kind="images" />}
         {state.activeTab === 'video' && <GeneratePanel caps={caps} kind="video" />}
         {state.activeTab === 'audio' && (
-          <ComingSoon
-            title="Audio generation"
-            description="Voiceovers and background audio via ElevenLabs. The generated track converges into your videos and supplies caption timing automatically."
-            via="Generate with ElevenLabs"
-          />
+          <div className="flex flex-col gap-[15px]">
+            <ComingSoon
+              title="Audio generation"
+              description="Voiceovers and background audio via ElevenLabs. The generated track converges into your videos and supplies caption timing automatically."
+              via="Generate with ElevenLabs"
+            />
+            <div className="flex items-center gap-[10px]">
+              <div className="flex-1 h-px bg-newBorder" />
+              <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
+                or upload your own
+              </span>
+              <div className="flex-1 h-px bg-newBorder" />
+            </div>
+            <StudioDropZone accept="audio" />
+          </div>
         )}
         {state.activeTab === 'editor' && (
-          <ComingSoon
-            title="Video editor"
-            description="Composite b-roll, overlays, and burned-in captions per platform with the Remotion render service. The editor surface opens here once the service is live."
-            via="Open Remotion editor"
-          />
+          <RemotionEditorPanel />
         )}
       </div>
 
-      {agentOpen && <StudioAgentPanel caps={caps} onClose={() => setAgentOpen(false)} />}
+      {agentOpen && (
+        <StudioAgentPanel
+          caps={caps}
+          onClose={() => setAgentOpen(false)}
+          onCreate={handleCreate}
+        />
+      )}
     </div>
   );
 };
