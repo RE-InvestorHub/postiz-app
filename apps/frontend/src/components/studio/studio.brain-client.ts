@@ -110,17 +110,23 @@ export function streamToBrain(
         try {
           parsed = JSON.parse(raw);
         } catch {
-          // If the data isn't JSON and the event is "text", treat raw as the token.
-          if (eventType === 'text') {
-            callbacks.onEvent({ type: 'text', token: raw });
-            return;
-          }
+          // Non-JSON data: treat raw as a text token (covers plain-text SSE).
+          callbacks.onEvent({ type: 'text', token: raw });
           return;
         }
 
-        switch (eventType) {
+        // The brain encodes the event type INSIDE the JSON payload
+        // (`data: {"type":"text","text":"…"}`) with no SSE `event:` line, so switch
+        // on `parsed.type` first and fall back to the SSE event field.
+        const type = String(parsed.type ?? eventType);
+
+        switch (type) {
           case 'text':
-            callbacks.onEvent({ type: 'text', token: String(parsed.token ?? raw) });
+            // Brain field is `text`; tolerate `token` too.
+            callbacks.onEvent({
+              type: 'text',
+              token: String(parsed.text ?? parsed.token ?? ''),
+            });
             break;
           case 'tool_call':
             callbacks.onEvent({
@@ -141,7 +147,7 @@ export function streamToBrain(
           case 'error':
             callbacks.onEvent({
               type: 'error',
-              message: String(parsed.message ?? 'Unknown error'),
+              message: String(parsed.error ?? parsed.message ?? 'Unknown error'),
             });
             break;
           default:

@@ -15,6 +15,18 @@ export interface DispatchResult {
 }
 
 /**
+ * Normalize a brain tool name to a capability id.
+ *
+ * The brain emits underscore-separated names (`studio_setTab`) because the
+ * Anthropic tool API disallows `.`; the capability registry is keyed by the
+ * dotted id (`studio.setTab`). The namespace separator is the FIRST underscore;
+ * method names are camelCase, so replacing only the first `_` is correct.
+ */
+export function toCapabilityId(toolName: string): string {
+  return toolName.includes('.') ? toolName : toolName.replace('_', '.');
+}
+
+/**
  * Look up `toolName` in `caps` and invoke its handler with `input`.
  *
  * Returns a DispatchResult so the panel can log success/failure without
@@ -25,12 +37,13 @@ export async function dispatchToolCall(
   input: Record<string, unknown>,
   caps: Record<string, Capability>
 ): Promise<DispatchResult> {
-  const cap = caps[toolName];
+  const capId = toCapabilityId(toolName);
+  const cap = caps[capId];
 
   if (!cap) {
     return {
       ok: false,
-      message: `Unknown capability: ${toolName}`,
+      message: `Unknown capability: ${capId}`,
     };
   }
 
@@ -64,5 +77,5 @@ export function requiresApproval(toolName: string): boolean {
     'studio.setResolution',
     'studio.placeInSlot',
   ]);
-  return !AUTO_APPROVE.has(toolName);
+  return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

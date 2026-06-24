@@ -114,6 +114,23 @@ const IconCreate: FC = () => (
   </svg>
 );
 
+// Animated "thinking" indicator — three bouncing dots in an assistant-style bubble.
+const TypingDots: FC = () => (
+  <div
+    className="self-start flex items-center gap-[4px] px-[12px] py-[10px] rounded-[8px] bg-newBgColorInner border border-[var(--new-table-border)]"
+    aria-label="Agent is thinking"
+    role="status"
+  >
+    {[0, 1, 2].map((i) => (
+      <span
+        key={i}
+        className="w-[6px] h-[6px] rounded-full bg-ai animate-pulse"
+        style={{ animationDelay: `${i * 200}ms`, animationDuration: '1.1s' }}
+      />
+    ))}
+  </div>
+);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -383,6 +400,13 @@ export const StudioAgentPanel: FC<{
   // Render
   // ---------------------------------------------------------------------------
 
+  // Show the thinking dots from Send until the first assistant token streams in
+  // (also covers tool-only turns where no text arrives).
+  const assistantStreamingWithText = messages.some(
+    (m) => m.role === 'assistant' && m.streaming && (m.text ?? '').length > 0
+  );
+  const showThinking = streaming && !assistantStreamingWithText;
+
   return (
     <div className="w-[320px] shrink-0 bg-newBgColor border-l border-[var(--new-table-border)] flex flex-col h-full">
       {/* Header */}
@@ -474,6 +498,8 @@ export const StudioAgentPanel: FC<{
             />
           );
         })}
+
+        {showThinking && <TypingDots />}
 
         <div ref={bottomRef} />
       </div>
