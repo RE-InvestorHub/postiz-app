@@ -76,6 +76,11 @@ export function requiresApproval(toolName: string): boolean {
     'studio.setAspectRatio',
     'studio.setResolution',
     'studio.placeInSlot',
+    // Avatar wizard prefill/navigation — UI state only. The consequential acts
+    // (record consent, create clone) stay human-clicked in the wizard.
+    'studio.avatarOpen',
+    'studio.avatarSetConsent',
+    'studio.avatarGotoStep',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

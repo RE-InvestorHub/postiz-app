@@ -8,11 +8,16 @@
 // `agent-control-surface-and-registry`.
 
 import { Dispatch } from 'react';
-import { StudioAction } from '@gitroom/frontend/components/studio/studio.store';
+import {
+  StudioAction,
+  freshAvatarOnboarding,
+} from '@gitroom/frontend/components/studio/studio.store';
 import {
   StudioState,
   StudioResult,
   StudioTab,
+  ConsentType,
+  AvatarConsentDraft,
 } from '@gitroom/frontend/components/studio/studio.types';
 import {
   submitStoryboard,
@@ -132,6 +137,59 @@ export function buildStudioCapabilities(
             error: e?.message || 'Generation failed.',
           });
         }
+      },
+    },
+    // --- Avatars: let the agent prefill/navigate the onboarding wizard. ---
+    // These only manipulate UI state (open/navigate/prefill); the consequential
+    // acts (recording consent, creating the clone) stay HUMAN-clicked in the
+    // wizard, so the consent hard-gate is never driven by the agent alone.
+    {
+      id: 'studio.avatarOpen',
+      namespace: ns,
+      label: 'Open the avatar onboarding wizard',
+      params: [],
+      handler: () => {
+        dispatch({ type: 'SET_TAB', tab: 'avatars' });
+        const s = getState();
+        if (!s.avatarOnboarding?.open) {
+          dispatch({ type: 'SET_AVATAR_ONBOARDING', onboarding: freshAvatarOnboarding() });
+        }
+      },
+    },
+    {
+      id: 'studio.avatarSetConsent',
+      namespace: ns,
+      label: 'Prefill avatar consent fields',
+      params: ['person', 'consentType', 'channels', 'expires', 'consentRef'],
+      handler: (p: {
+        person?: string;
+        consentType?: ConsentType;
+        channels?: string[];
+        expires?: string;
+        consentRef?: string;
+      } = {}) => {
+        dispatch({ type: 'SET_TAB', tab: 'avatars' });
+        const current = getState().avatarOnboarding ?? freshAvatarOnboarding();
+        const consent: AvatarConsentDraft = {
+          ...current.consent,
+          ...(p.person !== undefined ? { person: p.person } : {}),
+          ...(p.consentType !== undefined ? { consent_type: p.consentType } : {}),
+          ...(p.channels !== undefined ? { consent_channels: p.channels } : {}),
+          ...(p.expires !== undefined ? { consent_expires: p.expires } : {}),
+          ...(p.consentRef !== undefined ? { consent_ref: p.consentRef } : {}),
+        };
+        // SET the whole onboarding object so it works whether or not it was open.
+        dispatch({ type: 'SET_AVATAR_ONBOARDING', onboarding: { ...current, open: true, consent } });
+      },
+    },
+    {
+      id: 'studio.avatarGotoStep',
+      namespace: ns,
+      label: 'Navigate the avatar onboarding wizard to a step (0-3)',
+      params: ['step'],
+      handler: (p: { step?: number } = {}) => {
+        const step = Math.max(0, Math.min(3, Number(p.step ?? 0)));
+        dispatch({ type: 'PATCH_AVATAR_ONBOARDING', patch: { step } });
       },
     },
     {

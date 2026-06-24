@@ -1,7 +1,79 @@
 // Shared types for the Studio control surface.
 // The store, the action/capability layer, and the UI all speak these.
 
-export type StudioTab = 'images' | 'video' | 'audio' | 'editor';
+export type StudioTab = 'images' | 'video' | 'audio' | 'editor' | 'avatars';
+
+// ---------------------------------------------------------------------------
+// Avatars (person-clone library + consent onboarding)
+// Mirrors the brain registry record (services/brain/lib/registry.mjs). The clone
+// client (studio.clone-client.ts) and the Avatars tab UI both speak these.
+// ---------------------------------------------------------------------------
+
+export type CloneStatus = 'active' | 'suspended' | 'revoked';
+export type CloneTier = 'ivc' | 'pvc';
+export type ConsentType = 'visual' | 'voice' | 'both';
+
+/** A registered clone identity as stored in the brain registry. */
+export interface CloneRecord {
+  clone_id: string;
+  person: string;
+  /** REQUIRED — reference to documented written consent. */
+  consent_ref: string;
+  consent_type?: ConsentType;
+  consent_channels?: string[];
+  consent_expires?: string; // ISO8601 or 'perpetual'
+  status: CloneStatus;
+  visual_identity?: {
+    provider?: string;
+    soul_id?: string;
+    reference_images?: string[];
+    reference_sheet_id?: string;
+    character_seed?: number;
+  };
+  voice?: {
+    provider?: string;
+    voice_id?: string;
+    clone_tier?: CloneTier;
+  };
+  style_tokens?: Record<string, string>;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+  revoke_reason?: string;
+}
+
+/** Consent fields collected in step 1 of the onboarding wizard. */
+export interface AvatarConsentDraft {
+  person: string;
+  consent_type: ConsentType;
+  consent_channels: string[];
+  consent_expires: string; // ISO date or 'perpetual'
+  /** REQUIRED to create — link/ID to the documented written consent. */
+  consent_ref: string;
+}
+
+/** Transient state of the consent-gated onboarding wizard. */
+export interface AvatarOnboardingState {
+  open: boolean;
+  step: number; // 0..3 (consent → likeness → voice → review)
+  consent: AvatarConsentDraft;
+  /** Set after the brain records consent (POST /clone/consent/record). */
+  consentId?: string;
+  /** Uploaded likeness asset ids (step 2). */
+  likenessAssetIds: string[];
+  /** Uploaded voice-sample asset ids (step 3). */
+  voiceAssetIds: string[];
+  creating?: boolean;
+  error?: string;
+}
+
+export const emptyConsentDraft: AvatarConsentDraft = {
+  person: '',
+  consent_type: 'both',
+  consent_channels: [],
+  consent_expires: 'perpetual',
+  consent_ref: '',
+};
 
 // ---------------------------------------------------------------------------
 // User-uploaded assets (drag-and-drop)
@@ -62,6 +134,10 @@ export interface StudioState {
   results: StudioResult[];
   /** User-uploaded assets (drag-and-drop → brain). Durable within the session. */
   uploadedAssets: UploadedAsset[];
+  /** Avatar library — null until first loaded from the brain registry. */
+  avatars: CloneRecord[] | null;
+  /** Onboarding wizard state — null when the wizard is closed. */
+  avatarOnboarding: AvatarOnboardingState | null;
 }
 
 export interface ModelOption {
