@@ -2,7 +2,6 @@
 
 import { FC, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { MediaBox } from '@gitroom/frontend/components/media/media.component';
 import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import {
   StudioProvider,
@@ -15,6 +14,7 @@ import {
 import { generateAsset } from '@gitroom/frontend/components/studio/studio.generate';
 import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.storyboard-client';
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
+import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import {
   StudioTab,
   modelsForKind,
@@ -150,7 +150,16 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
         </div>
       )}
 
-      <MediaBox setMedia={() => {}} closeModal={() => {}} standalone={true} />
+      {/* Divider between AI generation results and the user-upload zone */}
+      <div className="flex items-center gap-[10px]">
+        <div className="flex-1 h-px bg-newBorder" />
+        <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
+          or upload your own
+        </span>
+        <div className="flex-1 h-px bg-newBorder" />
+      </div>
+
+      <StudioDropZone accept={kind === 'video' ? 'video' : 'image'} />
     </div>
   );
 };
@@ -254,11 +263,21 @@ const StudioInner: FC = () => {
         {state.activeTab === 'images' && <GeneratePanel caps={caps} kind="images" />}
         {state.activeTab === 'video' && <GeneratePanel caps={caps} kind="video" />}
         {state.activeTab === 'audio' && (
-          <ComingSoon
-            title="Audio generation"
-            description="Voiceovers and background audio via ElevenLabs. The generated track converges into your videos and supplies caption timing automatically."
-            via="Generate with ElevenLabs"
-          />
+          <div className="flex flex-col gap-[15px]">
+            <ComingSoon
+              title="Audio generation"
+              description="Voiceovers and background audio via ElevenLabs. The generated track converges into your videos and supplies caption timing automatically."
+              via="Generate with ElevenLabs"
+            />
+            <div className="flex items-center gap-[10px]">
+              <div className="flex-1 h-px bg-newBorder" />
+              <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
+                or upload your own
+              </span>
+              <div className="flex-1 h-px bg-newBorder" />
+            </div>
+            <StudioDropZone accept="audio" />
+          </div>
         )}
         {state.activeTab === 'editor' && (
           <ComingSoon

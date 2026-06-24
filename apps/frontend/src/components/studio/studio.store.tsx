@@ -19,6 +19,7 @@ import {
   StudioModel,
   StudioResolution,
   StudioResult,
+  UploadedAsset,
   STUDIO_SLOT_COUNT,
 } from '@gitroom/frontend/components/studio/studio.types';
 
@@ -31,6 +32,7 @@ export type StudioAction =
   | { type: 'SET_STATUS'; status: StudioState['status']; error?: string }
   | { type: 'ADD_RESULT'; result: StudioResult }
   | { type: 'PLACE_IN_SLOT'; index: number; result: StudioResult | null }
+  | { type: 'ADD_UPLOAD'; asset: UploadedAsset }
   | { type: 'RESET' };
 
 export const initialStudioState: StudioState = {
@@ -43,6 +45,7 @@ export const initialStudioState: StudioState = {
   status: 'idle',
   error: undefined,
   results: [],
+  uploadedAssets: [],
 };
 
 export function studioReducer(state: StudioState, action: StudioAction): StudioState {
@@ -66,6 +69,12 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       slots[action.index] = action.result;
       return { ...state, slots };
     }
+    case 'ADD_UPLOAD':
+      // Prepend so the newest upload appears first; dedupe by assetId.
+      if (state.uploadedAssets.some((a) => a.assetId === action.asset.assetId)) {
+        return state;
+      }
+      return { ...state, uploadedAssets: [action.asset, ...state.uploadedAssets] };
     case 'RESET':
       return { ...initialStudioState };
     default:
