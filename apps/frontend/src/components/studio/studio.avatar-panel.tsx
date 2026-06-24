@@ -13,6 +13,7 @@ import {
   useStudio,
   freshAvatarOnboarding,
 } from '@gitroom/frontend/components/studio/studio.store';
+import { StudioAvatarLibrary } from '@gitroom/frontend/components/studio/studio.avatar-library';
 
 const IconUserSpark: FC = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -23,7 +24,7 @@ const IconUserSpark: FC = () => (
 );
 
 export const StudioAvatarPanel: FC = () => {
-  const { state, dispatch } = useStudio();
+  const { dispatch } = useStudio();
 
   const openOnboarding = () =>
     dispatch({ type: 'SET_AVATAR_ONBOARDING', onboarding: freshAvatarOnboarding() });
@@ -49,14 +50,8 @@ export const StudioAvatarPanel: FC = () => {
         </button>
       </div>
 
-      {/* Library mount point — replaced by the card grid in atom 4. */}
-      <div className="rounded-[8px] border border-newBorder bg-newBgColorInner p-[20px] text-[13px] text-textItemBlur leading-[1.5]">
-        {state.avatars == null
-          ? 'Loading your avatar library…'
-          : state.avatars.length === 0
-            ? 'No avatars yet. Click “New avatar” to register one — you’ll record consent, then add likeness and voice.'
-            : `${state.avatars.length} avatar${state.avatars.length === 1 ? '' : 's'} registered.`}
-      </div>
+      {/* Library — card grid over the brain clone registry. */}
+      <StudioAvatarLibrary />
     </div>
   );
 };
