@@ -1,8 +1,18 @@
 // @ts-check
 import { withSentryConfig } from '@sentry/nextjs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+// reinvestorhub (dev): pin the workspace root to the fork (apps/frontend -> ../../
+// = postiz/) so the dev file watcher doesn't try to watch the whole marketing
+// workspace and blow past the OS inotify limit.
+const forkRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  turbopack: {
+    root: forkRoot,
+  },
   experimental: {
     proxyTimeout: 90_000,
   },
@@ -45,15 +55,29 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    return [
-      {
-        source: '/uploads/:path*',
-        destination:
-          process.env.STORAGE_PROVIDER === 'local'
-            ? '/api/uploads/:path*'
-            : '/404',
-      },
-    ];
+    // reinvestorhub (dev only): same-origin proxy so the browser only needs :4200.
+    // /api/brain/* -> host brain :4010 ; /api/* -> backend :3000. (In the prod
+    // image, nginx does this instead; these dev rewrites are gated to development.)
+    const devProxy =
+      process.env.NODE_ENV === 'development'
+        ? [
+            { source: '/api/brain/:path*', destination: 'http://localhost:4010/:path*' },
+            { source: '/api/:path*', destination: 'http://localhost:3000/:path*' },
+          ]
+        : [];
+    return {
+      beforeFiles: devProxy,
+      afterFiles: [
+        {
+          source: '/uploads/:path*',
+          destination:
+            process.env.STORAGE_PROVIDER === 'local'
+              ? '/api/uploads/:path*'
+              : '/404',
+        },
+      ],
+      fallback: [],
+    };
   },
 };
 
