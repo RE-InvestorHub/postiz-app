@@ -15,6 +15,7 @@ import { generateAsset } from '@gitroom/frontend/components/studio/studio.genera
 import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.storyboard-client';
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
+import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import {
   StudioTab,
   modelsForKind,
@@ -280,11 +281,7 @@ const StudioInner: FC = () => {
           </div>
         )}
         {state.activeTab === 'editor' && (
-          <ComingSoon
-            title="Video editor"
-            description="Composite b-roll, overlays, and burned-in captions per platform with the Remotion render service. The editor surface opens here once the service is live."
-            via="Open Remotion editor"
-          />
+          <RemotionEditorPanel />
         )}
       </div>
 
