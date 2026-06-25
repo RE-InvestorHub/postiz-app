@@ -28,6 +28,14 @@ interface BoardItem {
 
 const LOOK_KINDS: LookRefKind[] = ['lighting', 'style', 'environment', 'palette', 'lens'];
 
+// Spinner — tells the user the image is cooking. currentColor so it themes anywhere.
+const Spinner: FC<{ size?: number }> = ({ size = 22 }) => (
+  <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
+    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+  </svg>
+);
+
 export const StudioPrevisPanel: FC = () => {
   const [prompt, setPrompt] = useState('');
   const [board, setBoard] = useState<BoardItem[]>([]);
@@ -98,8 +106,8 @@ export const StudioPrevisPanel: FC = () => {
           className="w-full p-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur resize-y"
         />
         <button type="button" disabled={busy === 'generate' || !prompt.trim()} onClick={doGenerate}
-          className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] disabled:opacity-50 ml-auto">
-          {busy === 'generate' ? 'Generating…' : '✨ Generate'}
+          className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] disabled:opacity-50 ml-auto flex items-center gap-[8px]">
+          {busy === 'generate' ? (<><Spinner size={16} /> Generating…</>) : '✨ Generate'}
         </button>
       </div>
 
@@ -121,14 +129,14 @@ export const StudioPrevisPanel: FC = () => {
             rows={2}
             className="w-full p-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur resize-y" />
           <button type="button" disabled={busy === 'restage' || !selectedAnchor || !scenePrompt.trim()} onClick={doRestage}
-            className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] disabled:opacity-50 ml-auto">
-            {busy === 'restage' ? 'Restaging…' : '✨ Restage'}
+            className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] disabled:opacity-50 ml-auto flex items-center gap-[8px]">
+            {busy === 'restage' ? (<><Spinner size={16} /> Restaging…</>) : '✨ Restage'}
           </button>
         </div>
       )}
 
       {/* Board */}
-      {board.length > 0 && (
+      {(board.length > 0 || busy === 'generate' || busy === 'restage') && (
         <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[16px] flex flex-col gap-[10px]">
           <div className="flex items-center gap-[10px]">
             <span className="text-[14px] font-[600] text-btnText">Board</span>
@@ -138,6 +146,13 @@ export const StudioPrevisPanel: FC = () => {
             </select>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-[12px]">
+            {(busy === 'generate' || busy === 'restage') && (
+              <div className="rounded-[8px] border border-newBorder bg-newBgColorInner aspect-square flex flex-col items-center justify-center gap-[8px] text-textItemBlur">
+                <span className="text-ai"><Spinner /></span>
+                <span className="text-[12px] font-[600] text-btnText">{busy === 'restage' ? 'Restaging…' : 'Generating…'}</span>
+                <span className="text-[11px] opacity-70">your image is cooking (~30-60s)</span>
+              </div>
+            )}
             {board.map((item) => (
               <div key={item.id} className="rounded-[8px] overflow-hidden border border-newBorder bg-newBgColorInner flex flex-col">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
