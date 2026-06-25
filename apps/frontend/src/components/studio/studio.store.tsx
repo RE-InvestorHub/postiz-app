@@ -39,6 +39,8 @@ export type StudioAction =
   | { type: 'SET_AVATARS'; avatars: CloneRecord[] }
   | { type: 'SET_AVATAR_ONBOARDING'; onboarding: AvatarOnboardingState | null }
   | { type: 'PATCH_AVATAR_ONBOARDING'; patch: Partial<AvatarOnboardingState> }
+  | { type: 'SET_AUDIO_VOICE'; voiceId: string }
+  | { type: 'SET_AUDIO_SCRIPT'; script: string }
   | { type: 'RESET' };
 
 export const initialStudioState: StudioState = {
@@ -54,6 +56,8 @@ export const initialStudioState: StudioState = {
   uploadedAssets: [],
   avatars: null,
   avatarOnboarding: null,
+  audioVoiceId: '',
+  audioScript: '',
 };
 
 /** A fresh onboarding-wizard state (wizard opened at step 0). */
@@ -103,6 +107,10 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       return state.avatarOnboarding
         ? { ...state, avatarOnboarding: { ...state.avatarOnboarding, ...action.patch } }
         : state;
+    case 'SET_AUDIO_VOICE':
+      return { ...state, audioVoiceId: action.voiceId };
+    case 'SET_AUDIO_SCRIPT':
+      return { ...state, audioScript: action.script };
     case 'RESET':
       return { ...initialStudioState };
     default:

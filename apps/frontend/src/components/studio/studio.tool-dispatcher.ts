@@ -81,6 +81,8 @@ export function requiresApproval(toolName: string): boolean {
     'studio.avatarOpen',
     'studio.avatarSetConsent',
     'studio.avatarGotoStep',
+    // Voice selection is UI-state only; studio.generateVO is NOT here (spends TTS credits).
+    'studio.selectVoice',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

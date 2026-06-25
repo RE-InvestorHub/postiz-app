@@ -21,8 +21,11 @@ const IconWave: FC = () => (
 
 export const StudioAudioPanel: FC = () => {
   const { state, dispatch } = useStudio();
-  const [voiceId, setVoiceId] = useState('');
-  const [script, setScript] = useState('');
+  // Voice + script live in the store so the agent and the manual UI share the same levers.
+  const voiceId = state.audioVoiceId;
+  const script = state.audioScript;
+  const setVoiceId = (v: string) => dispatch({ type: 'SET_AUDIO_VOICE', voiceId: v });
+  const setScript = (s: string) => dispatch({ type: 'SET_AUDIO_SCRIPT', script: s });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
