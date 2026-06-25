@@ -8,6 +8,7 @@
 import {
   CloneRecord,
   CloneStatus,
+  CloneTier,
   AvatarConsentDraft,
 } from '@gitroom/frontend/components/studio/studio.types';
 
@@ -99,10 +100,23 @@ export function createClone(payload: {
   photos: string[];
   voiceSamples?: string[];
   skipVoice?: boolean;
+  /** 'ivc' = instant (immediate), 'pvc' = professional (verification + training). */
+  cloneTier?: CloneTier;
   styleTokens?: Record<string, string>;
   notes?: string;
 }): Promise<CloneRecord> {
   return post<CloneRecord>('/clone/create', payload);
+}
+
+export interface VoiceStatus {
+  status: string;
+  ready: boolean;
+  [k: string]: unknown;
+}
+
+/** Poll the training/verification status of a cloned voice (PVC). */
+export function getVoiceStatus(voiceId: string): Promise<VoiceStatus> {
+  return req<VoiceStatus>(`/clone/voice/status/${encodeURIComponent(voiceId)}`);
 }
 
 // ---------------------------------------------------------------------------
