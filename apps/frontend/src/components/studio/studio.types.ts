@@ -1,7 +1,7 @@
 // Shared types for the Studio control surface.
 // The store, the action/capability layer, and the UI all speak these.
 
-export type StudioTab = 'images' | 'video' | 'audio' | 'editor' | 'avatars' | 'storyboard' | 'project';
+export type StudioTab = 'images' | 'video' | 'audio' | 'editor' | 'avatars' | 'storyboard' | 'project' | 'composer';
 
 // ---------------------------------------------------------------------------
 // Avatars (person-clone library + consent onboarding)
@@ -146,6 +146,8 @@ export interface StudioState {
   activeCampaignId: string | null;
   /** Active Ad context within the campaign — "Add to ad" + composers target this. */
   activeAdId: string | null;
+  /** Composer tab: selected Brand Kit id (shared by manual UI + agent). */
+  composerBrandKitId: string;
 }
 
 export interface ModelOption {

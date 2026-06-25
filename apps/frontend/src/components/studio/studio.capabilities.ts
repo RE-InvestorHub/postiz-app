@@ -29,7 +29,9 @@ import {
   createCampaign,
   createAd,
   addObject,
+  getAdObjects,
 } from '@gitroom/frontend/components/studio/studio.project-client';
+import { composeStill } from '@gitroom/frontend/components/studio/studio.composer-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -322,6 +324,44 @@ export function buildStudioCapabilities(
         if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
         if (!p.type || !p.id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'type and id required.' }); return; }
         await addObject({ adId, type: p.type as any, id: p.id });
+      },
+    },
+
+    // --- Composer (Content Composer): Still deliverable. ---
+    {
+      id: 'compose.selectBrandKit',
+      namespace: 'compose',
+      label: 'Set the Brand Kit the Composer renders with',
+      params: ['brandKitId'],
+      handler: (p: { brandKitId?: string } = {}) =>
+        dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: p.brandKitId || 'default' }),
+    },
+    {
+      id: 'compose.composeStill',
+      namespace: 'compose',
+      label: 'Compose a branded Still post (per channel) from an Ad image — spends a render',
+      params: ['imageRef', 'headline', 'sub', 'cta', 'channels'],
+      handler: async (p: {
+        imageRef?: string; headline?: string; sub?: string; cta?: string;
+        data?: Array<{ label: string; value: string }>; channels?: string[]; brandKitId?: string;
+      } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        // Default the source to the Ad's first image when the agent doesn't name one.
+        let imageRef = p.imageRef;
+        if (!imageRef) {
+          const objs = await getAdObjects(adId);
+          imageRef = objs.find((o) => o.type === 'image')?.id;
+        }
+        if (!imageRef) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No image on this ad to compose from.' }); return; }
+        await composeStill({
+          imageRef,
+          adId,
+          addToAd: true,
+          brandKitId: p.brandKitId || getState().composerBrandKitId || 'default',
+          channels: p.channels && p.channels.length ? p.channels : ['ig_square'],
+          copy: { headline: p.headline, sub: p.sub, cta: p.cta, data: p.data },
+        });
       },
     },
   ];

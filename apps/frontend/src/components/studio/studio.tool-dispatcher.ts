@@ -89,6 +89,9 @@ export function requiresApproval(toolName: string): boolean {
     'project.selectCampaign',
     'project.selectAd',
     'project.addObject',
+    // Composer — selectBrandKit is UI state; compose.composeStill is NOT here
+    // (it runs a render → gated like the other spenders).
+    'compose.selectBrandKit',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }
