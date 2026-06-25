@@ -138,6 +138,10 @@ export interface StudioState {
   avatars: CloneRecord[] | null;
   /** Onboarding wizard state — null when the wizard is closed. */
   avatarOnboarding: AvatarOnboardingState | null;
+  /** Audio tab: selected library voice id (shared by manual UI + agent). */
+  audioVoiceId: string;
+  /** Audio tab: voice-over script (shared by manual UI + agent). */
+  audioScript: string;
 }
 
 export interface ModelOption {

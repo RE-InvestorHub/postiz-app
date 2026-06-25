@@ -22,6 +22,9 @@ import {
 import {
   submitStoryboard,
 } from '@gitroom/frontend/components/studio/studio.storyboard-client';
+import {
+  generateVO,
+} from '@gitroom/frontend/components/studio/studio.voice-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -190,6 +193,46 @@ export function buildStudioCapabilities(
       handler: (p: { step?: number } = {}) => {
         const step = Math.max(0, Math.min(3, Number(p.step ?? 0)));
         dispatch({ type: 'PATCH_AVATAR_ONBOARDING', patch: { step } });
+      },
+    },
+    // --- Voice-over: pick a library voice + generate VO (Audio tab). ---
+    {
+      id: 'studio.selectVoice',
+      namespace: ns,
+      label: 'Select a voice from the library (Audio tab)',
+      params: ['voiceId'],
+      handler: (p: { voiceId?: string } = {}) => {
+        dispatch({ type: 'SET_TAB', tab: 'audio' });
+        if (p.voiceId) dispatch({ type: 'SET_AUDIO_VOICE', voiceId: p.voiceId });
+      },
+    },
+    {
+      id: 'studio.generateVO',
+      namespace: ns,
+      label: 'Generate a voice-over with the selected voice + script',
+      params: ['text', 'voiceId'],
+      handler: async (p: { text?: string; voiceId?: string } = {}) => {
+        dispatch({ type: 'SET_TAB', tab: 'audio' });
+        const s = getState();
+        const voiceId = p.voiceId ?? s.audioVoiceId;
+        const text = p.text ?? s.audioScript;
+        if (p.voiceId) dispatch({ type: 'SET_AUDIO_VOICE', voiceId: p.voiceId });
+        if (p.text) dispatch({ type: 'SET_AUDIO_SCRIPT', script: p.text });
+        if (!voiceId || !text?.trim()) {
+          dispatch({ type: 'SET_STATUS', status: 'error', error: 'Pick a voice and provide a script first.' });
+          return;
+        }
+        dispatch({ type: 'SET_STATUS', status: 'generating' });
+        try {
+          const vo = await generateVO({ text, voiceId });
+          dispatch({
+            type: 'ADD_RESULT',
+            result: { id: vo.id, url: vo.url, tab: 'audio', prompt: text.slice(0, 80), createdAt: Date.now() },
+          });
+          dispatch({ type: 'SET_STATUS', status: 'idle' });
+        } catch (e: any) {
+          dispatch({ type: 'SET_STATUS', status: 'error', error: e?.message || 'VO generation failed.' });
+        }
       },
     },
     {

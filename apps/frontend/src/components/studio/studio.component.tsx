@@ -18,6 +18,7 @@ import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-
 import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
+import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import {
   StudioTab,
   modelsForKind,
@@ -80,20 +81,6 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
 
 const selectCls =
   'h-[40px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[13px] text-btnText';
-
-const ComingSoon: FC<{ title: string; description: string; via: string }> = ({ title, description, via }) => (
-  <div className="rounded-[8px] border border-dashed border-newBorder bg-newBgColor p-[24px] flex flex-col items-center justify-center text-center gap-[10px] min-h-[220px]">
-    <div className="inline-flex items-center gap-[6px] rounded-full bg-ai/15 text-ai px-[10px] py-[4px] text-[12px] font-[600]">
-      <span className="w-[6px] h-[6px] rounded-full bg-ai" />
-      Coming soon
-    </div>
-    <div className="text-[16px] font-[600] text-btnText">{title}</div>
-    <div className="text-[13px] text-textItemBlur max-w-[420px] leading-[1.5]">{description}</div>
-    <button type="button" disabled className="mt-[6px] h-[40px] px-[18px] rounded-[8px] bg-ai text-white font-[600] opacity-50 cursor-not-allowed">
-      {via}
-    </button>
-  </div>
-);
 
 // The real generation control block (Images / Video), wired to `studio.*` caps.
 const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({ caps, kind }) => {
@@ -277,11 +264,7 @@ const StudioInner: FC = () => {
         {state.activeTab === 'video' && <GeneratePanel caps={caps} kind="video" />}
         {state.activeTab === 'audio' && (
           <div className="flex flex-col gap-[15px]">
-            <ComingSoon
-              title="Audio generation"
-              description="Voiceovers and background audio via ElevenLabs. The generated track converges into your videos and supplies caption timing automatically."
-              via="Generate with ElevenLabs"
-            />
+            <StudioAudioPanel />
             <div className="flex items-center gap-[10px]">
               <div className="flex-1 h-px bg-newBorder" />
               <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
