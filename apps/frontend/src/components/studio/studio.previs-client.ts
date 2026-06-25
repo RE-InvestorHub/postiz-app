@@ -84,7 +84,7 @@ export function captureCharacter(payload: { jobId: string; name?: string; descri
 }
 
 /** Restage a captured character into a new scene (conditions on the anchor reference). */
-export function restage(payload: { anchorId: string; scenePrompt: string; lookRefIds?: string[]; model?: string; platform?: string }): Promise<RestageResult> {
+export function restage(payload: { anchorId: string; scenePrompt: string; lookRefIds?: string[]; model?: string; platform?: string; aspectRatio?: string; resolution?: string }): Promise<RestageResult> {
   return req<RestageResult>('/previs/restage', { method: 'POST', body: JSON.stringify(payload) });
 }
 
