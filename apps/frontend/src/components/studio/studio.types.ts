@@ -1,7 +1,7 @@
 // Shared types for the Studio control surface.
 // The store, the action/capability layer, and the UI all speak these.
 
-export type StudioTab = 'images' | 'video' | 'audio' | 'editor' | 'avatars';
+export type StudioTab = 'images' | 'video' | 'audio' | 'editor' | 'avatars' | 'storyboard';
 
 // ---------------------------------------------------------------------------
 // Avatars (person-clone library + consent onboarding)

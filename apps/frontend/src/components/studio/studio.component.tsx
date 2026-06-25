@@ -19,6 +19,7 @@ import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
+import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import {
   StudioTab,
   modelsForKind,
@@ -65,6 +66,12 @@ const IconAvatar: FC = () => (
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
+const IconStoryboard: FC = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 9h18" /><path d="M9 9v12" /><path d="M3 15h6" />
+  </svg>
+);
 const IconSpark: FC = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
     <path d="M12 2l1.9 5.7a2 2 0 0 0 1.3 1.3L21 11l-5.8 2a2 2 0 0 0-1.3 1.3L12 20l-1.9-5.7A2 2 0 0 0 8.8 13L3 11l5.8-2a2 2 0 0 0 1.3-1.3L12 2z" />
@@ -77,6 +84,7 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'audio', label: 'Audio', icon: <IconAudio /> },
   { key: 'editor', label: 'Video Editor', icon: <IconEditor /> },
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
+  { key: 'storyboard', label: 'Storyboard', icon: <IconStoryboard /> },
 ];
 
 const selectCls =
@@ -279,6 +287,7 @@ const StudioInner: FC = () => {
           <RemotionEditorPanel />
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
+        {state.activeTab === 'storyboard' && <StudioPrevisPanel />}
       </div>
 
       {agentOpen && (
