@@ -62,10 +62,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
 }
 
-/** Extract the Higgsfield job-id from a generated image CDN url (hf_<ts>_<jobid>.png). */
+/** Extract the Higgsfield job-id (a UUID) from a generated image CDN url.
+ *  Filenames look like hf_<YYYYMMDD>_<HHMMSS>_<uuid>.png — match the canonical UUID
+ *  directly so we don't depend on the number of timestamp groups before it. */
 export function jobIdFromUrl(cdnUrl: string): string | null {
-  const m = cdnUrl?.match(/hf_\d+_([0-9a-fA-F-]{36})/);
-  return m ? m[1] : null;
+  const m = cdnUrl?.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+  return m ? m[0] : null;
 }
 
 /** Generate a fresh image (no reference) via the existing studio generate route. */

@@ -35,6 +35,7 @@ export const StudioPrevisPanel: FC = () => {
   const [selectedAnchor, setSelectedAnchor] = useState<string>('');
   const [scenePrompt, setScenePrompt] = useState('');
   const [lookKind, setLookKind] = useState<LookRefKind>('style');
+  const [names, setNames] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,11 +59,12 @@ export const StudioPrevisPanel: FC = () => {
     if (!jobId) { setError('Could not read a Higgsfield job-id from this image.'); return; }
     setBusy(item.id); setError(null);
     try {
-      await captureCharacter({ jobId, name: item.prompt.slice(0, 40), descriptor: item.prompt });
+      // User-supplied name wins; empty → backend derives a short auto-name.
+      await captureCharacter({ jobId, name: names[item.id]?.trim() || undefined, descriptor: item.prompt });
       await refreshAnchors();
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(null); }
-  }, [refreshAnchors]);
+  }, [refreshAnchors, names]);
 
   const doSaveLook = useCallback(async (item: BoardItem) => {
     setBusy(item.id); setError(null);
@@ -142,6 +144,12 @@ export const StudioPrevisPanel: FC = () => {
                 <img src={item.url} alt={item.prompt} className="w-full aspect-square object-cover" />
                 <div className="p-[8px] flex flex-col gap-[6px]">
                   <span className="text-[11px] text-textItemBlur truncate">{item.kind === 'restage' ? '↻ ' : ''}{item.prompt}</span>
+                  <input
+                    value={names[item.id] ?? ''}
+                    onChange={(e) => setNames((n) => ({ ...n, [item.id]: e.target.value }))}
+                    placeholder="character name (optional)"
+                    className="h-[28px] px-[8px] rounded-[6px] bg-newBgColor border border-newBorder text-[11px] text-btnText placeholder:text-textItemBlur"
+                  />
                   <div className="flex gap-[6px]">
                     <button type="button" disabled={busy === item.id} onClick={() => doCapture(item)}
                       className="flex-1 h-[32px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] disabled:opacity-50">
