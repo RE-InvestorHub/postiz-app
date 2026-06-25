@@ -220,13 +220,14 @@ export const StudioComposerPanel: FC = () => {
         <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[12px]">
           {results.map((r) => (
             <div key={r.id} className="rounded-[8px] overflow-hidden border border-newBorder flex flex-col bg-newBgColorInner">
-              <a href={assetUrl(r.url)} target="_blank" rel="noreferrer" className="block">
+              {/* r.url is already a proxy-absolute /api/brain/assets path — use as-is. */}
+              <a href={r.url} target="_blank" rel="noreferrer" className="block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={assetUrl(r.url)} alt={r.label} className="w-full h-auto" />
+                <img src={r.url} alt={r.label} className="w-full h-auto" />
               </a>
               <div className="px-[8px] py-[6px] text-[11px] text-textItemBlur">{r.label} · {r.w}×{r.h}</div>
               <div className="flex">
-                <a href={assetUrl(r.url)} download className="flex-1 h-[30px] flex items-center justify-center text-[12px] font-[600] text-btnText border-t border-newBorder">Download</a>
+                <a href={r.url} download className="flex-1 h-[30px] flex items-center justify-center text-[12px] font-[600] text-btnText border-t border-newBorder">Download</a>
                 <button type="button" disabled={addedIds.has(r.id)} onClick={() => addToAd(r.id)}
                   className="flex-1 h-[30px] text-[12px] font-[600] text-white bg-btnPrimary disabled:opacity-50 border-t border-newBorder">
                   {addedIds.has(r.id) ? 'Added ✓' : '+ Add to ad'}
