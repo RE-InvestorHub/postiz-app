@@ -41,6 +41,8 @@ export type StudioAction =
   | { type: 'PATCH_AVATAR_ONBOARDING'; patch: Partial<AvatarOnboardingState> }
   | { type: 'SET_AUDIO_VOICE'; voiceId: string }
   | { type: 'SET_AUDIO_SCRIPT'; script: string }
+  | { type: 'SET_ACTIVE_CAMPAIGN'; campaignId: string | null }
+  | { type: 'SET_ACTIVE_AD'; adId: string | null }
   | { type: 'RESET' };
 
 export const initialStudioState: StudioState = {
@@ -58,6 +60,8 @@ export const initialStudioState: StudioState = {
   avatarOnboarding: null,
   audioVoiceId: '',
   audioScript: '',
+  activeCampaignId: null,
+  activeAdId: null,
 };
 
 /** A fresh onboarding-wizard state (wizard opened at step 0). */
@@ -109,6 +113,11 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
         : state;
     case 'SET_AUDIO_VOICE':
       return { ...state, audioVoiceId: action.voiceId };
+    case 'SET_ACTIVE_CAMPAIGN':
+      // Switching campaigns clears the active ad (it belongs to the old campaign).
+      return { ...state, activeCampaignId: action.campaignId, activeAdId: null };
+    case 'SET_ACTIVE_AD':
+      return { ...state, activeAdId: action.adId };
     case 'SET_AUDIO_SCRIPT':
       return { ...state, audioScript: action.script };
     case 'RESET':

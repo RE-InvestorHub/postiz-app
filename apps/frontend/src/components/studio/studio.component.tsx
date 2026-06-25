@@ -20,6 +20,8 @@ import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.av
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
+import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
+import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   StudioTab,
   modelsForKind,
@@ -95,6 +97,15 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
   const { state } = useStudio();
   const generating = state.status === 'generating';
   const tabResults = state.results.filter((r) => r.tab === state.activeTab);
+  // "Add to ad" — link a generated asset to the active Ad (project-agnostic ref).
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const addToAd = async (id: string) => {
+    if (!state.activeAdId) return;
+    try {
+      await addObject({ adId: state.activeAdId, type: kind === 'video' ? 'clip' : 'image', id });
+      setAddedIds((s) => new Set(s).add(id));
+    } catch { /* surfaced elsewhere; keep the grid resilient */ }
+  };
   // Image models on the Images tab, video models (Veo/Seedance/Kling/…) on Video.
   const models = modelsForKind(kind);
 
@@ -150,10 +161,21 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
       {tabResults.length > 0 && (
         <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
           {tabResults.map((r) => (
-            <a key={r.id} href={r.url} target="_blank" rel="noreferrer" className="block rounded-[8px] overflow-hidden border border-newBorder">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={r.url} alt={r.prompt.slice(0, 60)} className="w-full h-auto" />
-            </a>
+            <div key={r.id} className="rounded-[8px] overflow-hidden border border-newBorder flex flex-col">
+              <a href={r.url} target="_blank" rel="noreferrer" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={r.url} alt={r.prompt.slice(0, 60)} className="w-full h-auto" />
+              </a>
+              <button
+                type="button"
+                disabled={!state.activeAdId || addedIds.has(r.id)}
+                onClick={() => addToAd(r.id)}
+                className="h-[30px] text-[12px] font-[600] text-btnText bg-btnPrimary disabled:opacity-50"
+                title={state.activeAdId ? 'Add this asset to the active ad' : 'Select a campaign + ad first'}
+              >
+                {addedIds.has(r.id) ? 'Added ✓' : '+ Add to ad'}
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -250,6 +272,9 @@ const StudioInner: FC = () => {
             </button>
           </div>
         )}
+
+        {/* Active Campaign + Ad context, shared across every tab. */}
+        <StudioProjectBar />
 
         <div className="flex flex-wrap gap-[8px] border-b border-newBorder pb-[12px]">
           {TABS.map((item) => (

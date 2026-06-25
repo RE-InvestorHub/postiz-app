@@ -142,6 +142,10 @@ export interface StudioState {
   audioVoiceId: string;
   /** Audio tab: voice-over script (shared by manual UI + agent). */
   audioScript: string;
+  /** Active Campaign context (Content Composer) — shared across tabs. */
+  activeCampaignId: string | null;
+  /** Active Ad context within the campaign — "Add to ad" + composers target this. */
+  activeAdId: string | null;
 }
 
 export interface ModelOption {
