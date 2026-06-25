@@ -19,6 +19,10 @@ import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
+import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
+import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
+import { StudioProjectPanel } from '@gitroom/frontend/components/studio/studio.project-panel';
+import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   StudioTab,
   modelsForKind,
@@ -65,6 +69,17 @@ const IconAvatar: FC = () => (
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
+const IconStoryboard: FC = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <path d="M3 9h18" /><path d="M9 9v12" /><path d="M3 15h6" />
+  </svg>
+);
+const IconProject: FC = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  </svg>
+);
 const IconSpark: FC = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
     <path d="M12 2l1.9 5.7a2 2 0 0 0 1.3 1.3L21 11l-5.8 2a2 2 0 0 0-1.3 1.3L12 20l-1.9-5.7A2 2 0 0 0 8.8 13L3 11l5.8-2a2 2 0 0 0 1.3-1.3L12 2z" />
@@ -77,6 +92,8 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'audio', label: 'Audio', icon: <IconAudio /> },
   { key: 'editor', label: 'Video Editor', icon: <IconEditor /> },
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
+  { key: 'storyboard', label: 'Storyboard', icon: <IconStoryboard /> },
+  { key: 'project', label: 'Project', icon: <IconProject /> },
 ];
 
 const selectCls =
@@ -87,6 +104,15 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
   const { state } = useStudio();
   const generating = state.status === 'generating';
   const tabResults = state.results.filter((r) => r.tab === state.activeTab);
+  // "Add to ad" — link a generated asset to the active Ad (project-agnostic ref).
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const addToAd = async (id: string) => {
+    if (!state.activeAdId) return;
+    try {
+      await addObject({ adId: state.activeAdId, type: kind === 'video' ? 'clip' : 'image', id });
+      setAddedIds((s) => new Set(s).add(id));
+    } catch { /* surfaced elsewhere; keep the grid resilient */ }
+  };
   // Image models on the Images tab, video models (Veo/Seedance/Kling/…) on Video.
   const models = modelsForKind(kind);
 
@@ -142,10 +168,21 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
       {tabResults.length > 0 && (
         <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
           {tabResults.map((r) => (
-            <a key={r.id} href={r.url} target="_blank" rel="noreferrer" className="block rounded-[8px] overflow-hidden border border-newBorder">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={r.url} alt={r.prompt.slice(0, 60)} className="w-full h-auto" />
-            </a>
+            <div key={r.id} className="rounded-[8px] overflow-hidden border border-newBorder flex flex-col">
+              <a href={r.url} target="_blank" rel="noreferrer" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={r.url} alt={r.prompt.slice(0, 60)} className="w-full h-auto" />
+              </a>
+              <button
+                type="button"
+                disabled={!state.activeAdId || addedIds.has(r.id)}
+                onClick={() => addToAd(r.id)}
+                className="h-[30px] text-[12px] font-[600] text-btnText bg-btnPrimary disabled:opacity-50"
+                title={state.activeAdId ? 'Add this asset to the active ad' : 'Select a campaign + ad first'}
+              >
+                {addedIds.has(r.id) ? 'Added ✓' : '+ Add to ad'}
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -243,6 +280,9 @@ const StudioInner: FC = () => {
           </div>
         )}
 
+        {/* Active Campaign + Ad context, shared across every tab. */}
+        <StudioProjectBar />
+
         <div className="flex flex-wrap gap-[8px] border-b border-newBorder pb-[12px]">
           {TABS.map((item) => (
             <button
@@ -279,6 +319,8 @@ const StudioInner: FC = () => {
           <RemotionEditorPanel />
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
+        {state.activeTab === 'storyboard' && <StudioPrevisPanel />}
+        {state.activeTab === 'project' && <StudioProjectPanel />}
       </div>
 
       {agentOpen && (
