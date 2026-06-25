@@ -22,6 +22,7 @@ import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.aud
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
 import { StudioProjectPanel } from '@gitroom/frontend/components/studio/studio.project-panel';
+import { StudioComposerPanel } from '@gitroom/frontend/components/studio/studio.composer-panel';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   StudioTab,
@@ -85,6 +86,13 @@ const IconSpark: FC = () => (
     <path d="M12 2l1.9 5.7a2 2 0 0 0 1.3 1.3L21 11l-5.8 2a2 2 0 0 0-1.3 1.3L12 20l-1.9-5.7A2 2 0 0 0 8.8 13L3 11l5.8-2a2 2 0 0 0 1.3-1.3L12 2z" />
   </svg>
 );
+const IconComposer: FC = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <rect x="3" y="15" width="18" height="6" rx="1" fill="currentColor" stroke="none" opacity="0.5" />
+    <path d="M6 7h6" />
+  </svg>
+);
 
 const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'images', label: 'Images', icon: <IconImages /> },
@@ -94,6 +102,7 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
   { key: 'storyboard', label: 'Storyboard', icon: <IconStoryboard /> },
   { key: 'project', label: 'Project', icon: <IconProject /> },
+  { key: 'composer', label: 'Composer', icon: <IconComposer /> },
 ];
 
 const selectCls =
@@ -321,6 +330,7 @@ const StudioInner: FC = () => {
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
         {state.activeTab === 'storyboard' && <StudioPrevisPanel />}
         {state.activeTab === 'project' && <StudioProjectPanel />}
+        {state.activeTab === 'composer' && <StudioComposerPanel />}
       </div>
 
       {agentOpen && (
