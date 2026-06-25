@@ -25,6 +25,11 @@ import {
 import {
   generateVO,
 } from '@gitroom/frontend/components/studio/studio.voice-client';
+import {
+  createCampaign,
+  createAd,
+  addObject,
+} from '@gitroom/frontend/components/studio/studio.project-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -265,6 +270,58 @@ export function buildStudioCapabilities(
             error: e?.message || 'Storyboard assembly failed.',
           });
         }
+      },
+    },
+
+    // --- Project (Content Composer): campaigns, ads, add assets. ---
+    {
+      id: 'project.createCampaign',
+      namespace: 'project',
+      label: 'Create a campaign and make it active',
+      params: ['name'],
+      handler: async (p: { name?: string } = {}) => {
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Campaign name required.' }); return; }
+        const c = await createCampaign({ name: p.name.trim() });
+        dispatch({ type: 'SET_ACTIVE_CAMPAIGN', campaignId: c.campaign_id });
+      },
+    },
+    {
+      id: 'project.createAd',
+      namespace: 'project',
+      label: 'Create an ad in the active campaign and make it active',
+      params: ['name'],
+      handler: async (p: { name?: string } = {}) => {
+        const campaignId = getState().activeCampaignId;
+        if (!campaignId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select or create a campaign first.' }); return; }
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Ad name required.' }); return; }
+        const a = await createAd({ campaignId, name: p.name.trim() });
+        dispatch({ type: 'SET_ACTIVE_AD', adId: a.ad_id });
+      },
+    },
+    {
+      id: 'project.selectCampaign',
+      namespace: 'project',
+      label: 'Set the active campaign',
+      params: ['campaignId'],
+      handler: (p: { campaignId?: string } = {}) => dispatch({ type: 'SET_ACTIVE_CAMPAIGN', campaignId: p.campaignId ?? null }),
+    },
+    {
+      id: 'project.selectAd',
+      namespace: 'project',
+      label: 'Set the active ad',
+      params: ['adId'],
+      handler: (p: { adId?: string } = {}) => dispatch({ type: 'SET_ACTIVE_AD', adId: p.adId ?? null }),
+    },
+    {
+      id: 'project.addObject',
+      namespace: 'project',
+      label: 'Add an asset (by type + id) to the active ad',
+      params: ['type', 'id'],
+      handler: async (p: { type?: string; id?: string } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        if (!p.type || !p.id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'type and id required.' }); return; }
+        await addObject({ adId, type: p.type as any, id: p.id });
       },
     },
   ];

@@ -83,6 +83,12 @@ export function requiresApproval(toolName: string): boolean {
     'studio.avatarGotoStep',
     // Voice selection is UI-state only; studio.generateVO is NOT here (spends TTS credits).
     'studio.selectVoice',
+    // Project (Content Composer) — all setters, no spend.
+    'project.createCampaign',
+    'project.createAd',
+    'project.selectCampaign',
+    'project.selectAd',
+    'project.addObject',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }
