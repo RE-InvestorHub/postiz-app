@@ -21,6 +21,7 @@ import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.ava
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
+import { StudioProjectPanel } from '@gitroom/frontend/components/studio/studio.project-panel';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   StudioTab,
@@ -74,6 +75,11 @@ const IconStoryboard: FC = () => (
     <path d="M3 9h18" /><path d="M9 9v12" /><path d="M3 15h6" />
   </svg>
 );
+const IconProject: FC = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+  </svg>
+);
 const IconSpark: FC = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
     <path d="M12 2l1.9 5.7a2 2 0 0 0 1.3 1.3L21 11l-5.8 2a2 2 0 0 0-1.3 1.3L12 20l-1.9-5.7A2 2 0 0 0 8.8 13L3 11l5.8-2a2 2 0 0 0 1.3-1.3L12 2z" />
@@ -87,6 +93,7 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'editor', label: 'Video Editor', icon: <IconEditor /> },
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
   { key: 'storyboard', label: 'Storyboard', icon: <IconStoryboard /> },
+  { key: 'project', label: 'Project', icon: <IconProject /> },
 ];
 
 const selectCls =
@@ -313,6 +320,7 @@ const StudioInner: FC = () => {
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
         {state.activeTab === 'storyboard' && <StudioPrevisPanel />}
+        {state.activeTab === 'project' && <StudioProjectPanel />}
       </div>
 
       {agentOpen && (
