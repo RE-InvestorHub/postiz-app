@@ -13,6 +13,7 @@ import {
   BrandKit, Channel, VideoAdCut, VideoAdSkip, VIDEO_AD_LENGTHS, DataCallout,
 } from '@gitroom/frontend/components/studio/studio.composer-client';
 import { StudioDataRecordBinder } from '@gitroom/frontend/components/studio/studio.datarecord-binder';
+import { listMusicBeds, MusicBed } from '@gitroom/frontend/components/studio/studio.music-client';
 
 const Spinner: FC<{ size?: number }> = ({ size = 18 }) => (
   <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -42,6 +43,11 @@ export const StudioVideoAdPanel: FC = () => {
   const [cuts, setCuts] = useState<VideoAdCut[]>([]);
   const [skipped, setSkipped] = useState<VideoAdSkip[]>([]);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [beds, setBeds] = useState<MusicBed[]>([]);
+  const [musicMood, setMusicMood] = useState('');                 // '' = no bed
+  const [musicVolume, setMusicVolume] = useState(0.18);
+
+  useEffect(() => { listMusicBeds().then(setBeds).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     if (!state.activeAdId) { setClips([]); return; }
@@ -75,11 +81,12 @@ export const StudioVideoAdPanel: FC = () => {
         adId: state.activeAdId ?? undefined, clipRef: clipId, brandKitId,
         channels: Array.from(selChannels), lengths: Array.from(selLengths),
         copy: { headline: headline.trim() || undefined, cta: cta.trim() || undefined, data: mergedCallouts.filter((c) => c.value.trim() || c.label.trim()) },
+        ...(musicMood ? { music: { mood: musicMood, volume: musicVolume } } : {}),
       });
       setCuts(resp.cuts); setSkipped(resp.skipped);
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(false); }
-  }, [canCut, clipId, selChannels, selLengths, headline, cta, data, recordCallouts, brandKitId, state.activeAdId]);
+  }, [canCut, clipId, selChannels, selLengths, headline, cta, data, recordCallouts, brandKitId, state.activeAdId, musicMood, musicVolume]);
 
   const addToAd = useCallback(async (id: string) => {
     if (!state.activeAdId) return;
@@ -133,6 +140,21 @@ export const StudioVideoAdPanel: FC = () => {
               {VIDEO_AD_LENGTHS.map((len) => { const on = selLengths.has(len); return (
                 <button key={len} type="button" onClick={() => toggle(setSelLengths, len)} className={`h-[34px] px-[12px] rounded-[8px] border text-[12px] font-[600] ${on ? 'border-ai text-ai bg-ai/10' : 'border-newBorder text-textItemBlur'}`}>{len}s</button>
               ); })}
+            </div>
+          </div>
+          <div className="flex flex-col gap-[4px]">
+            <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-[0.05em]">Music bed</span>
+            <div className="flex items-center gap-[8px]">
+              <select value={musicMood} onChange={(e) => setMusicMood(e.target.value)} className={inputCls} title="Background music mixed under the clip audio">
+                <option value="">none</option>
+                {Array.from(new Set(beds.map((b) => b.mood))).map((m) => (<option key={m} value={m}>{m}</option>))}
+              </select>
+              {musicMood && (
+                <label className="flex items-center gap-[4px] text-[11px] text-textItemBlur" title="Bed volume under the clip">
+                  vol {Math.round(musicVolume * 100)}%
+                  <input type="range" min={0.05} max={0.6} step={0.01} value={musicVolume} onChange={(e) => setMusicVolume(Number(e.target.value))} />
+                </label>
+              )}
             </div>
           </div>
         </div>
