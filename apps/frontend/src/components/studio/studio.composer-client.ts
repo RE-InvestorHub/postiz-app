@@ -109,6 +109,16 @@ export function composeEmail(payload: {
   return req('/compose/email', { method: 'POST', body: JSON.stringify(payload) });
 }
 
+// --- Video ad: channel × length cuts of an existing clip ---
+export const VIDEO_AD_LENGTHS = [6, 15, 30, 60];
+export interface VideoAdCut { id: string; url: string; channelId: string; length: number; w: number; h: number }
+export interface VideoAdSkip { channelId: string; length: number; reason: string }
+export function composeVideoAd(payload: {
+  adId?: string; clipRef: string; channels: string[]; lengths: number[]; copy?: ComposeCopy; brandKitId?: string; addToAd?: boolean;
+}): Promise<{ brandKitId: string; cuts: VideoAdCut[]; skipped: VideoAdSkip[]; sourceDuration: number }> {
+  return req('/compose/video-ad', { method: 'POST', body: JSON.stringify(payload) });
+}
+
 // Build a viewable URL for a brain /assets path or a CDN url.
 export function assetUrl(pathOrUrl: string): string {
   if (/^https?:\/\//.test(pathOrUrl)) return pathOrUrl;

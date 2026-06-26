@@ -31,7 +31,7 @@ import {
   addObject,
   getAdObjects,
 } from '@gitroom/frontend/components/studio/studio.project-client';
-import { composeStill, createTemplateFromStill } from '@gitroom/frontend/components/studio/studio.composer-client';
+import { composeStill, createTemplateFromStill, composeVideoAd } from '@gitroom/frontend/components/studio/studio.composer-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
@@ -438,6 +438,24 @@ export function buildStudioCapabilities(
       handler: async (p: { runId?: string } = {}) => {
         if (!p.runId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'runId required.' }); return; }
         await assembleRun({ runId: p.runId });
+      },
+    },
+    {
+      id: 'compose.cutVideoAd',
+      namespace: 'compose',
+      label: 'Cut an Ad clip into channel × length video-ad variants (ffmpeg render)',
+      params: ['clipRef', 'channels', 'lengths', 'headline', 'cta'],
+      handler: async (p: { clipRef?: string; channels?: string[]; lengths?: number[]; headline?: string; cta?: string; data?: Array<{ label: string; value: string }> } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        if (!p.clipRef) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'clipRef required.' }); return; }
+        await composeVideoAd({
+          adId, clipRef: p.clipRef, addToAd: true,
+          brandKitId: getState().composerBrandKitId || 'default',
+          channels: p.channels && p.channels.length ? p.channels : ['story'],
+          lengths: p.lengths && p.lengths.length ? p.lengths : [6, 15],
+          copy: { headline: p.headline, cta: p.cta, data: p.data },
+        });
       },
     },
   ];
