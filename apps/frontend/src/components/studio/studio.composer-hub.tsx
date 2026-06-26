@@ -9,12 +9,14 @@ import { FC, useState } from 'react';
 import { StudioComposerPanel } from '@gitroom/frontend/components/studio/studio.composer-panel';
 import { StudioCarouselPanel } from '@gitroom/frontend/components/studio/studio.carousel-panel';
 import { StudioEmailPanel } from '@gitroom/frontend/components/studio/studio.email-panel';
+import { StudioVideoAdPanel } from '@gitroom/frontend/components/studio/studio.videoad-panel';
 
-type Kind = 'still' | 'carousel' | 'email';
+type Kind = 'still' | 'carousel' | 'email' | 'videoad';
 const KINDS: { key: Kind; label: string }[] = [
   { key: 'still', label: 'Still post' },
   { key: 'carousel', label: 'Carousel' },
   { key: 'email', label: 'Email' },
+  { key: 'videoad', label: 'Video ad' },
 ];
 
 export const StudioComposerHub: FC = () => {
@@ -32,6 +34,7 @@ export const StudioComposerHub: FC = () => {
       {kind === 'still' && <StudioComposerPanel />}
       {kind === 'carousel' && <StudioCarouselPanel />}
       {kind === 'email' && <StudioEmailPanel />}
+      {kind === 'videoad' && <StudioVideoAdPanel />}
     </div>
   );
 };
