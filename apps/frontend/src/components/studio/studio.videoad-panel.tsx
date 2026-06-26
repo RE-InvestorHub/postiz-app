@@ -10,7 +10,7 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { getAdObjects, addObject, ResolvedObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   listBrandKits, listComposerChannels, composeVideoAd, assetUrl,
-  BrandKit, Channel, VideoAdCut, VideoAdSkip, VIDEO_AD_LENGTHS, DataCallout,
+  BrandKit, Channel, VideoAdCut, VideoAdSkip, VIDEO_AD_LENGTHS, DataCallout, CutStrategy,
 } from '@gitroom/frontend/components/studio/studio.composer-client';
 import { StudioDataRecordBinder } from '@gitroom/frontend/components/studio/studio.datarecord-binder';
 import { listMusicBeds, MusicBed } from '@gitroom/frontend/components/studio/studio.music-client';
@@ -22,6 +22,7 @@ const Spinner: FC<{ size?: number }> = ({ size = 18 }) => (
   </svg>
 );
 function clipUrlOf(rec: any): string | null { if (!rec) return null; if (rec.path) return assetUrl(rec.path); if (rec.cdnUrl) return rec.cdnUrl; return null; }
+const mmss = (s: number) => { const t = Math.max(0, Math.round(s)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 const inputCls = 'h-[40px] px-[10px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
 
 export const StudioVideoAdPanel: FC = () => {
@@ -46,6 +47,7 @@ export const StudioVideoAdPanel: FC = () => {
   const [beds, setBeds] = useState<MusicBed[]>([]);
   const [musicMood, setMusicMood] = useState('');                 // '' = no bed
   const [musicVolume, setMusicVolume] = useState(0.18);
+  const [strategy, setStrategy] = useState<CutStrategy>('smart'); // smart = scene-aligned best window
 
   useEffect(() => { listMusicBeds().then(setBeds).catch(() => {}); }, []);
 
@@ -81,12 +83,13 @@ export const StudioVideoAdPanel: FC = () => {
         adId: state.activeAdId ?? undefined, clipRef: clipId, brandKitId,
         channels: Array.from(selChannels), lengths: Array.from(selLengths),
         copy: { headline: headline.trim() || undefined, cta: cta.trim() || undefined, data: mergedCallouts.filter((c) => c.value.trim() || c.label.trim()) },
+        strategy,
         ...(musicMood ? { music: { mood: musicMood, volume: musicVolume } } : {}),
       });
       setCuts(resp.cuts); setSkipped(resp.skipped);
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(false); }
-  }, [canCut, clipId, selChannels, selLengths, headline, cta, data, recordCallouts, brandKitId, state.activeAdId, musicMood, musicVolume]);
+  }, [canCut, clipId, selChannels, selLengths, headline, cta, data, recordCallouts, brandKitId, state.activeAdId, musicMood, musicVolume, strategy]);
 
   const addToAd = useCallback(async (id: string) => {
     if (!state.activeAdId) return;
@@ -143,6 +146,14 @@ export const StudioVideoAdPanel: FC = () => {
             </div>
           </div>
           <div className="flex flex-col gap-[4px]">
+            <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-[0.05em]">Cut</span>
+            <div className="flex flex-wrap gap-[8px]">
+              {([['smart', 'Smart'], ['head', 'From start']] as [CutStrategy, string][]).map(([val, label]) => { const on = strategy === val; return (
+                <button key={val} type="button" onClick={() => setStrategy(val)} title={val === 'smart' ? 'Detect scenes and keep the best N seconds (skips slow lead-ins)' : 'Keep the first N seconds'} className={`h-[34px] px-[12px] rounded-[8px] border text-[12px] font-[600] ${on ? 'border-ai text-ai bg-ai/10' : 'border-newBorder text-textItemBlur'}`}>{label}</button>
+              ); })}
+            </div>
+          </div>
+          <div className="flex flex-col gap-[4px]">
             <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-[0.05em]">Music bed</span>
             <div className="flex items-center gap-[8px]">
               <select value={musicMood} onChange={(e) => setMusicMood(e.target.value)} className={inputCls} title="Background music mixed under the clip audio">
@@ -193,7 +204,7 @@ export const StudioVideoAdPanel: FC = () => {
           {cuts.map((c) => (
             <div key={c.id} className="rounded-[8px] overflow-hidden border border-newBorder bg-newBgColorInner flex flex-col">
               <video src={c.url} controls className="w-full bg-black" />
-              <div className="px-[8px] py-[4px] text-[11px] text-textItemBlur">{c.channelId} · {c.length}s · {c.w}×{c.h}</div>
+              <div className="px-[8px] py-[4px] text-[11px] text-textItemBlur">{c.channelId} · {c.length}s · {c.w}×{c.h} · <span className={c.reason === 'scene' ? 'text-ai' : ''}>{c.reason === 'scene' ? `best @ ${mmss(c.start ?? 0)}` : 'from start'}</span></div>
               <div className="flex">
                 <a href={c.url} download className="flex-1 h-[28px] flex items-center justify-center text-[12px] font-[600] text-btnText border-t border-newBorder">Download</a>
                 <button type="button" disabled={addedIds.has(c.id)} onClick={() => addToAd(c.id)} className="flex-1 h-[28px] text-[12px] font-[600] text-white bg-btnPrimary disabled:opacity-50 border-t border-newBorder">
