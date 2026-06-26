@@ -23,7 +23,6 @@ import {
 } from 'react';
 import {
   Capability,
-  listCapabilities,
 } from '@gitroom/frontend/components/studio/studio.capabilities';
 import {
   BrainEvent,
@@ -152,8 +151,6 @@ export const StudioAgentPanel: FC<{
   /** Called with the final brief when the user clicks Create. */
   onCreate?: (brief: Record<string, unknown>) => void;
 }> = ({ caps, onClose, onCreate }) => {
-  const capabilities = listCapabilities(caps);
-
   // Chat state
   const [messages, setMessages] = useState<InternalMessage[]>([]);
   const [input, setInput] = useState('');
@@ -441,25 +438,6 @@ export const StudioAgentPanel: FC<{
                 ? 'Ask the agent to help set up your content brief. It will drive the Studio controls as you answer its questions.'
                 : 'Connect the brain (NEXT_PUBLIC_BRAIN_URL) to enable the agent.'}
             </p>
-
-            {BRAIN_CONFIGURED && (
-              <div>
-                <div className="text-[11px] uppercase tracking-wide text-[var(--new-table-text)] mb-[6px]">
-                  Capabilities ({capabilities.length})
-                </div>
-                <div className="flex flex-col gap-[4px]">
-                  {capabilities.map((c) => (
-                    <div
-                      key={c.id}
-                      className="rounded-[6px] bg-newBgColorInner px-[10px] py-[6px] border border-[var(--new-table-border)]"
-                    >
-                      <div className="text-[12px] font-[600] text-btnText">{c.id}</div>
-                      <div className="text-[11px] text-[var(--new-table-text)]">{c.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
