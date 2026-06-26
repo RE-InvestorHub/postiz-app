@@ -555,8 +555,8 @@ export function buildStudioCapabilities(
       id: 'compose.cutVideoAd',
       namespace: 'compose',
       label: 'Cut an Ad clip into channel × length video-ad variants (ffmpeg render)',
-      params: ['clipRef', 'channels', 'lengths', 'headline', 'cta', 'music'],
-      handler: async (p: { clipRef?: string; channels?: string[]; lengths?: number[]; headline?: string; cta?: string; data?: Array<{ label: string; value: string }>; music?: { mood?: string; bedId?: string; volume?: number } } = {}) => {
+      params: ['clipRef', 'channels', 'lengths', 'strategy', 'headline', 'cta', 'music'],
+      handler: async (p: { clipRef?: string; channels?: string[]; lengths?: number[]; strategy?: 'smart' | 'head'; headline?: string; cta?: string; data?: Array<{ label: string; value: string }>; music?: { mood?: string; bedId?: string; volume?: number } } = {}) => {
         const adId = getState().activeAdId;
         if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
         if (!p.clipRef) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'clipRef required.' }); return; }
@@ -566,6 +566,7 @@ export function buildStudioCapabilities(
           channels: p.channels && p.channels.length ? p.channels : ['story'],
           lengths: p.lengths && p.lengths.length ? p.lengths : [6, 15],
           copy: { headline: p.headline, cta: p.cta, data: p.data },
+          ...(p.strategy === 'head' ? { strategy: 'head' as const } : {}),   // smart is the brain default
           ...(p.music && (p.music.mood || p.music.bedId) ? { music: p.music } : {}),
         });
       },
