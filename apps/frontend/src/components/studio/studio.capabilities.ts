@@ -507,13 +507,17 @@ export function buildStudioCapabilities(
       id: 'compose.startVideoRun',
       namespace: 'compose',
       label: 'Plan a short from the active Ad and start the video pipeline (spends credits)',
-      params: ['core_message', 'cta', 'visual_style', 'aspect_ratio'],
-      handler: async (p: { core_message?: string; cta?: string; visual_style?: string; aspect_ratio?: string } = {}) => {
+      params: ['core_message', 'cta', 'visual_style', 'aspect_ratio', 'voiceTone', 'music'],
+      handler: async (p: { core_message?: string; cta?: string; visual_style?: string; aspect_ratio?: string; voiceTone?: string; music?: { mood?: string; bedId?: string; volume?: number } } = {}) => {
         const adId = getState().activeAdId;
         if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
         if (!p.core_message?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'core_message required.' }); return; }
         const plan = await planVideo({ adId, core_message: p.core_message.trim(), cta: p.cta, visual_style: p.visual_style, aspect_ratio: p.aspect_ratio });
-        const started = await startRun({ storyboard: plan.storyboard });
+        const started = await startRun({
+          storyboard: plan.storyboard,
+          ...(p.voiceTone ? { voiceTone: p.voiceTone } : {}),
+          ...(p.music && (p.music.mood || p.music.bedId) ? { music: p.music } : {}),
+        });
         dispatch({ type: 'SET_STATUS', status: 'idle', error: `video run started: ${started.runId}` });
       },
     },
@@ -551,8 +555,8 @@ export function buildStudioCapabilities(
       id: 'compose.cutVideoAd',
       namespace: 'compose',
       label: 'Cut an Ad clip into channel × length video-ad variants (ffmpeg render)',
-      params: ['clipRef', 'channels', 'lengths', 'headline', 'cta'],
-      handler: async (p: { clipRef?: string; channels?: string[]; lengths?: number[]; headline?: string; cta?: string; data?: Array<{ label: string; value: string }> } = {}) => {
+      params: ['clipRef', 'channels', 'lengths', 'headline', 'cta', 'music'],
+      handler: async (p: { clipRef?: string; channels?: string[]; lengths?: number[]; headline?: string; cta?: string; data?: Array<{ label: string; value: string }>; music?: { mood?: string; bedId?: string; volume?: number } } = {}) => {
         const adId = getState().activeAdId;
         if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
         if (!p.clipRef) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'clipRef required.' }); return; }
@@ -562,6 +566,7 @@ export function buildStudioCapabilities(
           channels: p.channels && p.channels.length ? p.channels : ['story'],
           lengths: p.lengths && p.lengths.length ? p.lengths : [6, 15],
           copy: { headline: p.headline, cta: p.cta, data: p.data },
+          ...(p.music && (p.music.mood || p.music.bedId) ? { music: p.music } : {}),
         });
       },
     },

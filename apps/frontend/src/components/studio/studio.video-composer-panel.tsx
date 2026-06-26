@@ -16,6 +16,9 @@ import {
   estimateVideo, planVideo, startRun, pollRun, acceptShot, regenShot, assembleRun, clipUrl,
   CostEstimate, PipelineRun, PipelineShot,
 } from '@gitroom/frontend/components/studio/studio.pipeline-client';
+import { listMusicBeds, MusicBed } from '@gitroom/frontend/components/studio/studio.music-client';
+
+const VO_TONES = ['conversational', 'warm', 'authoritative', 'energetic', 'calm'];
 
 const Spinner: FC<{ size?: number }> = ({ size = 18 }) => (
   <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -47,6 +50,15 @@ export const StudioVideoComposerPanel: FC = () => {
   const [characterRef, setCharacterRef] = useState<string>('');   // optional Ad image id
   const [dryRun, setDryRun] = useState(false);                    // stub clips, no credit spend
 
+  // Audio: VO tone (+ advanced raw settings) and a music bed (mixed under the VO, auto-ducked).
+  const [voTone, setVoTone] = useState('conversational');
+  const [advOpen, setAdvOpen] = useState(false);
+  const [stability, setStability] = useState(0.45);
+  const [style, setStyle] = useState(0.10);
+  const [beds, setBeds] = useState<MusicBed[]>([]);
+  const [musicMood, setMusicMood] = useState('');                  // '' = no music
+  const [musicVolume, setMusicVolume] = useState(0.18);
+
   const [images, setImages] = useState<ResolvedObject[]>([]);
   const [plan, setPlan] = useState<{ storyboard: any; shotCount: number } | null>(null);
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
@@ -63,6 +75,9 @@ export const StudioVideoComposerPanel: FC = () => {
     if (!state.activeAdId) { setImages([]); return; }
     getAdObjects(state.activeAdId).then((objs) => setImages(objs.filter((o) => o.type === 'image'))).catch(() => {});
   }, [state.activeAdId]);
+
+  // Load the music-bed library once (for the mood picker).
+  useEffect(() => { listMusicBeds().then(setBeds).catch(() => {}); }, []);
 
   // Poll the run while it's active.
   useEffect(() => {
@@ -108,11 +123,17 @@ export const StudioVideoComposerPanel: FC = () => {
     if (!plan?.storyboard) return;
     setBusy('compose'); setError(null);
     try {
-      const started = await startRun({ storyboard: plan.storyboard, dryRun });
+      const started = await startRun({
+        storyboard: plan.storyboard,
+        dryRun,
+        voiceTone: voTone,
+        ...(advOpen ? { voiceSettings: { stability, style } } : {}),
+        ...(musicMood ? { music: { mood: musicMood, volume: musicVolume } } : {}),
+      });
       setRun(await pollRun(started.runId));
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(null); }
-  }, [plan]);
+  }, [plan, dryRun, voTone, advOpen, stability, style, musicMood, musicVolume]);
 
   const doAccept = useCallback(async (shotId: string) => {
     if (!run?.runId) return;
@@ -203,6 +224,40 @@ export const StudioVideoComposerPanel: FC = () => {
             {busy === 'plan' ? <><Spinner size={14} /> Planning…</> : 'Plan & estimate'}
           </button>
         </div>
+
+        {/* Audio: VO tone (+ advanced) and a music bed (mixed under the VO, auto-ducked). */}
+        <div className="flex flex-wrap gap-[10px] items-end border-t border-newBorder pt-[12px]">
+          <label className="flex flex-col gap-[4px]"><span className="text-[11px] font-[600] text-textItemBlur uppercase">VO tone</span>
+            <select value={voTone} onChange={(e) => setVoTone(e.target.value)} className={inputCls}>
+              {VO_TONES.map((t) => (<option key={t} value={t}>{t}</option>))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-[4px]"><span className="text-[11px] font-[600] text-textItemBlur uppercase">Music</span>
+            <select value={musicMood} onChange={(e) => setMusicMood(e.target.value)} className={inputCls} title="Background music bed, mixed under the VO and auto-ducked">
+              <option value="">none</option>
+              {Array.from(new Set(beds.map((b) => b.mood))).map((m) => (<option key={m} value={m}>{m}</option>))}
+            </select>
+          </label>
+          {musicMood && (
+            <label className="flex flex-col gap-[4px]" title="Music bed volume (under the VO)"><span className="text-[11px] font-[600] text-textItemBlur uppercase">Bed vol {Math.round(musicVolume * 100)}%</span>
+              <input type="range" min={0.05} max={0.6} step={0.01} value={musicVolume} onChange={(e) => setMusicVolume(Number(e.target.value))} className="h-[40px]" />
+            </label>
+          )}
+          <button type="button" onClick={() => setAdvOpen((v) => !v)} className="h-[40px] px-[10px] text-[12px] text-textItemBlur hover:text-btnText" title="Advanced VO settings">
+            {advOpen ? '▾ Advanced VO' : '▸ Advanced VO'}
+          </button>
+        </div>
+        {advOpen && (
+          <div className="flex flex-wrap gap-[16px] items-end bg-newBgColorInner rounded-[8px] p-[10px]">
+            <label className="flex flex-col gap-[4px]"><span className="text-[11px] font-[600] text-textItemBlur uppercase">Stability {stability.toFixed(2)}</span>
+              <input type="range" min={0} max={1} step={0.05} value={stability} onChange={(e) => setStability(Number(e.target.value))} />
+            </label>
+            <label className="flex flex-col gap-[4px]"><span className="text-[11px] font-[600] text-textItemBlur uppercase">Style {style.toFixed(2)}</span>
+              <input type="range" min={0} max={1} step={0.05} value={style} onChange={(e) => setStyle(Number(e.target.value))} />
+            </label>
+            <span className="text-[11px] text-textItemBlur">Overrides the tone preset when set.</span>
+          </div>
+        )}
 
         {error && <div className="text-[12px] text-red-400">{error}</div>}
       </div>

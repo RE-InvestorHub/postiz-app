@@ -67,8 +67,11 @@ export function planVideo(payload: {
 }
 
 // --- Reused /pipeline/* engine ---
+export interface VoiceSettings { stability?: number; style?: number; similarity_boost?: number; use_speaker_boost?: boolean }
+export interface MusicSpec { bedId?: string; mood?: string; bpm?: number; volume?: number; duckRatio?: number }
 export function startRun(payload: {
   storyboard: any; platforms?: string[]; renderFormats?: string[]; voiceId?: string; dryRun?: boolean;
+  voiceTone?: string; voiceSettings?: VoiceSettings; music?: MusicSpec;
 }): Promise<{ runId: string } & Partial<PipelineRun>> {
   return req('/pipeline/run', { method: 'POST', body: JSON.stringify(payload) });
 }
