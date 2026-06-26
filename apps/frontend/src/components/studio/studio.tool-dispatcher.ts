@@ -98,6 +98,10 @@ export function requiresApproval(toolName: string): boolean {
     // Video composer — accepting a shot is curation; startVideoRun / regenShot /
     // assembleVideo all SPEND and are deliberately NOT here (stay gated).
     'compose.acceptShot',
+    // Data records — structured data; no spend.
+    'data.createRecord',
+    'data.setField',
+    'data.selectRecord',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }
