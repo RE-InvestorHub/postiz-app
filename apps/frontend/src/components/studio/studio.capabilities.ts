@@ -32,6 +32,7 @@ import {
   getAdObjects,
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { composeStill, createTemplateFromStill } from '@gitroom/frontend/components/studio/studio.composer-client';
+import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -390,6 +391,53 @@ export function buildStudioCapabilities(
           channels: p.channels && p.channels.length ? p.channels : ['ig_square'],
         });
         dispatch({ type: 'SET_COMPOSER_TEMPLATE', templateId: t.template_id });
+      },
+    },
+
+    // --- Video composer (pipeline). startVideoRun/regenShot/assemble SPEND → gated;
+    //     acceptShot is curation → auto. Async by runId (returned to the agent). ---
+    {
+      id: 'compose.startVideoRun',
+      namespace: 'compose',
+      label: 'Plan a short from the active Ad and start the video pipeline (spends credits)',
+      params: ['core_message', 'cta', 'visual_style', 'aspect_ratio'],
+      handler: async (p: { core_message?: string; cta?: string; visual_style?: string; aspect_ratio?: string } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        if (!p.core_message?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'core_message required.' }); return; }
+        const plan = await planVideo({ adId, core_message: p.core_message.trim(), cta: p.cta, visual_style: p.visual_style, aspect_ratio: p.aspect_ratio });
+        const started = await startRun({ storyboard: plan.storyboard });
+        dispatch({ type: 'SET_STATUS', status: 'idle', error: `video run started: ${started.runId}` });
+      },
+    },
+    {
+      id: 'compose.acceptShot',
+      namespace: 'compose',
+      label: 'Accept a generated shot in a video run',
+      params: ['runId', 'shotId'],
+      handler: async (p: { runId?: string; shotId?: string } = {}) => {
+        if (!p.runId || !p.shotId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'runId and shotId required.' }); return; }
+        await pipelineAcceptShot({ runId: p.runId, shotId: p.shotId });
+      },
+    },
+    {
+      id: 'compose.regenShot',
+      namespace: 'compose',
+      label: 'Reject a shot with feedback and regenerate it (spends credits)',
+      params: ['runId', 'shotId', 'feedback'],
+      handler: async (p: { runId?: string; shotId?: string; feedback?: string } = {}) => {
+        if (!p.runId || !p.shotId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'runId and shotId required.' }); return; }
+        await pipelineRegenShot({ runId: p.runId, shotId: p.shotId, feedback: p.feedback });
+      },
+    },
+    {
+      id: 'compose.assembleVideo',
+      namespace: 'compose',
+      label: 'Assemble the short once all shots are accepted (spends a render)',
+      params: ['runId'],
+      handler: async (p: { runId?: string } = {}) => {
+        if (!p.runId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'runId required.' }); return; }
+        await assembleRun({ runId: p.runId });
       },
     },
   ];
