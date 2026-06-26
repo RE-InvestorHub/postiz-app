@@ -41,7 +41,8 @@ export const StudioVideoComposerPanel: FC = () => {
   const [cta, setCta] = useState('');
   const [visualStyle, setVisualStyle] = useState('cinematic, modern, clean');
   const [aspectRatio, setAspectRatio] = useState('9:16');
-  const [durationS, setDurationS] = useState(6);
+  const [length, setLength] = useState('15s');     // total format → drives shot count
+  const durationS = 6;                              // per-clip seconds (for the cost estimate)
   const [model, setModel] = useState('veo3_1');
   const [characterRef, setCharacterRef] = useState<string>('');   // optional Ad image id
   const [dryRun, setDryRun] = useState(false);                    // stub clips, no credit spend
@@ -86,8 +87,9 @@ export const StudioVideoComposerPanel: FC = () => {
     cta: cta.trim() || undefined,
     visual_style: visualStyle.trim() || undefined,
     aspect_ratio: aspectRatio,
+    format: length,
     ...(charRefUrl ? { character_reference: charRefUrl } : {}),
-  }), [state.activeAdId, coreMessage, cta, visualStyle, aspectRatio, charRefUrl]);
+  }), [state.activeAdId, coreMessage, cta, visualStyle, aspectRatio, length, charRefUrl]);
 
   const doPlan = useCallback(async () => {
     if (!coreMessage.trim()) return;
@@ -179,9 +181,9 @@ export const StudioVideoComposerPanel: FC = () => {
               {['9:16', '16:9', '1:1'].map((a) => (<option key={a} value={a}>{a}</option>))}
             </select>
           </label>
-          <label className="flex flex-col gap-[4px]"><span className="text-[11px] font-[600] text-textItemBlur uppercase">Shot secs</span>
-            <select value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className={inputCls}>
-              {[4, 6, 8].map((d) => (<option key={d} value={d}>{d}s</option>))}
+          <label className="flex flex-col gap-[4px]"><span className="text-[11px] font-[600] text-textItemBlur uppercase">Length</span>
+            <select value={length} onChange={(e) => setLength(e.target.value)} className={inputCls} title="Total length — drives the shot count + cost">
+              {['6s', '15s', '30s'].map((d) => (<option key={d} value={d}>{d}</option>))}
             </select>
           </label>
           {images.length > 0 && (
