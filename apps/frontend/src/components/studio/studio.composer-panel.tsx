@@ -137,11 +137,13 @@ export const StudioComposerPanel: FC = () => {
     if (!saveName.trim()) return;
     setSavingTpl(true); setError(null);
     try {
+      const fc = channels.find((c) => selectedChannels.has(c.id)) || channels[0];
+      const layoutOut = positioning && layout ? { ...layout, ...(fc ? { baseAspect: { w: fc.w, h: fc.h } } : {}) } : null;
       const t = await createTemplateFromStill({
         name: saveName.trim(),
         copy: { headline, sub, cta, data },
         channels: Array.from(selectedChannels),
-        ...(positioning && layout ? { layout } : {}),
+        ...(layoutOut ? { layout: layoutOut } : {}),
       });
       setTemplates((cur) => [...cur, t]);
       appliedTplRef.current = t.template_id;   // pre-arm: don't re-apply (would wipe the values we just saved)
@@ -149,7 +151,7 @@ export const StudioComposerPanel: FC = () => {
       setSaveName('');
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setSavingTpl(false); }
-  }, [saveName, headline, sub, cta, data, selectedChannels, positioning, layout]);
+  }, [saveName, headline, sub, cta, data, selectedChannels, channels, positioning, layout]);
 
   const removeTemplate = useCallback(async (id: string) => {
     try { await deleteTemplate(id); setTemplates((cur) => cur.filter((t) => t.template_id !== id)); if (activeTemplateId === id) setActiveTemplateId(''); }
@@ -178,6 +180,10 @@ export const StudioComposerPanel: FC = () => {
     if (!heroRef || selectedChannels.size === 0) return;
     setBusy(true); setError(null); setResults([]); setAddedIds(new Set());
     try {
+      // Stamp the authoring aspect (the first selected channel) so the brain can re-anchor
+      // the layout into each output channel. No-op when not positioning.
+      const fc = channels.find((c) => selectedChannels.has(c.id)) || channels[0];
+      const layoutOut = positioning && layout ? { ...layout, ...(fc ? { baseAspect: { w: fc.w, h: fc.h } } : {}) } : null;
       const resp = await composeStill({
         imageRef: heroRef,
         adId: state.activeAdId ?? undefined,
@@ -185,7 +191,7 @@ export const StudioComposerPanel: FC = () => {
         channels: Array.from(selectedChannels),
         templateId: activeTemplateId || undefined,
         slotBindings,
-        ...(positioning && layout ? { layout } : {}),
+        ...(layoutOut ? { layout: layoutOut } : {}),
         copy: {
           headline: headline.trim() || undefined,
           sub: sub.trim() || undefined,
@@ -196,7 +202,7 @@ export const StudioComposerPanel: FC = () => {
       setResults(resp.results);
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(false); }
-  }, [heroRef, slotBindings, selectedChannels, brandKitId, activeTemplateId, headline, sub, cta, data, recordCallouts, positioning, layout, state.activeAdId]);
+  }, [heroRef, slotBindings, selectedChannels, channels, brandKitId, activeTemplateId, headline, sub, cta, data, recordCallouts, positioning, layout, state.activeAdId]);
 
   const addToAd = useCallback(async (id: string) => {
     if (!state.activeAdId) return;
