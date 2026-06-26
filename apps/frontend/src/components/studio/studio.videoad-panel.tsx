@@ -12,6 +12,7 @@ import {
   listBrandKits, listComposerChannels, composeVideoAd, assetUrl,
   BrandKit, Channel, VideoAdCut, VideoAdSkip, VIDEO_AD_LENGTHS, DataCallout,
 } from '@gitroom/frontend/components/studio/studio.composer-client';
+import { StudioDataRecordBinder } from '@gitroom/frontend/components/studio/studio.datarecord-binder';
 
 const Spinner: FC<{ size?: number }> = ({ size = 18 }) => (
   <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -37,6 +38,7 @@ export const StudioVideoAdPanel: FC = () => {
   const [data, setData] = useState<DataCallout[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recordCallouts, setRecordCallouts] = useState<DataCallout[]>([]);
   const [cuts, setCuts] = useState<VideoAdCut[]>([]);
   const [skipped, setSkipped] = useState<VideoAdSkip[]>([]);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
@@ -60,6 +62,9 @@ export const StudioVideoAdPanel: FC = () => {
   const patchCallout = (i: number, p: Partial<DataCallout>) => setData((d) => d.map((c, j) => (j === i ? { ...c, ...p } : c)));
   const removeCallout = (i: number) => setData((d) => d.filter((_, j) => j !== i));
 
+  // Record callouts (data-bound) merge ahead of manual ones; manual rows whose label the record covers are dropped.
+  const recLabels = new Set(recordCallouts.map((c) => c.label.trim().toLowerCase()));
+  const mergedCallouts = [...recordCallouts, ...data.filter((c) => !recLabels.has(c.label.trim().toLowerCase()))];
   const canCut = useMemo(() => !!clipId && selChannels.size > 0 && selLengths.size > 0 && !busy, [clipId, selChannels, selLengths, busy]);
 
   const doCut = useCallback(async () => {
@@ -69,12 +74,12 @@ export const StudioVideoAdPanel: FC = () => {
       const resp = await composeVideoAd({
         adId: state.activeAdId ?? undefined, clipRef: clipId, brandKitId,
         channels: Array.from(selChannels), lengths: Array.from(selLengths),
-        copy: { headline: headline.trim() || undefined, cta: cta.trim() || undefined, data: data.filter((c) => c.value.trim() || c.label.trim()) },
+        copy: { headline: headline.trim() || undefined, cta: cta.trim() || undefined, data: mergedCallouts.filter((c) => c.value.trim() || c.label.trim()) },
       });
       setCuts(resp.cuts); setSkipped(resp.skipped);
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(false); }
-  }, [canCut, clipId, selChannels, selLengths, headline, cta, data, brandKitId, state.activeAdId]);
+  }, [canCut, clipId, selChannels, selLengths, headline, cta, data, recordCallouts, brandKitId, state.activeAdId]);
 
   const addToAd = useCallback(async (id: string) => {
     if (!state.activeAdId) return;
@@ -137,9 +142,11 @@ export const StudioVideoAdPanel: FC = () => {
           <input value={headline} onChange={(e) => setHeadline(e.target.value)} placeholder="Supers headline" className={`${inputCls} flex-1`} />
           <input value={cta} onChange={(e) => setCta(e.target.value)} placeholder="CTA (optional)" className={`${inputCls} w-[160px]`} />
         </div>
+        {/* Data record — auto-fill supers callouts from a reusable record */}
+        <StudioDataRecordBinder adId={state.activeAdId} onCalloutsChange={setRecordCallouts} />
         <div className="flex flex-col gap-[6px]">
           <div className="flex items-center gap-[8px]">
-            <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-[0.05em]">Data callouts</span>
+            <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-[0.05em]">Manual callouts</span>
             <button type="button" onClick={addCallout} className="ml-auto h-[28px] px-[10px] rounded-[8px] border border-newBorder text-btnText text-[12px] font-[600]">+ Add</button>
           </div>
           {data.map((c, i) => (

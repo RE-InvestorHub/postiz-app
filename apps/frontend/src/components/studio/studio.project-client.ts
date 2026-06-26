@@ -24,6 +24,7 @@ export interface Ad {
   ad_id: string;
   campaign_id: string;
   name: string;
+  data_record_id?: string | null;
   objects: AdObject[];
 }
 
@@ -55,6 +56,10 @@ export function listAds(campaignId: string): Promise<Ad[]> {
 }
 export function createAd(payload: { campaignId: string; name: string }): Promise<Ad> {
   return req<Ad>('/ads/create', { method: 'POST', body: JSON.stringify(payload) });
+}
+export function getAd(adId: string): Promise<Ad> { return req<Ad>(`/ads/${encodeURIComponent(adId)}`); }
+export function updateAd(id: string, patch: Record<string, unknown>): Promise<Ad> {
+  return req<Ad>('/ads/update', { method: 'POST', body: JSON.stringify({ id, patch }) });
 }
 export function getAdObjects(adId: string): Promise<ResolvedObject[]> {
   return req<ResolvedObject[]>(`/ads/${encodeURIComponent(adId)}/objects`);

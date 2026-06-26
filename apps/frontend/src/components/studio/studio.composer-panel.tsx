@@ -17,6 +17,7 @@ import {
   BrandKit, Channel, ComposeResult, DataCallout, ComposerTemplate, TemplateSlot,
 } from '@gitroom/frontend/components/studio/studio.composer-client';
 import { StudioSupersCanvas, SupersLayout, defaultLayout } from '@gitroom/frontend/components/studio/studio.supers-canvas';
+import { StudioDataRecordBinder } from '@gitroom/frontend/components/studio/studio.datarecord-binder';
 
 const Spinner: FC<{ size?: number }> = ({ size = 18 }) => (
   <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -62,6 +63,7 @@ export const StudioComposerPanel: FC = () => {
   const [data, setData] = useState<DataCallout[]>([]);
   const [positioning, setPositioning] = useState(false);
   const [layout, setLayout] = useState<SupersLayout | null>(null);
+  const [recordCallouts, setRecordCallouts] = useState<DataCallout[]>([]);
 
   const [saveName, setSaveName] = useState('');
   const [savingTpl, setSavingTpl] = useState(false);
@@ -156,15 +158,20 @@ export const StudioComposerPanel: FC = () => {
 
   const requiredBound = slots.filter((s) => s.required).every((s) => slotBindings[s.key]);
   const heroRef = slotBindings[slots[0]?.key];
+  // Merge record callouts ahead of manual ones; a manual/template row whose LABEL the
+  // record already covers is dropped (record wins) — so a Use-template label like "Price"
+  // is auto-filled by the active record instead of showing an empty duplicate.
+  const recLabels = new Set(recordCallouts.map((c) => c.label.trim().toLowerCase()));
+  const allCallouts = [...recordCallouts, ...data.filter((c) => !recLabels.has(c.label.trim().toLowerCase()))];
   // Supers drag-canvas inputs.
-  const currentCopy = { headline, sub, cta, data };
+  const currentCopy = { headline, sub, cta, data: allCallouts };
   const heroPreviewUrl = heroRef ? srcUrl(images.find((o) => o.id === heroRef)?.record) : null;
   const firstChannel = channels.find((c) => selectedChannels.has(c.id)) || channels[0];
   const previewAspect = firstChannel ? firstChannel.w / firstChannel.h : 1;
   const activeRoles = kits.find((k) => k.brand_kit_id === brandKitId)?.roles || {};
   const canCompose = useMemo(
-    () => !!heroRef && requiredBound && selectedChannels.size > 0 && (!!headline.trim() || data.some((c) => c.value.trim())) && !busy,
-    [heroRef, requiredBound, selectedChannels, headline, data, busy],
+    () => !!heroRef && requiredBound && selectedChannels.size > 0 && (!!headline.trim() || data.some((c) => c.value.trim()) || recordCallouts.length > 0) && !busy,
+    [heroRef, requiredBound, selectedChannels, headline, data, recordCallouts, busy],
   );
 
   const doCompose = useCallback(async () => {
@@ -183,13 +190,13 @@ export const StudioComposerPanel: FC = () => {
           headline: headline.trim() || undefined,
           sub: sub.trim() || undefined,
           cta: cta.trim() || undefined,
-          data: data.filter((c) => c.value.trim() || c.label.trim()),
+          data: allCallouts.filter((c) => c.value.trim() || c.label.trim()),
         },
       });
       setResults(resp.results);
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(false); }
-  }, [heroRef, slotBindings, selectedChannels, brandKitId, activeTemplateId, headline, sub, cta, data, positioning, layout, state.activeAdId]);
+  }, [heroRef, slotBindings, selectedChannels, brandKitId, activeTemplateId, headline, sub, cta, data, recordCallouts, positioning, layout, state.activeAdId]);
 
   const addToAd = useCallback(async (id: string) => {
     if (!state.activeAdId) return;
@@ -286,11 +293,14 @@ export const StudioComposerPanel: FC = () => {
           </div>
         </div>
 
-        {/* Data callouts */}
+        {/* Data record — auto-fill callouts from a reusable record (any vertical) */}
+        <StudioDataRecordBinder adId={state.activeAdId} onCalloutsChange={setRecordCallouts} />
+
+        {/* Data callouts (manual one-offs; record callouts are merged ahead of these) */}
         <div className="flex flex-col gap-[8px]">
           <div className="flex items-center gap-[8px]">
-            <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-[0.05em]">Data callouts</span>
-            <span className="text-[11px] text-textItemBlur">price · beds · cap rate… (overlaid, never AI-generated)</span>
+            <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-[0.05em]">Manual callouts</span>
+            <span className="text-[11px] text-textItemBlur">one-offs (overlaid, never AI-generated)</span>
             <button type="button" onClick={addCallout} className="ml-auto h-[28px] px-[10px] rounded-[8px] border border-newBorder text-btnText text-[12px] font-[600]">+ Add</button>
           </div>
           {data.map((c, i) => (

@@ -30,7 +30,9 @@ import {
   createAd,
   addObject,
   getAdObjects,
+  updateAd,
 } from '@gitroom/frontend/components/studio/studio.project-client';
+import { createFromPreset as createDataRecordPreset, setRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
 import { composeStill, createTemplateFromStill, composeVideoAd } from '@gitroom/frontend/components/studio/studio.composer-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
@@ -457,6 +459,40 @@ export function buildStudioCapabilities(
           lengths: p.lengths && p.lengths.length ? p.lengths : [6, 15],
           copy: { headline: p.headline, cta: p.cta, data: p.data },
         });
+      },
+    },
+
+    // --- Data records (data-bound supers). Curation, no spend → auto-approved. ---
+    {
+      id: 'data.createRecord',
+      namespace: 'data',
+      label: 'Create a data record from a preset (product/service/event/offer/real_estate/blank) and link it to the ad',
+      params: ['name', 'kind'],
+      handler: async (p: { name?: string; kind?: string } = {}) => {
+        const adId = getState().activeAdId;
+        const r = await createDataRecordPreset({ name: p.name?.trim() || `New ${p.kind || 'record'}`, kind: p.kind || 'blank' });
+        if (adId) { try { await updateAd(adId, { data_record_id: r.record_id }); } catch { /* */ } }
+      },
+    },
+    {
+      id: 'data.setField',
+      namespace: 'data',
+      label: 'Set a field (label + value) on a data record',
+      params: ['recordId', 'label', 'value'],
+      handler: async (p: { recordId?: string; key?: string; label?: string; value?: string } = {}) => {
+        if (!p.recordId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'recordId required.' }); return; }
+        await setRecordField({ id: p.recordId, field: { key: p.key, label: p.label, value: p.value } });
+      },
+    },
+    {
+      id: 'data.selectRecord',
+      namespace: 'data',
+      label: 'Set the active data record on the ad',
+      params: ['recordId'],
+      handler: async (p: { recordId?: string } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        await updateAd(adId, { data_record_id: p.recordId || null });
       },
     },
   ];
