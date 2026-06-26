@@ -31,7 +31,7 @@ import {
   addObject,
   getAdObjects,
 } from '@gitroom/frontend/components/studio/studio.project-client';
-import { composeStill } from '@gitroom/frontend/components/studio/studio.composer-client';
+import { composeStill, createTemplateFromStill } from '@gitroom/frontend/components/studio/studio.composer-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -362,6 +362,34 @@ export function buildStudioCapabilities(
           channels: p.channels && p.channels.length ? p.channels : ['ig_square'],
           copy: { headline: p.headline, sub: p.sub, cta: p.cta, data: p.data },
         });
+      },
+    },
+
+    // --- Templates (reusable Composer structure). Curation, no spend → auto-approved. ---
+    {
+      id: 'template.useTemplate',
+      namespace: 'template',
+      label: 'Make a Composer template active (pre-fills copy + channels)',
+      params: ['templateId'],
+      handler: (p: { templateId?: string } = {}) =>
+        dispatch({ type: 'SET_COMPOSER_TEMPLATE', templateId: p.templateId || '' }),
+    },
+    {
+      id: 'template.saveAsTemplate',
+      namespace: 'template',
+      label: 'Save the current Still structure as a reusable template',
+      params: ['name', 'headline', 'sub', 'cta', 'channels'],
+      handler: async (p: {
+        name?: string; headline?: string; sub?: string; cta?: string;
+        data?: Array<{ label: string; value: string }>; channels?: string[];
+      } = {}) => {
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Template name required.' }); return; }
+        const t = await createTemplateFromStill({
+          name: p.name.trim(),
+          copy: { headline: p.headline, sub: p.sub, cta: p.cta, data: p.data },
+          channels: p.channels && p.channels.length ? p.channels : ['ig_square'],
+        });
+        dispatch({ type: 'SET_COMPOSER_TEMPLATE', templateId: t.template_id });
       },
     },
   ];

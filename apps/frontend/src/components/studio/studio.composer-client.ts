@@ -67,8 +67,30 @@ export function composeStill(payload: {
   brandKitId?: string;
   adId?: string;
   addToAd?: boolean;
+  templateId?: string;
+  slotBindings?: Record<string, string>;
 }): Promise<ComposeResponse> {
   return req<ComposeResponse>('/compose/still', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+// --- Composer Templates (reusable structure: slots + copy + channels) ---
+export interface TemplateSlot { key: string; type: string; required: boolean }
+export interface ComposerTemplate {
+  template_id: string;
+  name: string;
+  kind: string;
+  slots: TemplateSlot[];
+  copy: { headline?: string; sub?: string; cta?: string; dataLabels?: { label: string }[] };
+  channels: string[];
+}
+export function listTemplates(kind?: string): Promise<ComposerTemplate[]> {
+  return req<ComposerTemplate[]>(`/composer/templates${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`);
+}
+export function createTemplateFromStill(payload: { name: string; copy: ComposeCopy; channels: string[] }): Promise<ComposerTemplate> {
+  return req<ComposerTemplate>('/composer/templates/createFromStill', { method: 'POST', body: JSON.stringify(payload) });
+}
+export function deleteTemplate(id: string): Promise<{ ok: boolean }> {
+  return req<{ ok: boolean }>('/composer/templates/delete', { method: 'POST', body: JSON.stringify({ id }) });
 }
 
 // Build a viewable URL for a brain /assets path or a CDN url.
