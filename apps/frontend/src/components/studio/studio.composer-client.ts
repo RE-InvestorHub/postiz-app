@@ -72,7 +72,7 @@ export function composeStill(payload: {
   addToAd?: boolean;
   templateId?: string;
   slotBindings?: Record<string, string>;
-  layout?: { elements: Array<{ key: string; x: number; y: number; size?: number; backdrop?: boolean }> };
+  layout?: { elements: Array<{ key: string; x: number; y: number; size?: number; backdrop?: boolean }>; baseAspect?: { w: number; h: number } };
 }): Promise<ComposeResponse> {
   return req<ComposeResponse>('/compose/still', { method: 'POST', body: JSON.stringify(payload) });
 }
@@ -86,12 +86,12 @@ export interface ComposerTemplate {
   slots: TemplateSlot[];
   copy: { headline?: string; sub?: string; cta?: string; dataLabels?: { label: string }[] };
   channels: string[];
-  layout?: { elements: Array<{ key: string; x: number; y: number; size?: number; backdrop?: boolean }> };
+  layout?: { elements: Array<{ key: string; x: number; y: number; size?: number; backdrop?: boolean }>; baseAspect?: { w: number; h: number } };
 }
 export function listTemplates(kind?: string): Promise<ComposerTemplate[]> {
   return req<ComposerTemplate[]>(`/composer/templates${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`);
 }
-export function createTemplateFromStill(payload: { name: string; copy: ComposeCopy; channels: string[]; layout?: { elements: Array<{ key: string; x: number; y: number; size?: number; backdrop?: boolean }> } }): Promise<ComposerTemplate> {
+export function createTemplateFromStill(payload: { name: string; copy: ComposeCopy; channels: string[]; layout?: { elements: Array<{ key: string; x: number; y: number; size?: number; backdrop?: boolean }>; baseAspect?: { w: number; h: number } } }): Promise<ComposerTemplate> {
   return req<ComposerTemplate>('/composer/templates/createFromStill', { method: 'POST', body: JSON.stringify(payload) });
 }
 export function deleteTemplate(id: string): Promise<{ ok: boolean }> {

@@ -10,7 +10,9 @@ import { FC, useCallback, useRef } from 'react';
 import { BrandRoles } from '@gitroom/frontend/components/studio/studio.composer-client';
 
 export interface SupersLayoutElement { key: string; x: number; y: number; size?: number; backdrop?: boolean }
-export interface SupersLayout { elements: SupersLayoutElement[] }
+// baseAspect = the channel dims the layout was authored against (the canvas previewAspect channel).
+// The brain re-anchors from it per output channel; absent → no re-anchor (back-compat).
+export interface SupersLayout { elements: SupersLayoutElement[]; baseAspect?: { w: number; h: number } }
 export interface SupersCopy { headline?: string; sub?: string; cta?: string; data?: { label: string; value: string }[] }
 
 // Default normalized positions (~the fixed composition) so the canvas has somewhere to start.
