@@ -32,9 +32,9 @@ import {
   getAdObjects,
   updateAd,
 } from '@gitroom/frontend/components/studio/studio.project-client';
-import { createFromPreset as createDataRecordPreset, setRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
-import { composeStill, createTemplateFromStill, composeVideoAd } from '@gitroom/frontend/components/studio/studio.composer-client';
-import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun } from '@gitroom/frontend/components/studio/studio.pipeline-client';
+import { createFromPreset as createDataRecordPreset, setRecordField, removeRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
+import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
+import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -369,6 +369,110 @@ export function buildStudioCapabilities(
       },
     },
 
+    {
+      id: 'compose.composeCarousel',
+      namespace: 'compose',
+      label: 'Compose a branded multi-slide carousel from Ad images (one render per slide) — spends a render',
+      params: ['slides', 'channel', 'brandKitId'],
+      handler: async (p: {
+        slides?: Array<{ imageRef?: string; headline?: string; sub?: string; cta?: string; data?: Array<{ label: string; value: string }> }>;
+        channel?: string; brandKitId?: string;
+      } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        // Build slides: explicit list wins; otherwise every image on the Ad, in order.
+        type Slide = { imageRef: string; copy: { headline?: string; sub?: string; cta?: string; data?: Array<{ label: string; value: string }> } };
+        let slides: Slide[] = (p.slides || [])
+          .filter((s) => s.imageRef)
+          .map((s) => ({ imageRef: s.imageRef as string, copy: { headline: s.headline, sub: s.sub, cta: s.cta, data: s.data } }));
+        if (!slides.length) {
+          const objs = await getAdObjects(adId);
+          slides = objs.filter((o) => o.type === 'image').map((o) => ({ imageRef: o.id, copy: {} }));
+        }
+        if (!slides.length) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No images on this ad to build a carousel from.' }); return; }
+        await composeCarousel({
+          adId, addToAd: true,
+          brandKitId: p.brandKitId || getState().composerBrandKitId || 'default',
+          channel: p.channel || 'ig_square',
+          slides,
+        });
+      },
+    },
+    {
+      id: 'compose.composeEmail',
+      namespace: 'compose',
+      label: 'Compose a branded responsive HTML email from an Ad hero image + copy — spends a render',
+      params: ['heroRef', 'headline', 'sub', 'body', 'cta', 'ctaUrl', 'brandKitId'],
+      handler: async (p: {
+        heroRef?: string; headline?: string; sub?: string; body?: string; cta?: string; ctaUrl?: string; brandKitId?: string;
+      } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        if (!p.headline?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Email headline required.' }); return; }
+        // Default the hero to the Ad's first image when the agent doesn't name one.
+        let heroRef = p.heroRef;
+        if (!heroRef) {
+          const objs = await getAdObjects(adId);
+          heroRef = objs.find((o) => o.type === 'image')?.id;
+        }
+        await composeEmail({
+          adId, heroRef,
+          brandKitId: p.brandKitId || getState().composerBrandKitId || 'default',
+          copy: { headline: p.headline.trim(), sub: p.sub, body: p.body, cta: p.cta, ctaUrl: p.ctaUrl },
+        });
+      },
+    },
+
+    // --- Brand Kit authoring. Curation, no spend → auto-approved. ---
+    {
+      id: 'compose.createBrandKit',
+      namespace: 'compose',
+      label: 'Create a custom Brand Kit (role colors + fonts) and make it active',
+      params: ['name', 'roles'],
+      handler: async (p: { name?: string; roles?: any } = {}) => {
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Brand Kit name required.' }); return; }
+        const kit = await createBrandKit({ name: p.name.trim(), roles: p.roles });
+        dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: kit.brand_kit_id });
+      },
+    },
+    {
+      id: 'compose.updateBrandKit',
+      namespace: 'compose',
+      label: 'Update an existing custom Brand Kit (name and/or role colors + fonts)',
+      params: ['brandKitId', 'name', 'roles'],
+      handler: async (p: { brandKitId?: string; name?: string; roles?: any } = {}) => {
+        const id = p.brandKitId || getState().composerBrandKitId;
+        if (!id || id === 'default') { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Pick a custom Brand Kit to update (the built-in "default" is read-only).' }); return; }
+        await updateBrandKit({ id, patch: { ...(p.name ? { name: p.name.trim() } : {}), ...(p.roles ? { roles: p.roles } : {}) } });
+      },
+    },
+
+    // --- Video cost/plan PREVIEW (read-only, no spend → auto-approved). ---
+    {
+      id: 'compose.estimateVideo',
+      namespace: 'compose',
+      label: 'Estimate the credit cost of a video run before spending (read-only)',
+      params: ['model', 'shots', 'durationS'],
+      handler: async (p: { model?: string; shots?: number; durationS?: number } = {}) => {
+        const est = await estimateVideo({ model: p.model, shots: p.shots, durationS: p.durationS });
+        dispatch({ type: 'SET_STATUS', status: 'idle', error: `estimate: ${est.total} credits (${est.shots} shots × ${est.perShotCredits} on ${est.model})` });
+      },
+    },
+    {
+      id: 'compose.planVideo',
+      namespace: 'compose',
+      label: 'Plan a short from the active Ad (brief → storyboard) WITHOUT generating — preview only',
+      params: ['core_message', 'cta', 'visual_style', 'aspect_ratio'],
+      handler: async (p: { core_message?: string; cta?: string; visual_style?: string; aspect_ratio?: string } = {}) => {
+        const adId = getState().activeAdId;
+        if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
+        if (!p.core_message?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'core_message required.' }); return; }
+        const plan = await planVideo({ adId, core_message: p.core_message.trim(), cta: p.cta, visual_style: p.visual_style, aspect_ratio: p.aspect_ratio });
+        const shots = plan?.storyboard?.shots?.length ?? plan?.storyboard?.scenes?.length ?? 0;
+        dispatch({ type: 'SET_STATUS', status: 'idle', error: `planned ${shots} shots (preview — nothing generated yet)` });
+      },
+    },
+
     // --- Templates (reusable Composer structure). Curation, no spend → auto-approved. ---
     {
       id: 'template.useTemplate',
@@ -482,6 +586,16 @@ export function buildStudioCapabilities(
       handler: async (p: { recordId?: string; key?: string; label?: string; value?: string } = {}) => {
         if (!p.recordId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'recordId required.' }); return; }
         await setRecordField({ id: p.recordId, field: { key: p.key, label: p.label, value: p.value } });
+      },
+    },
+    {
+      id: 'data.removeField',
+      namespace: 'data',
+      label: 'Remove a field (by key) from a data record',
+      params: ['recordId', 'key'],
+      handler: async (p: { recordId?: string; key?: string } = {}) => {
+        if (!p.recordId || !p.key) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'recordId and key required.' }); return; }
+        await removeRecordField({ id: p.recordId, key: p.key });
       },
     },
     {

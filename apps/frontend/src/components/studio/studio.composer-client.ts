@@ -55,6 +55,9 @@ export function listBrandKits(): Promise<BrandKit[]> { return req<BrandKit[]>('/
 export function createBrandKit(payload: { name: string; roles?: BrandRoles }): Promise<BrandKit> {
   return req<BrandKit>('/brandkits/create', { method: 'POST', body: JSON.stringify(payload) });
 }
+export function updateBrandKit(payload: { id: string; patch: { name?: string; roles?: BrandRoles } }): Promise<BrandKit> {
+  return req<BrandKit>('/brandkits/update', { method: 'POST', body: JSON.stringify(payload) });
+}
 
 // --- Channels ---
 export function listComposerChannels(): Promise<Channel[]> { return req<Channel[]>('/compose/channels'); }

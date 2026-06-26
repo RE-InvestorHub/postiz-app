@@ -90,8 +90,15 @@ export function requiresApproval(toolName: string): boolean {
     'project.selectAd',
     'project.addObject',
     // Composer — selectBrandKit is UI state; compose.composeStill is NOT here
-    // (it runs a render → gated like the other spenders).
+    // (it runs a render → gated like the other spenders). compose.composeCarousel
+    // and compose.composeEmail also render → deliberately NOT here (stay gated).
     'compose.selectBrandKit',
+    // Brand Kit authoring is structured data, no spend.
+    'compose.createBrandKit',
+    'compose.updateBrandKit',
+    // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
+    'compose.estimateVideo',
+    'compose.planVideo',
     // Templates — save/use are curation (no spend); the spend stays on compose.
     'template.useTemplate',
     'template.saveAsTemplate',
@@ -101,6 +108,7 @@ export function requiresApproval(toolName: string): boolean {
     // Data records — structured data; no spend.
     'data.createRecord',
     'data.setField',
+    'data.removeField',
     'data.selectRecord',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
