@@ -92,6 +92,9 @@ export function requiresApproval(toolName: string): boolean {
     // Composer — selectBrandKit is UI state; compose.composeStill is NOT here
     // (it runs a render → gated like the other spenders).
     'compose.selectBrandKit',
+    // Templates — save/use are curation (no spend); the spend stays on compose.
+    'template.useTemplate',
+    'template.saveAsTemplate',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

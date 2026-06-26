@@ -148,6 +148,8 @@ export interface StudioState {
   activeAdId: string | null;
   /** Composer tab: selected Brand Kit id (shared by manual UI + agent). */
   composerBrandKitId: string;
+  /** Composer tab: active Template id (shared by manual UI + agent's compose.useTemplate). */
+  composerTemplateId: string;
 }
 
 export interface ModelOption {
