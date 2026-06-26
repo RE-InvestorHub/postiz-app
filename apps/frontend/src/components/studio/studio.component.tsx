@@ -23,6 +23,7 @@ import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.pr
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
 import { StudioProjectPanel } from '@gitroom/frontend/components/studio/studio.project-panel';
 import { StudioComposerPanel } from '@gitroom/frontend/components/studio/studio.composer-panel';
+import { StudioVideoComposerPanel } from '@gitroom/frontend/components/studio/studio.video-composer-panel';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   StudioTab,
@@ -70,11 +71,13 @@ const IconAvatar: FC = () => (
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
-const IconStoryboard: FC = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <path d="M3 9h18" /><path d="M9 9v12" /><path d="M3 15h6" />
-  </svg>
+// Labeled section divider — reused across stacked tab sections (e.g. the Video tab).
+const SectionDivider: FC<{ label: string }> = ({ label }) => (
+  <div className="flex items-center gap-[10px]">
+    <div className="flex-1 h-px bg-newBorder" />
+    <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">{label}</span>
+    <div className="flex-1 h-px bg-newBorder" />
+  </div>
 );
 const IconProject: FC = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -100,7 +103,6 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'audio', label: 'Audio', icon: <IconAudio /> },
   { key: 'editor', label: 'Video Editor', icon: <IconEditor /> },
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
-  { key: 'storyboard', label: 'Storyboard', icon: <IconStoryboard /> },
   { key: 'project', label: 'Project', icon: <IconProject /> },
   { key: 'composer', label: 'Composer', icon: <IconComposer /> },
 ];
@@ -310,7 +312,16 @@ const StudioInner: FC = () => {
         </div>
 
         {state.activeTab === 'images' && <GeneratePanel caps={caps} kind="images" />}
-        {state.activeTab === 'video' && <GeneratePanel caps={caps} kind="video" />}
+        {state.activeTab === 'video' && (
+          <div className="flex flex-col gap-[18px]">
+            {/* Video composer — brief → clips → review → assemble (the Storyboard tab folded in here) */}
+            <StudioVideoComposerPanel />
+            <SectionDivider label="or generate a single clip" />
+            <GeneratePanel caps={caps} kind="video" />
+            <SectionDivider label="character previs — capture & restage" />
+            <StudioPrevisPanel />
+          </div>
+        )}
         {state.activeTab === 'audio' && (
           <div className="flex flex-col gap-[15px]">
             <StudioAudioPanel />
@@ -328,7 +339,6 @@ const StudioInner: FC = () => {
           <RemotionEditorPanel />
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
-        {state.activeTab === 'storyboard' && <StudioPrevisPanel />}
         {state.activeTab === 'project' && <StudioProjectPanel />}
         {state.activeTab === 'composer' && <StudioComposerPanel />}
       </div>

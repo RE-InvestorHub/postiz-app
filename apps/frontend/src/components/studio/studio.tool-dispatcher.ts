@@ -95,6 +95,9 @@ export function requiresApproval(toolName: string): boolean {
     // Templates — save/use are curation (no spend); the spend stays on compose.
     'template.useTemplate',
     'template.saveAsTemplate',
+    // Video composer — accepting a shot is curation; startVideoRun / regenShot /
+    // assembleVideo all SPEND and are deliberately NOT here (stay gated).
+    'compose.acceptShot',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }
