@@ -344,7 +344,7 @@ export function buildStudioCapabilities(
       params: ['imageRef', 'headline', 'sub', 'cta', 'channels'],
       handler: async (p: {
         imageRef?: string; headline?: string; sub?: string; cta?: string;
-        data?: Array<{ label: string; value: string }>; channels?: string[]; brandKitId?: string;
+        data?: Array<{ label: string; value: string }>; channels?: string[]; brandKitId?: string; layout?: any;
       } = {}) => {
         const adId = getState().activeAdId;
         if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
@@ -361,6 +361,7 @@ export function buildStudioCapabilities(
           addToAd: true,
           brandKitId: p.brandKitId || getState().composerBrandKitId || 'default',
           channels: p.channels && p.channels.length ? p.channels : ['ig_square'],
+          ...(p.layout ? { layout: p.layout } : {}),
           copy: { headline: p.headline, sub: p.sub, cta: p.cta, data: p.data },
         });
       },
