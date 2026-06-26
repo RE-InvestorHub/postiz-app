@@ -93,6 +93,22 @@ export function deleteTemplate(id: string): Promise<{ ok: boolean }> {
   return req<{ ok: boolean }>('/composer/templates/delete', { method: 'POST', body: JSON.stringify({ id }) });
 }
 
+// --- Carousel + Email deliverables ---
+export interface CarouselSlide { imageRef: string; copy?: ComposeCopy }
+export interface CarouselResult { id: string; url: string; slide: number; channelId: string; w: number; h: number }
+export function composeCarousel(payload: {
+  adId?: string; slides: CarouselSlide[]; channel?: string; brandKitId?: string; addToAd?: boolean;
+}): Promise<{ brandKitId: string; slides: CarouselResult[] }> {
+  return req('/compose/carousel', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export interface EmailCopy { headline: string; sub?: string; body?: string; cta?: string; ctaUrl?: string }
+export function composeEmail(payload: {
+  adId?: string; heroRef?: string; heroUrl?: string; copy: EmailCopy; brandKitId?: string;
+}): Promise<{ id: string; url: string; brandKitId: string }> {
+  return req('/compose/email', { method: 'POST', body: JSON.stringify(payload) });
+}
+
 // Build a viewable URL for a brain /assets path or a CDN url.
 export function assetUrl(pathOrUrl: string): string {
   if (/^https?:\/\//.test(pathOrUrl)) return pathOrUrl;

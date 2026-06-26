@@ -22,7 +22,7 @@ import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.aud
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
 import { StudioProjectPanel } from '@gitroom/frontend/components/studio/studio.project-panel';
-import { StudioComposerPanel } from '@gitroom/frontend/components/studio/studio.composer-panel';
+import { StudioComposerHub } from '@gitroom/frontend/components/studio/studio.composer-hub';
 import { StudioVideoComposerPanel } from '@gitroom/frontend/components/studio/studio.video-composer-panel';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
@@ -340,7 +340,7 @@ const StudioInner: FC = () => {
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
         {state.activeTab === 'project' && <StudioProjectPanel />}
-        {state.activeTab === 'composer' && <StudioComposerPanel />}
+        {state.activeTab === 'composer' && <StudioComposerHub />}
       </div>
 
       {agentOpen && (
