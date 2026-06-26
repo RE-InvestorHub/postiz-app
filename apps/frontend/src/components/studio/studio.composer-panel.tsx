@@ -16,6 +16,7 @@ import {
   listTemplates, createTemplateFromStill, deleteTemplate,
   BrandKit, Channel, ComposeResult, DataCallout, ComposerTemplate, TemplateSlot,
 } from '@gitroom/frontend/components/studio/studio.composer-client';
+import { StudioSupersCanvas, SupersLayout, defaultLayout } from '@gitroom/frontend/components/studio/studio.supers-canvas';
 
 const Spinner: FC<{ size?: number }> = ({ size = 18 }) => (
   <svg className="animate-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -59,6 +60,8 @@ export const StudioComposerPanel: FC = () => {
   const [sub, setSub] = useState('');
   const [cta, setCta] = useState('');
   const [data, setData] = useState<DataCallout[]>([]);
+  const [positioning, setPositioning] = useState(false);
+  const [layout, setLayout] = useState<SupersLayout | null>(null);
 
   const [saveName, setSaveName] = useState('');
   const [savingTpl, setSavingTpl] = useState(false);
@@ -112,6 +115,9 @@ export const StudioComposerPanel: FC = () => {
     setSelectedChannels(new Set(t.channels?.length ? t.channels : ['ig_square']));
     setSlotBindings({});               // explicit: bind fresh assets for this use
     setResults([]);
+    // Restore the supers layout if the template carries one.
+    if (t.layout?.elements?.length) { setLayout(t.layout); setPositioning(true); }
+    else { setPositioning(false); }
   }, []);
 
   // Apply ONLY when the active template id actually transitions (UI dropdown or agent's
@@ -133,6 +139,7 @@ export const StudioComposerPanel: FC = () => {
         name: saveName.trim(),
         copy: { headline, sub, cta, data },
         channels: Array.from(selectedChannels),
+        ...(positioning && layout ? { layout } : {}),
       });
       setTemplates((cur) => [...cur, t]);
       appliedTplRef.current = t.template_id;   // pre-arm: don't re-apply (would wipe the values we just saved)
@@ -140,7 +147,7 @@ export const StudioComposerPanel: FC = () => {
       setSaveName('');
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setSavingTpl(false); }
-  }, [saveName, headline, sub, cta, data, selectedChannels]);
+  }, [saveName, headline, sub, cta, data, selectedChannels, positioning, layout]);
 
   const removeTemplate = useCallback(async (id: string) => {
     try { await deleteTemplate(id); setTemplates((cur) => cur.filter((t) => t.template_id !== id)); if (activeTemplateId === id) setActiveTemplateId(''); }
@@ -149,6 +156,12 @@ export const StudioComposerPanel: FC = () => {
 
   const requiredBound = slots.filter((s) => s.required).every((s) => slotBindings[s.key]);
   const heroRef = slotBindings[slots[0]?.key];
+  // Supers drag-canvas inputs.
+  const currentCopy = { headline, sub, cta, data };
+  const heroPreviewUrl = heroRef ? srcUrl(images.find((o) => o.id === heroRef)?.record) : null;
+  const firstChannel = channels.find((c) => selectedChannels.has(c.id)) || channels[0];
+  const previewAspect = firstChannel ? firstChannel.w / firstChannel.h : 1;
+  const activeRoles = kits.find((k) => k.brand_kit_id === brandKitId)?.roles || {};
   const canCompose = useMemo(
     () => !!heroRef && requiredBound && selectedChannels.size > 0 && (!!headline.trim() || data.some((c) => c.value.trim())) && !busy,
     [heroRef, requiredBound, selectedChannels, headline, data, busy],
@@ -165,6 +178,7 @@ export const StudioComposerPanel: FC = () => {
         channels: Array.from(selectedChannels),
         templateId: activeTemplateId || undefined,
         slotBindings,
+        ...(positioning && layout ? { layout } : {}),
         copy: {
           headline: headline.trim() || undefined,
           sub: sub.trim() || undefined,
@@ -175,7 +189,7 @@ export const StudioComposerPanel: FC = () => {
       setResults(resp.results);
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(false); }
-  }, [heroRef, slotBindings, selectedChannels, brandKitId, activeTemplateId, headline, sub, cta, data, state.activeAdId]);
+  }, [heroRef, slotBindings, selectedChannels, brandKitId, activeTemplateId, headline, sub, cta, data, positioning, layout, state.activeAdId]);
 
   const addToAd = useCallback(async (id: string) => {
     if (!state.activeAdId) return;
@@ -286,6 +300,17 @@ export const StudioComposerPanel: FC = () => {
               <button type="button" onClick={() => removeCallout(i)} className="text-[12px] text-[#ff7eb6] hover:underline shrink-0">remove</button>
             </div>
           ))}
+        </div>
+
+        {/* Position supers (drag canvas) — opt-in; overrides the default layout */}
+        <div className="flex flex-col gap-[8px]">
+          <label className="flex items-center gap-[8px] text-[12px] text-textItemBlur cursor-pointer">
+            <input type="checkbox" checked={positioning} onChange={(e) => { setPositioning(e.target.checked); if (e.target.checked && !layout) setLayout(defaultLayout(currentCopy)); }} />
+            Position supers (drag) — override the default layout
+          </label>
+          {positioning && (
+            <StudioSupersCanvas imageUrl={heroPreviewUrl} aspect={previewAspect} copy={currentCopy} roles={activeRoles} layout={layout || defaultLayout(currentCopy)} onChange={setLayout} />
+          )}
         </div>
 
         {/* Brand kit + channels */}
