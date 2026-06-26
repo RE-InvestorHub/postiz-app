@@ -44,6 +44,7 @@ export const StudioVideoComposerPanel: FC = () => {
   const [durationS, setDurationS] = useState(6);
   const [model, setModel] = useState('veo3_1');
   const [characterRef, setCharacterRef] = useState<string>('');   // optional Ad image id
+  const [dryRun, setDryRun] = useState(false);                    // stub clips, no credit spend
 
   const [images, setImages] = useState<ResolvedObject[]>([]);
   const [plan, setPlan] = useState<{ storyboard: any; shotCount: number } | null>(null);
@@ -105,7 +106,7 @@ export const StudioVideoComposerPanel: FC = () => {
     if (!plan?.storyboard) return;
     setBusy('compose'); setError(null);
     try {
-      const started = await startRun({ storyboard: plan.storyboard });
+      const started = await startRun({ storyboard: plan.storyboard, dryRun });
       setRun(await pollRun(started.runId));
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(null); }
@@ -125,7 +126,7 @@ export const StudioVideoComposerPanel: FC = () => {
   const doAssemble = useCallback(async () => {
     if (!run?.runId) return;
     setBusy('assemble'); setError(null);
-    try { setRun(await assembleRun({ runId: run.runId })); } catch (e) { setError((e as Error)?.message ?? String(e)); }
+    try { setRun(await assembleRun({ runId: run.runId, dryRun })); } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(null); }
   }, [run?.runId]);
 
@@ -191,8 +192,12 @@ export const StudioVideoComposerPanel: FC = () => {
               </select>
             </label>
           )}
+          <label className="flex items-center gap-[6px] text-[12px] text-textItemBlur ml-auto cursor-pointer" title="Stub clips — exercise the flow without spending credits">
+            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+            Dry run (no spend)
+          </label>
           <button type="button" disabled={!coreMessage.trim() || busy === 'plan'} onClick={doPlan}
-            className="h-[40px] px-[16px] rounded-[8px] border border-newBorder text-btnText font-[600] disabled:opacity-50 ml-auto flex items-center gap-[6px]">
+            className="h-[40px] px-[16px] rounded-[8px] border border-newBorder text-btnText font-[600] disabled:opacity-50 flex items-center gap-[6px]">
             {busy === 'plan' ? <><Spinner size={14} /> Planning…</> : 'Plan & estimate'}
           </button>
         </div>
@@ -207,7 +212,7 @@ export const StudioVideoComposerPanel: FC = () => {
           {estimate && <span className="text-[13px] text-textItemBlur">≈ <span className="text-btnText font-[600]">{estimate.total}</span> credits ({estimate.perShotCredits}/shot · {estimate.model})</span>}
           <button type="button" disabled={busy === 'compose' || !!run} onClick={doCompose}
             className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white font-[600] disabled:opacity-50 ml-auto flex items-center gap-[8px]">
-            {busy === 'compose' ? <><Spinner /> Starting…</> : `Compose video (spends ~${estimate?.total ?? '?'} cr)`}
+            {busy === 'compose' ? <><Spinner /> Starting…</> : (dryRun ? 'Compose video (dry run — no spend)' : `Compose video (spends ~${estimate?.total ?? '?'} cr)`)}
           </button>
         </div>
       )}
