@@ -37,7 +37,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { createFromPreset as createDataRecordPreset, setRecordField, removeRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
 import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
-import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand } from '@gitroom/frontend/components/studio/studio.brand-client';
+import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
@@ -461,6 +461,34 @@ export function buildStudioCapabilities(
         if (!p.text?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Brand text required.' }); return; }
         return extractBrand(p.text);
       },
+    },
+    {
+      id: 'brand.completePalette',
+      namespace: 'brand',
+      label: 'AI-complete the active brand\'s palette to 8 (no spend)',
+      params: ['brandKitId'],
+      handler: (p: { brandKitId?: string } = {}) => { const id = p.brandKitId ?? getState().composerBrandKitId; return id && id !== 'default' ? completeBrandPalette(id) : undefined; },
+    },
+    {
+      id: 'brand.suggestFonts',
+      namespace: 'brand',
+      label: 'Suggest a font pairing for the active brand (no spend)',
+      params: ['brandKitId'],
+      handler: (p: { brandKitId?: string } = {}) => { const id = p.brandKitId ?? getState().composerBrandKitId; return id && id !== 'default' ? suggestBrandFonts(id) : undefined; },
+    },
+    {
+      id: 'brand.draftVoice',
+      namespace: 'brand',
+      label: 'Draft a brand voice for the active brand (cheap text)',
+      params: ['brandKitId'],
+      handler: (p: { brandKitId?: string } = {}) => { const id = p.brandKitId ?? getState().composerBrandKitId; return id && id !== 'default' ? draftBrandVoice(id) : undefined; },
+    },
+    {
+      id: 'brand.generateLogos',
+      namespace: 'brand',
+      label: 'GENERATE a logo for the active brand + bootstrap its 5 slots (SPENDS image credits)',
+      params: ['brandKitId'],
+      handler: (p: { brandKitId?: string } = {}) => { const id = p.brandKitId ?? getState().composerBrandKitId; return id && id !== 'default' ? generateBrandLogos(id) : undefined; },
     },
 
     // --- Composer (Content Composer): Still deliverable. ---

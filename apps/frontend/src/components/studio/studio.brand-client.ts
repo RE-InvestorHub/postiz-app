@@ -86,10 +86,19 @@ export function extractBrand(text: string): Promise<BrandExtract> {
   return req<BrandExtract>('/brand/extract', { method: 'POST', body: JSON.stringify({ text }) });
 }
 
+// AI-assist gap-fillers — each applies to the brand and returns the updated Brand.
+function assist(kind: string, id: string): Promise<Brand> {
+  return req<Brand>(`/brand/assist/${kind}`, { method: 'POST', body: JSON.stringify({ id }) });
+}
+export const completeBrandPalette = (id: string) => assist('palette', id); // $0
+export const suggestBrandFonts = (id: string) => assist('fonts', id);      // $0
+export const draftBrandVoice = (id: string) => assist('voice', id);        // cheap text
+export const generateBrandLogos = (id: string) => assist('logo', id);      // PAID — image credits
+
 /** Resolve a logo ref to a viewable URL (uploaded asset → brain /assets; else null for built-in variants). */
 export function logoUrl(ref?: LogoRef): string | null {
   if (!ref) return null;
   if (ref.path) return `${base()}/assets/${ref.path.replace(/^.*\/assets\//, '')}`;
-  if (ref.assetId) return `${base()}/assets/uploads/${ref.assetId}`;
+  if (ref.assetId) return `${base()}/assets/uploads/${ref.assetId}.${ref.kind || 'png'}`;
   return null; // built-in `variant` logos are server-side SVG keys, not directly viewable here
 }

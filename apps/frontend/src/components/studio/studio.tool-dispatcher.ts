@@ -112,6 +112,11 @@ export function requiresApproval(toolName: string): boolean {
     'brand.delete',
     // brand.extract is a cheap text-LLM normalization (no image credits) → auto.
     'brand.extract',
+    // AI-assist gap-fillers: palette/fonts/voice are deterministic/cheap-text → auto.
+    // brand.generateLogos SPENDS image credits → deliberately NOT here (stays gated).
+    'brand.completePalette',
+    'brand.suggestFonts',
+    'brand.draftVoice',
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',

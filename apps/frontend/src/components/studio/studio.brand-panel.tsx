@@ -14,6 +14,7 @@ import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.up
 import {
   Brand, ColorRole, LogoSlot, LOGO_SLOTS, LOGO_SLOT_LABELS,
   listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, logoUrl,
+  completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos,
 } from '@gitroom/frontend/components/studio/studio.brand-client';
 
 const FONTS = [
@@ -93,6 +94,20 @@ export const StudioBrandPanel: FC = () => {
       setBrand(updated); await load();
       if (before !== 'live' && updated.status === 'live') toaster.show('This brand is now live — it can be used in the Composer.', 'success');
     } catch (e) { setError(msg(e)); }
+  };
+
+  const [assisting, setAssisting] = useState<string | null>(null);
+  const runAssist = async (which: 'palette' | 'fonts' | 'voice' | 'logo') => {
+    if (!brand || brand.builtin || assisting) return;
+    setAssisting(which); setError(null);
+    try {
+      const before = brand.status;
+      const fn = { palette: completeBrandPalette, fonts: suggestBrandFonts, voice: draftBrandVoice, logo: generateBrandLogos }[which];
+      const updated = await fn(brand.brand_kit_id);
+      setBrand(updated); await load();
+      if (before !== 'live' && updated.status === 'live') toaster.show('This brand is now live!', 'success');
+      else toaster.show(which === 'logo' ? 'Logo generated and applied to the 5 slots — refine any slot as needed.' : 'Applied — review and tweak.', 'success');
+    } catch (e) { setError(msg(e)); } finally { setAssisting(null); }
   };
 
   const doImport = async () => {
@@ -192,6 +207,24 @@ export const StudioBrandPanel: FC = () => {
 
             {/* Completeness checklist */}
             <Completeness brand={brand} />
+
+            {/* AI assist — fill the gaps */}
+            {!brand.builtin && (
+              <div className="flex items-center gap-[8px] flex-wrap">
+                <span className="text-[12px] text-textItemBlur">Generate with AI:</span>
+                {([['palette', 'Complete palette'], ['fonts', 'Suggest fonts'], ['voice', 'Draft voice']] as const).map(([k, label]) => (
+                  <button key={k} type="button" disabled={!!assisting} onClick={() => runAssist(k)}
+                    className="h-[30px] px-[12px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10 disabled:opacity-50">
+                    {assisting === k ? '…' : `✨ ${label}`}
+                  </button>
+                ))}
+                <button type="button" disabled={!!assisting} onClick={() => runAssist('logo')}
+                  title="Generates a logo via image-gen — uses image credits"
+                  className="h-[30px] px-[12px] rounded-[8px] border border-[#d82d7e]/50 text-ai text-[12px] font-[600] hover:bg-ai/10 disabled:opacity-50">
+                  {assisting === 'logo' ? 'Generating…' : '✨ Generate logo ($)'}
+                </button>
+              </div>
+            )}
 
             {/* Color palette */}
             <div className={card + ' flex flex-col gap-[10px]'}>
