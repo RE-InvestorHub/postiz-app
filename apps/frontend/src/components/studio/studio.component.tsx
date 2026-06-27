@@ -14,6 +14,7 @@ import { generateAsset } from '@gitroom/frontend/components/studio/studio.genera
 import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.storyboard-client';
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
+import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
@@ -197,6 +198,9 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
         </div>
       )}
 
+      {/* Assets already on the active Ad, cascaded into this tab by type. */}
+      <StudioAdAssetShelf objectType={kind === 'video' ? 'clip' : 'image'} />
+
       {/* Divider between AI generation results and the user-upload zone */}
       <div className="flex items-center gap-[10px]">
         <div className="flex-1 h-px bg-newBorder" />
@@ -317,6 +321,8 @@ const StudioInner: FC = () => {
         {state.activeTab === 'audio' && (
           <div className="flex flex-col gap-[15px]">
             <StudioAudioPanel />
+            {/* Audio assets already on the active Ad, cascaded into this tab. */}
+            <StudioAdAssetShelf objectType="audio" />
             <div className="flex items-center gap-[10px]">
               <div className="flex-1 h-px bg-newBorder" />
               <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
