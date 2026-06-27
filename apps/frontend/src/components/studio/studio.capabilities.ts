@@ -37,6 +37,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { createFromPreset as createDataRecordPreset, setRecordField, removeRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
 import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
+import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
@@ -380,6 +381,75 @@ export function buildStudioCapabilities(
         if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No ad to rename.' }); return; }
         if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'New name required.' }); return; }
         await updateAd(id, { name: p.name.trim() });
+      },
+    },
+
+    // --- Brand (the elevated Brand entity: persona + palette + typography + 5 logos) ---
+    {
+      id: 'brand.list',
+      namespace: 'brand',
+      label: 'List brands (with status/tier); pass liveOnly for Composer-usable only',
+      params: ['liveOnly'],
+      handler: (p: { liveOnly?: boolean } = {}) => listBrands({ liveOnly: p.liveOnly }),
+    },
+    {
+      id: 'brand.create',
+      namespace: 'brand',
+      label: 'Create a Brand (starts as a draft — needs all 5 logos to go live) and make it active',
+      params: ['name'],
+      handler: async (p: { name?: string } = {}) => {
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Brand name required.' }); return; }
+        const b = await createBrand({ name: p.name.trim() });
+        dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: b.brand_kit_id });
+        return b;
+      },
+    },
+    {
+      id: 'brand.select',
+      namespace: 'brand',
+      label: 'Set the active Brand by id',
+      params: ['brandKitId'],
+      handler: (p: { brandKitId?: string } = {}) =>
+        dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: p.brandKitId || 'default' }),
+    },
+    {
+      id: 'brand.update',
+      namespace: 'brand',
+      label: 'Update the active (or given) Brand: name / persona / palette / typography',
+      params: ['brandKitId', 'name', 'persona', 'palette', 'typography'],
+      handler: async (p: any = {}) => {
+        const id = p.brandKitId ?? getState().composerBrandKitId;
+        if (!id || id === 'default') { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select a custom brand first (the default is read-only).' }); return; }
+        return updateBrand(id, {
+          ...(p.name ? { name: String(p.name).trim() } : {}),
+          ...(p.persona ? { persona: p.persona } : {}),
+          ...(p.palette ? { palette: p.palette } : {}),
+          ...(p.typography ? { typography: p.typography } : {}),
+        });
+      },
+    },
+    {
+      id: 'brand.addLogo',
+      namespace: 'brand',
+      label: 'Attach an uploaded asset to a Brand logo slot (mark/wordmark/lockupColor/lockupDark/lockupLight)',
+      params: ['brandKitId', 'slot', 'assetId'],
+      handler: async (p: { brandKitId?: string; slot?: any; assetId?: string } = {}) => {
+        const id = p.brandKitId ?? getState().composerBrandKitId;
+        if (!id || id === 'default') { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select a custom brand first.' }); return; }
+        if (!p.slot || !p.assetId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'slot and assetId required.' }); return; }
+        return addBrandFile(id, { slot: p.slot, assetId: p.assetId });
+      },
+    },
+    {
+      id: 'brand.delete',
+      namespace: 'brand',
+      label: 'Delete a custom Brand (its campaigns move to Default)',
+      params: ['brandKitId'],
+      handler: async (p: { brandKitId?: string } = {}) => {
+        const id = p.brandKitId ?? getState().composerBrandKitId;
+        if (!id || id === 'default') { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No custom brand to delete.' }); return; }
+        await deleteBrand(id);
+        if (getState().composerBrandKitId === id) dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: 'default' });
       },
     },
 

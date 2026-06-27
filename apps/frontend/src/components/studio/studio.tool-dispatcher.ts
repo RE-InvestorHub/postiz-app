@@ -102,6 +102,14 @@ export function requiresApproval(toolName: string): boolean {
     // Brand Kit authoring is structured data, no spend.
     'compose.createBrandKit',
     'compose.updateBrandKit',
+    // Brand entity — list/select/create/update/addLogo/delete are all structured-data
+    // setters/curation, no spend → auto. (AI logo/voice GENERATION lands later, gated.)
+    'brand.list',
+    'brand.create',
+    'brand.select',
+    'brand.update',
+    'brand.addLogo',
+    'brand.delete',
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',
