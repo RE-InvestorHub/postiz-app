@@ -11,9 +11,11 @@ import { createPortal } from 'react-dom';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
+import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
+import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import {
   Brand, ColorRole, LogoSlot, LOGO_SLOTS, LOGO_SLOT_LABELS,
-  listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, logoUrl,
+  listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrandFromAsset, logoUrl,
   completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos,
 } from '@gitroom/frontend/components/studio/studio.brand-client';
 
@@ -52,7 +54,7 @@ export const StudioBrandPanel: FC = () => {
   const [newName, setNewName] = useState('');
   const uploadRef = useRef<HTMLInputElement>(null);
   const pendingSlot = useRef<LogoSlot | null>(null);
-  const [importText, setImportText] = useState('');
+  const [importModal, setImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
@@ -110,18 +112,20 @@ export const StudioBrandPanel: FC = () => {
     } catch (e) { setError(msg(e)); } finally { setAssisting(null); }
   };
 
-  const doImport = async () => {
-    if (!brand || brand.builtin || !importText.trim() || importing) return;
+  // Import from an uploaded brand asset (logo / brand board / palette) → vision extraction → apply.
+  const onImportUpload = async (asset: UploadedAsset) => {
+    if (!brand || brand.builtin) return;
     setImporting(true); setError(null);
     try {
-      const ex = await extractBrand(importText.trim());
-      await patch({
+      const ex = await extractBrandFromAsset(asset.assetId, asset.kind === 'image' ? undefined : asset.kind);
+      const applied = (ex.palette?.length || Object.keys(ex.typography || {}).length || Object.keys(ex.persona || {}).length);
+      if (applied) await patch({
         ...(ex.palette?.length ? { palette: ex.palette } : {}),
         ...(ex.typography && Object.keys(ex.typography).length ? { typography: ex.typography } : {}),
         ...(ex.persona && Object.keys(ex.persona).length ? { persona: ex.persona } : {}),
       });
-      setImportText('');
-      toaster.show('Brand info imported — review the palette, fonts and voice, then add your 5 logos.', 'success');
+      setImportModal(false);
+      toaster.show(applied ? 'Brand info extracted from your file — review the palette, fonts and voice, then add your 5 logos.' : 'Couldn\'t read brand info from that file — try a brand board or palette image.', applied ? 'success' : 'warning');
     } catch (e) { setError(msg(e)); } finally { setImporting(false); }
   };
 
@@ -307,23 +311,33 @@ export const StudioBrandPanel: FC = () => {
                 className="min-h-[80px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText p-[10px] placeholder:text-textItemBlur" />
             </div>
 
-            {/* Import / extract — paste brand info, we normalize it into the kit */}
+            {/* Import — upload a brand asset; we extract colors/fonts/voice from it */}
             {!brand.builtin && (
               <div className={card + ' flex flex-col gap-[8px]'}>
-                <span className={sectionTitle}>Import brand — paste colors, fonts, or a brand guide and we'll standardize it</span>
-                <textarea value={importText} onChange={(e) => setImportText(e.target.value)} disabled={importing}
-                  placeholder="Paste anything: hex colors (#5279BC …), font names, a brand description / brand-guide text. We'll categorize colors (primary/secondary/neutral/accent), map fonts, and summarize the voice."
-                  className="min-h-[90px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText p-[10px] placeholder:text-textItemBlur" />
-                <button type="button" onClick={doImport} disabled={!importText.trim() || importing}
-                  className="self-start h-[34px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] disabled:opacity-50">
-                  {importing ? 'Extracting…' : 'Extract & apply'}
+                <span className={sectionTitle}>Import brand — upload a brand board, palette or logo; we'll extract colors, fonts & voice</span>
+                <button type="button" onClick={() => setImportModal(true)} disabled={importing}
+                  className="self-start h-[34px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] flex items-center gap-[6px] disabled:opacity-50">
+                  {importing ? 'Extracting…' : '⬆ Import brand'}
                 </button>
-                <span className="text-[11px] text-textItemBlur">Colors/fonts/voice are filled in; you still add the 5 logos to go live.</span>
+                <span className="text-[11px] text-textItemBlur">Colors/fonts/voice are filled in from the image; you still add the 5 logos to go live.</span>
               </div>
             )}
           </>
         )}
       </div>
+
+      {/* Import modal — drag-drop / browse a brand asset, then extract */}
+      {importModal && brand && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => !importing && setImportModal(false)}>
+          <div className="w-[560px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[12px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[15px] font-[600] text-btnText flex-1">Import brand for {brand.name}</span>
+              <button type="button" onClick={() => setImportModal(false)} className="h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText">✕</button>
+            </div>
+            <span className="text-[12px] text-textItemBlur">Drop a brand board, color palette, or logo image. We'll read the colors, fonts and voice and fill them in.{importing ? ' Extracting…' : ''}</span>
+            <StudioDropZone accept="image" onUploaded={onImportUpload} />
+          </div>
+        </div>, document.body)}
 
       {/* Create modal */}
       {creating && typeof document !== 'undefined' && createPortal(

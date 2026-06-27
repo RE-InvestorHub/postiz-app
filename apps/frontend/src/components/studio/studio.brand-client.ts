@@ -85,6 +85,10 @@ export interface BrandExtract { palette: PaletteSwatch[]; typography: BrandTypog
 export function extractBrand(text: string): Promise<BrandExtract> {
   return req<BrandExtract>('/brand/extract', { method: 'POST', body: JSON.stringify({ text }) });
 }
+/** Extract brand info from an UPLOADED image (logo / brand board / palette) via vision. */
+export function extractBrandFromAsset(assetId: string, kind?: string): Promise<BrandExtract> {
+  return req<BrandExtract>('/brand/extract', { method: 'POST', body: JSON.stringify({ assetId, kind }) });
+}
 
 // AI-assist gap-fillers — each applies to the brand and returns the updated Brand.
 function assist(kind: string, id: string): Promise<Brand> {
