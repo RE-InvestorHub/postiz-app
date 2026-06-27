@@ -2,7 +2,6 @@
 
 import { FC, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import {
   StudioProvider,
   useStudio,
@@ -15,13 +14,14 @@ import { generateAsset } from '@gitroom/frontend/components/studio/studio.genera
 import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.storyboard-client';
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
+import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
-import { StudioProjectPanel } from '@gitroom/frontend/components/studio/studio.project-panel';
+import { StudioAssetsPanel } from '@gitroom/frontend/components/studio/studio.assets-panel';
 import { StudioComposerHub } from '@gitroom/frontend/components/studio/studio.composer-hub';
 import { StudioVideoComposerPanel } from '@gitroom/frontend/components/studio/studio.video-composer-panel';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
@@ -98,12 +98,12 @@ const IconComposer: FC = () => (
 );
 
 const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
+  { key: 'project', label: 'Assets', icon: <IconProject /> },
   { key: 'images', label: 'Images', icon: <IconImages /> },
   { key: 'video', label: 'Video', icon: <IconVideo /> },
   { key: 'audio', label: 'Audio', icon: <IconAudio /> },
   { key: 'editor', label: 'Video Editor', icon: <IconEditor /> },
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
-  { key: 'project', label: 'Project', icon: <IconProject /> },
   { key: 'composer', label: 'Composer', icon: <IconComposer /> },
 ];
 
@@ -198,6 +198,9 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
         </div>
       )}
 
+      {/* Assets already on the active Ad, cascaded into this tab by type. */}
+      <StudioAdAssetShelf objectType={kind === 'video' ? 'clip' : 'image'} />
+
       {/* Divider between AI generation results and the user-upload zone */}
       <div className="flex items-center gap-[10px]">
         <div className="flex-1 h-px bg-newBorder" />
@@ -213,7 +216,6 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
 };
 
 const StudioInner: FC = () => {
-  const t = useT();
   const { state, dispatch } = useStudio();
   const [agentOpen, setAgentOpen] = useState(false);
   // Storyboard submission feedback: null = idle, string = message to show.
@@ -256,13 +258,7 @@ const StudioInner: FC = () => {
   return (
     <div className="bg-newBgColorInner flex flex-1 h-full transition-all">
       <div className="flex flex-1 flex-col gap-[15px] p-[20px] overflow-y-auto">
-        <div className="flex items-start justify-between gap-[12px]">
-          <div className="flex flex-col gap-[4px]">
-            <h1 className="text-[24px] font-[600] text-btnText">{t('studio', 'Studio')}</h1>
-            <p className="text-[13px] text-textItemBlur">
-              {t('studio_subtitle', 'Create and manage your images, video, and audio — all in one place.')}
-            </p>
-          </div>
+        <div className="flex items-center justify-end gap-[12px]">
           <button
             type="button"
             onClick={() => setAgentOpen((v) => !v)}
@@ -325,6 +321,8 @@ const StudioInner: FC = () => {
         {state.activeTab === 'audio' && (
           <div className="flex flex-col gap-[15px]">
             <StudioAudioPanel />
+            {/* Audio assets already on the active Ad, cascaded into this tab. */}
+            <StudioAdAssetShelf objectType="audio" />
             <div className="flex items-center gap-[10px]">
               <div className="flex-1 h-px bg-newBorder" />
               <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
@@ -339,7 +337,7 @@ const StudioInner: FC = () => {
           <RemotionEditorPanel />
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
-        {state.activeTab === 'project' && <StudioProjectPanel />}
+        {state.activeTab === 'project' && <StudioAssetsPanel />}
         {state.activeTab === 'composer' && <StudioComposerHub />}
       </div>
 

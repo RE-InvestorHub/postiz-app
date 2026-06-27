@@ -31,6 +31,9 @@ import {
   addObject,
   getAdObjects,
   updateAd,
+  updateCampaign,
+  deleteCampaign,
+  deleteAd,
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { createFromPreset as createDataRecordPreset, setRecordField, removeRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
 import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
@@ -327,6 +330,56 @@ export function buildStudioCapabilities(
         if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
         if (!p.type || !p.id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'type and id required.' }); return; }
         await addObject({ adId, type: p.type as any, id: p.id });
+      },
+    },
+    {
+      id: 'project.deleteCampaign',
+      namespace: 'project',
+      label: 'Delete a campaign (cascades: its ads are deleted too; assets survive)',
+      params: ['campaignId'],
+      handler: async (p: { campaignId?: string } = {}) => {
+        const id = p.campaignId ?? getState().activeCampaignId;
+        if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No campaign to delete.' }); return; }
+        await deleteCampaign(id);
+        // If we deleted the active campaign, clear it (this also clears the active ad).
+        if (getState().activeCampaignId === id) dispatch({ type: 'SET_ACTIVE_CAMPAIGN', campaignId: null });
+      },
+    },
+    {
+      id: 'project.deleteAd',
+      namespace: 'project',
+      label: 'Delete an ad (de-links from its campaign; the campaign + assets survive)',
+      params: ['adId'],
+      handler: async (p: { adId?: string } = {}) => {
+        const id = p.adId ?? getState().activeAdId;
+        if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No ad to delete.' }); return; }
+        await deleteAd(id);
+        // If we deleted the active ad, clear just the ad (keep the campaign active).
+        if (getState().activeAdId === id) dispatch({ type: 'SET_ACTIVE_AD', adId: null });
+      },
+    },
+    {
+      id: 'project.renameCampaign',
+      namespace: 'project',
+      label: 'Rename a campaign',
+      params: ['name', 'campaignId'],
+      handler: async (p: { name?: string; campaignId?: string } = {}) => {
+        const id = p.campaignId ?? getState().activeCampaignId;
+        if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No campaign to rename.' }); return; }
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'New name required.' }); return; }
+        await updateCampaign(id, { name: p.name.trim() });
+      },
+    },
+    {
+      id: 'project.renameAd',
+      namespace: 'project',
+      label: 'Rename an ad',
+      params: ['name', 'adId'],
+      handler: async (p: { name?: string; adId?: string } = {}) => {
+        const id = p.adId ?? getState().activeAdId;
+        if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No ad to rename.' }); return; }
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'New name required.' }); return; }
+        await updateAd(id, { name: p.name.trim() });
       },
     },
 

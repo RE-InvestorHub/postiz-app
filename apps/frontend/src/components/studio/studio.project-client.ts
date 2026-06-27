@@ -18,7 +18,7 @@ export interface Campaign {
   ad_ids: string[];
 }
 
-export interface AdObject { type: ObjectType; id: string; layout?: unknown }
+export interface AdObject { type: ObjectType; id: string; layout?: unknown; name?: string }
 
 export interface Ad {
   ad_id: string;
@@ -49,6 +49,14 @@ export function listCampaigns(): Promise<Campaign[]> { return req<Campaign[]>('/
 export function createCampaign(payload: { name: string; brand_kit_id?: string }): Promise<Campaign> {
   return req<Campaign>('/campaigns/create', { method: 'POST', body: JSON.stringify(payload) });
 }
+export function updateCampaign(id: string, patch: Record<string, unknown>): Promise<Campaign> {
+  return req<Campaign>('/campaigns/update', { method: 'POST', body: JSON.stringify({ id, patch }) });
+}
+/** Delete a campaign. Cascades on the backend: its ads are deleted too. Underlying
+ * assets are project-agnostic and survive. */
+export function deleteCampaign(id: string): Promise<{ ok: boolean }> {
+  return req<{ ok: boolean }>('/campaigns/delete', { method: 'POST', body: JSON.stringify({ id }) });
+}
 
 // --- Ads ---
 export function listAds(campaignId: string): Promise<Ad[]> {
@@ -63,6 +71,11 @@ export function updateAd(id: string, patch: Record<string, unknown>): Promise<Ad
 }
 export function getAdObjects(adId: string): Promise<ResolvedObject[]> {
   return req<ResolvedObject[]>(`/ads/${encodeURIComponent(adId)}/objects`);
+}
+/** Delete an ad. De-links it from its campaign (the campaign + sibling ads survive).
+ * The ad's referenced assets are project-agnostic and survive. */
+export function deleteAd(id: string): Promise<{ ok: boolean }> {
+  return req<{ ok: boolean }>('/ads/delete', { method: 'POST', body: JSON.stringify({ id }) });
 }
 
 // --- Objects (project-agnostic asset refs on an Ad) ---
