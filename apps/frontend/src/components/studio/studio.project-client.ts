@@ -18,7 +18,7 @@ export interface Campaign {
   ad_ids: string[];
 }
 
-export interface AdObject { type: ObjectType; id: string; layout?: unknown }
+export interface AdObject { type: ObjectType; id: string; layout?: unknown; name?: string }
 
 export interface Ad {
   ad_id: string;
@@ -48,6 +48,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export function listCampaigns(): Promise<Campaign[]> { return req<Campaign[]>('/campaigns'); }
 export function createCampaign(payload: { name: string; brand_kit_id?: string }): Promise<Campaign> {
   return req<Campaign>('/campaigns/create', { method: 'POST', body: JSON.stringify(payload) });
+}
+export function updateCampaign(id: string, patch: Record<string, unknown>): Promise<Campaign> {
+  return req<Campaign>('/campaigns/update', { method: 'POST', body: JSON.stringify({ id, patch }) });
 }
 /** Delete a campaign. Cascades on the backend: its ads are deleted too. Underlying
  * assets are project-agnostic and survive. */

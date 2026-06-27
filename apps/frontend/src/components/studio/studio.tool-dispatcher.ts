@@ -92,6 +92,9 @@ export function requiresApproval(toolName: string): boolean {
     // Deletes are container/ref removals on a file-backed store — no render, no spend.
     'project.deleteCampaign',
     'project.deleteAd',
+    // Renames are name patches — no render, no spend.
+    'project.renameCampaign',
+    'project.renameAd',
     // Composer — selectBrandKit is UI state; compose.composeStill is NOT here
     // (it runs a render → gated like the other spenders). compose.composeCarousel
     // and compose.composeEmail also render → deliberately NOT here (stay gated).

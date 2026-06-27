@@ -17,16 +17,15 @@
 // Campaign/Ad in the bar "zooms" the breadcrumb to it; clicking down a row sets the
 // bar's active selection (two-way). Clicking a breadcrumb crumb navigates up freely.
 
-import { ChangeEvent, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import {
   listCampaigns, listAds, getAdObjects, addObject, removeObject,
-  createCampaign, createAd, deleteCampaign, deleteAd,
-  Campaign, Ad, ResolvedObject, ObjectType,
+  createCampaign, createAd, updateCampaign, updateAd, deleteCampaign, deleteAd,
+  Campaign, Ad, AdObject, ResolvedObject, ObjectType,
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
-import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 
 const BRAIN_BASE = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_BRAIN_URL) || '/api/brain';
@@ -65,7 +64,8 @@ const IconArrow: FC = () => svg(<><path d="m3 16 4 4 4-4" /><path d="M7 20V4" />
 const IconOpen: FC = () => svg(<><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>, 13);
 const IconDownload: FC = () => svg(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>, 13);
 const IconLink: FC = () => svg(<><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></>, 13);
-const IconPlus: FC = () => svg(<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>, 14);
+const IconClose: FC = () => svg(<><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>, 16);
+const IconEdit: FC = () => svg(<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" /></>, 13);
 
 // ---------------------------------------------------------------------------
 // A pending delete request — single or bulk, unified.
@@ -100,10 +100,13 @@ export const StudioAssetsPanel: FC = () => {
   const [sortKey, setSortKey] = useState<'name' | 'meta'>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [view, setView] = useState<'list' | 'grid'>('list');
-  const [createKind, setCreateKind] = useState<'campaign' | 'ad' | null>(null); // open modal
+  const [createKind, setCreateKind] = useState<'campaign' | 'ad' | null>(null); // open create modal
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [filesModal, setFilesModal] = useState(false); // open the "Add files" drag/drop modal
+  // Inline rename: which row is being renamed + the draft value.
+  const [renaming, setRenaming] = useState<{ kind: 'campaign' | 'ad' | 'asset'; id: string } | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const level: 'campaigns' | 'campaign' | 'ad' = viewAdId ? 'ad' : viewCampaignId ? 'campaign' : 'campaigns';
   const viewCampaign = campaigns.find((c) => c.campaign_id === viewCampaignId) ?? null;
@@ -142,8 +145,11 @@ export const StudioAssetsPanel: FC = () => {
     void loadCampaigns();
   }, [state.activeCampaignId, state.activeAdId, loadCampaigns]);
 
-  // Reset selection + search + any open create-modal whenever the level/view changes.
-  useEffect(() => { setSelected(new Set()); setQuery(''); setCreateKind(null); setNewName(''); }, [level, viewCampaignId, viewAdId]);
+  // Reset transient UI (selection, search, modals, rename) whenever the level/view changes.
+  useEffect(() => {
+    setSelected(new Set()); setQuery('');
+    setCreateKind(null); setNewName(''); setFilesModal(false); setRenaming(null);
+  }, [level, viewCampaignId, viewAdId]);
 
   // ---- navigation ----
   const openCampaign = (id: string) => { setViewAdId(null); setViewCampaignId(id); dispatch({ type: 'SET_ACTIVE_CAMPAIGN', campaignId: id }); };
@@ -249,7 +255,7 @@ export const StudioAssetsPanel: FC = () => {
     } catch (e) { setError(msg(e)); } finally { setCreating(false); }
   };
 
-  // ---- uploads: drop zone callback + "Add files" picker (both link to the active ad) ----
+  // ---- uploads: the "Add files" modal's drop zone links each upload to the active ad ----
   const linkUpload = useCallback(async (asset: UploadedAsset) => {
     if (!viewAdId) return;
     try {
@@ -258,18 +264,35 @@ export const StudioAssetsPanel: FC = () => {
     } catch (e) { setError(msg(e)); }
   }, [viewAdId]);
 
-  const onPickFiles = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files; if (!files?.length || !viewAdId) return;
+  // ---- inline rename (campaign / ad / asset-on-this-ad) ----
+  const startRename = (kind: 'campaign' | 'ad' | 'asset', id: string, current: string) => {
+    setRenaming({ kind, id }); setRenameValue(current); setError(null);
+  };
+  const commitRename = async () => {
+    if (!renaming) return;
+    const name = renameValue.trim();
+    if (!name) { setRenaming(null); return; }
     setBusy(true); setError(null);
     try {
-      for (const f of Array.from(files)) {
-        const asset = await uploadFileToBrain(f, () => {});
-        dispatch({ type: 'ADD_UPLOAD', asset });
-        await addObject({ adId: viewAdId, type: kindToType(asset.kind), id: asset.assetId });
+      if (renaming.kind === 'campaign') {
+        await updateCampaign(renaming.id, { name });
+        await loadCampaigns();
+      } else if (renaming.kind === 'ad') {
+        await updateAd(renaming.id, { name });
+        if (viewCampaignId) setAds(await listAds(viewCampaignId));
+        await loadCampaigns();
+      } else if (renaming.kind === 'asset' && viewAdId) {
+        // Persist a per-ref display name by rewriting the ad's objects array.
+        const next: AdObject[] = objects.map((o) => ({
+          type: o.type, id: o.id, ...(o.layout ? { layout: o.layout } : {}),
+          name: o.id === renaming.id ? name : o.name,
+        }));
+        await updateAd(viewAdId, { objects: next });
+        setObjects(await getAdObjects(viewAdId));
       }
-      setObjects(await getAdObjects(viewAdId));
-    } catch (err) { setError(msg(err)); } finally { setBusy(false); e.target.value = ''; }
-  }, [viewAdId, dispatch]);
+      setRenaming(null);
+    } catch (e) { setError(msg(e)); } finally { setBusy(false); }
+  };
 
   // ---- asset quick actions ----
   const openAsset = (url: string | null) => { if (url) window.open(absUrl(url), '_blank', 'noopener'); };
@@ -288,6 +311,19 @@ export const StudioAssetsPanel: FC = () => {
 
   const Checkbox: FC<{ id: string; label: string }> = ({ id, label }) => (
     <input type="checkbox" className="accent-[#d82d7e] w-[15px] h-[15px] shrink-0" checked={selected.has(id)} onChange={() => toggle(id)} onClick={stop} aria-label={label} />
+  );
+
+  const isRenaming = (kind: 'campaign' | 'ad' | 'asset', id: string) => renaming?.kind === kind && renaming.id === id;
+  // Renders an inline rename input when this row is being renamed, else its children.
+  // Enter or blur commits; Escape clears the draft (the trailing blur-commit then no-ops).
+  const Editable: FC<{ kind: 'campaign' | 'ad' | 'asset'; id: string; children: React.ReactNode }> = ({ kind, id, children }) =>
+    isRenaming(kind, id) ? (
+      <input autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onClick={stop} onBlur={() => void commitRename()}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void commitRename(); } else if (e.key === 'Escape') { setRenameValue(''); setRenaming(null); } }}
+        className={ctrlCls + ' px-[10px] flex-1 min-w-0'} aria-label="Rename" />
+    ) : <>{children}</>;
+  const renameBtn = (kind: 'campaign' | 'ad' | 'asset', id: string, current: string) => (
+    <button type="button" title="Rename" className={iconBtn} onClick={(e) => { e.stopPropagation(); startRename(kind, id, current); }}><IconEdit /></button>
   );
 
   return (
@@ -309,11 +345,15 @@ export const StudioAssetsPanel: FC = () => {
             <button type="button" className={addBtn} onClick={() => openCreate('ad')}>+ Ad</button>
             <button type="button" className={dangerBtn} onClick={() => askDeleteCampaigns([viewCampaign.campaign_id])}>Delete campaign</button>
           </>)}
-          {level === 'ad' && viewAd && (<button type="button" className={dangerBtn} onClick={() => askDeleteAds([viewAd.ad_id])}>Delete ad</button>)}
+          {/* Inside an ad: "+ Add files" (opens the upload modal) sits left of "Delete ad". */}
+          {level === 'ad' && viewAd && (<>
+            <button type="button" className={addBtn} onClick={() => setFilesModal(true)}>+ Add files</button>
+            <button type="button" className={dangerBtn} onClick={() => askDeleteAds([viewAd.ad_id])}>Delete ad</button>
+          </>)}
         </span>
       </div>
 
-      {/* Toolbar: search · sort · view · add files */}
+      {/* Toolbar: search · sort · view */}
       {totalCount > 0 && (
         <div className="flex items-center gap-[10px] flex-wrap">
           <div className="relative">
@@ -336,11 +376,6 @@ export const StudioAssetsPanel: FC = () => {
             <button type="button" onClick={() => setView('grid')} aria-label="Grid view" aria-pressed={view === 'grid'}
               className={'h-[34px] w-[34px] flex items-center justify-center ' + (view === 'grid' ? 'bg-ai text-newBgColor' : 'text-textItemBlur hover:text-btnText')}><IconGrid /></button>
           </div>
-          {level === 'ad' && (
-            <button type="button" onClick={() => fileRef.current?.click()}
-              className="ml-auto h-[34px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] flex items-center gap-[6px]"><IconPlus /> Add files</button>
-          )}
-          <input ref={fileRef} type="file" multiple className="sr-only" aria-hidden="true" onChange={onPickFiles} />
         </div>
       )}
 
@@ -388,18 +423,21 @@ export const StudioAssetsPanel: FC = () => {
 
       {/* ---- Level: Campaigns (root) ---- */}
       {level === 'campaigns' && (
-        campaigns.length === 0 ? <Empty>No campaigns yet. Create one in the <b>Campaign</b> bar above, then drill in here.</Empty>
+        campaigns.length === 0 ? <Empty>No campaigns yet. Use <b>+ Campaign</b> (top right) to create one.</Empty>
           : displayCampaigns.length === 0 ? <Empty>No campaigns match “{query}”.</Empty>
             : view === 'grid' ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-[10px]">
                 {displayCampaigns.map((c) => (
                   <Card key={c.campaign_id} active={state.activeCampaignId === c.campaign_id}>
-                    <div className="flex items-center gap-[8px]"><Checkbox id={c.campaign_id} label={`Select ${c.name}`} />
-                      <button type="button" className={trashBtn + ' ml-auto'} title="Delete campaign" onClick={() => askDeleteCampaigns([c.campaign_id])}><IconTrash /></button></div>
-                    <button type="button" className="flex flex-col items-start gap-[4px] text-left" onClick={() => openCampaign(c.campaign_id)}>
-                      <span className="text-textItemBlur"><IconFolder /></span>
-                      <span className="text-[13px] font-[600] text-btnText truncate w-full">{c.name}</span>
-                      <span className="text-[11px] text-textItemBlur">{plural(c.ad_ids.length, 'ad')}</span></button>
+                    <div className="flex items-center gap-[6px]"><Checkbox id={c.campaign_id} label={`Select ${c.name}`} />
+                      <span className="ml-auto flex items-center gap-[2px]">{renameBtn('campaign', c.campaign_id, c.name)}
+                        <button type="button" className={trashBtn} title="Delete campaign" onClick={() => askDeleteCampaigns([c.campaign_id])}><IconTrash /></button></span></div>
+                    <Editable kind="campaign" id={c.campaign_id}>
+                      <button type="button" className="flex flex-col items-start gap-[4px] text-left" onClick={() => openCampaign(c.campaign_id)}>
+                        <span className="text-textItemBlur"><IconFolder /></span>
+                        <span className="text-[13px] font-[600] text-btnText truncate w-full">{c.name}</span>
+                        <span className="text-[11px] text-textItemBlur">{plural(c.ad_ids.length, 'ad')}</span></button>
+                    </Editable>
                   </Card>
                 ))}
               </div>
@@ -408,12 +446,15 @@ export const StudioAssetsPanel: FC = () => {
                 {displayCampaigns.map((c) => (
                   <Row key={c.campaign_id} active={state.activeCampaignId === c.campaign_id}>
                     <Checkbox id={c.campaign_id} label={`Select ${c.name}`} />
-                    <button type="button" className="flex items-center gap-[12px] flex-1 min-w-0 text-left" onClick={() => openCampaign(c.campaign_id)}>
-                      <span className="text-textItemBlur"><IconFolder /></span>
-                      <span className="text-[14px] font-[600] text-btnText truncate flex-1">{c.name}</span>
-                      {state.activeCampaignId === c.campaign_id && <span className="text-[10px] uppercase tracking-wide text-ai font-[700]">active</span>}
-                      <span className="text-[12px] text-textItemBlur">{plural(c.ad_ids.length, 'ad')}</span>
-                      <span className="text-textItemBlur opacity-60"><IconChevron /></span></button>
+                    <Editable kind="campaign" id={c.campaign_id}>
+                      <button type="button" className="flex items-center gap-[12px] flex-1 min-w-0 text-left" onClick={() => openCampaign(c.campaign_id)}>
+                        <span className="text-textItemBlur"><IconFolder /></span>
+                        <span className="text-[14px] font-[600] text-btnText truncate flex-1">{c.name}</span>
+                        {state.activeCampaignId === c.campaign_id && <span className="text-[10px] uppercase tracking-wide text-ai font-[700]">active</span>}
+                        <span className="text-[12px] text-textItemBlur">{plural(c.ad_ids.length, 'ad')}</span>
+                        <span className="text-textItemBlur opacity-60"><IconChevron /></span></button>
+                    </Editable>
+                    {renameBtn('campaign', c.campaign_id, c.name)}
                     <button type="button" title="Delete campaign" className={trashBtn} onClick={() => askDeleteCampaigns([c.campaign_id])}><IconTrash /></button>
                   </Row>
                 ))}
@@ -423,18 +464,21 @@ export const StudioAssetsPanel: FC = () => {
 
       {/* ---- Level: one Campaign → its Ads ---- */}
       {level === 'campaign' && (
-        ads.length === 0 ? <Empty>No ads in this campaign yet. Create one in the <b>Ad</b> bar above.</Empty>
+        ads.length === 0 ? <Empty>No ads in this campaign yet. Use <b>+ Ad</b> (top right) to create one.</Empty>
           : displayAds.length === 0 ? <Empty>No ads match “{query}”.</Empty>
             : view === 'grid' ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-[10px]">
                 {displayAds.map((a) => (
                   <Card key={a.ad_id} active={state.activeAdId === a.ad_id}>
-                    <div className="flex items-center gap-[8px]"><Checkbox id={a.ad_id} label={`Select ${a.name}`} />
-                      <button type="button" className={trashBtn + ' ml-auto'} title="Delete ad" onClick={() => askDeleteAds([a.ad_id])}><IconTrash /></button></div>
-                    <button type="button" className="flex flex-col items-start gap-[4px] text-left" onClick={() => openAd(a.ad_id)}>
-                      <span className="text-textItemBlur"><IconAd /></span>
-                      <span className="text-[13px] font-[600] text-btnText truncate w-full">{a.name}</span>
-                      <span className="text-[11px] text-textItemBlur">{plural(a.objects.length, 'asset')}</span></button>
+                    <div className="flex items-center gap-[6px]"><Checkbox id={a.ad_id} label={`Select ${a.name}`} />
+                      <span className="ml-auto flex items-center gap-[2px]">{renameBtn('ad', a.ad_id, a.name)}
+                        <button type="button" className={trashBtn} title="Delete ad" onClick={() => askDeleteAds([a.ad_id])}><IconTrash /></button></span></div>
+                    <Editable kind="ad" id={a.ad_id}>
+                      <button type="button" className="flex flex-col items-start gap-[4px] text-left" onClick={() => openAd(a.ad_id)}>
+                        <span className="text-textItemBlur"><IconAd /></span>
+                        <span className="text-[13px] font-[600] text-btnText truncate w-full">{a.name}</span>
+                        <span className="text-[11px] text-textItemBlur">{plural(a.objects.length, 'asset')}</span></button>
+                    </Editable>
                   </Card>
                 ))}
               </div>
@@ -443,12 +487,15 @@ export const StudioAssetsPanel: FC = () => {
                 {displayAds.map((a) => (
                   <Row key={a.ad_id} active={state.activeAdId === a.ad_id}>
                     <Checkbox id={a.ad_id} label={`Select ${a.name}`} />
-                    <button type="button" className="flex items-center gap-[12px] flex-1 min-w-0 text-left" onClick={() => openAd(a.ad_id)}>
-                      <span className="text-textItemBlur"><IconAd /></span>
-                      <span className="text-[14px] font-[600] text-btnText truncate flex-1">{a.name}</span>
-                      {state.activeAdId === a.ad_id && <span className="text-[10px] uppercase tracking-wide text-ai font-[700]">active</span>}
-                      <span className="text-[12px] text-textItemBlur">{plural(a.objects.length, 'asset')}</span>
-                      <span className="text-textItemBlur opacity-60"><IconChevron /></span></button>
+                    <Editable kind="ad" id={a.ad_id}>
+                      <button type="button" className="flex items-center gap-[12px] flex-1 min-w-0 text-left" onClick={() => openAd(a.ad_id)}>
+                        <span className="text-textItemBlur"><IconAd /></span>
+                        <span className="text-[14px] font-[600] text-btnText truncate flex-1">{a.name}</span>
+                        {state.activeAdId === a.ad_id && <span className="text-[10px] uppercase tracking-wide text-ai font-[700]">active</span>}
+                        <span className="text-[12px] text-textItemBlur">{plural(a.objects.length, 'asset')}</span>
+                        <span className="text-textItemBlur opacity-60"><IconChevron /></span></button>
+                    </Editable>
+                    {renameBtn('ad', a.ad_id, a.name)}
                     <button type="button" title="Delete ad" className={trashBtn} onClick={() => askDeleteAds([a.ad_id])}><IconTrash /></button>
                   </Row>
                 ))}
@@ -459,7 +506,7 @@ export const StudioAssetsPanel: FC = () => {
       {/* ---- Level: one Ad → its assets + drop zone ---- */}
       {level === 'ad' && (
         <div className="flex flex-col gap-[14px]">
-          {objects.length === 0 ? <Empty>No assets in this ad yet. Use <b>Add files</b>, drop files below, or generate in Images/Video/Audio (then “Add to ad”).</Empty>
+          {objects.length === 0 ? <Empty>No assets in this ad yet. Use <b>+ Add files</b> (top right), or generate in Images/Video/Audio (then “Add to ad”).</Empty>
             : displayObjects.length === 0 ? <Empty>No assets match “{query}”.</Empty>
               : view === 'list' ? (
                 <div className="flex flex-col gap-[8px]">
@@ -467,13 +514,16 @@ export const StudioAssetsPanel: FC = () => {
                     const url = thumbUrl(o.record);
                     return (
                       <Row key={`${o.type}:${o.id}`} active={selected.has(o.id)}>
-                        <Checkbox id={o.id} label={`Select ${o.type} ${o.id}`} />
+                        <Checkbox id={o.id} label={`Select ${o.name || o.id}`} />
                         <span className="text-textItemBlur shrink-0">{o.type === 'audio' ? <IconAudio /> : o.type === 'clip' ? <IconAd /> : <IconImg />}</span>
-                        <span className="text-[13px] text-btnText truncate flex-1">{o.id}</span>
+                        <Editable kind="asset" id={o.id}>
+                          <span className="text-[13px] text-btnText truncate flex-1">{o.name || o.id}</span>
+                        </Editable>
                         <span className="text-[11px] text-textItemBlur uppercase shrink-0">{o.type}</span>
                         <span className="flex items-center gap-[2px] shrink-0">
+                          {renameBtn('asset', o.id, o.name || o.id)}
                           <button type="button" title="Open" className={iconBtn} disabled={!url} onClick={() => openAsset(url)}><IconOpen /></button>
-                          <button type="button" title="Download" className={iconBtn} disabled={!url} onClick={() => downloadAsset(url, o.id)}><IconDownload /></button>
+                          <button type="button" title="Download" className={iconBtn} disabled={!url} onClick={() => downloadAsset(url, o.name || o.id)}><IconDownload /></button>
                           <button type="button" title="Copy link" className={iconBtn} disabled={!url} onClick={() => copyLink(url)}><IconLink /></button>
                           <button type="button" title="Remove from ad" className={trashBtn} onClick={() => askRemoveAssets([o.id])}><IconTrash /></button>
                         </span>
@@ -497,7 +547,10 @@ export const StudioAssetsPanel: FC = () => {
                           <div className="w-full aspect-square flex items-center justify-center text-textItemBlur">{o.type === 'audio' ? <IconAudio /> : <IconImg />}</div>
                         )}
                         <div className="p-[8px] flex items-center gap-[4px]">
-                          <span className="text-[11px] text-textItemBlur truncate flex-1">{o.type} · {o.id}</span>
+                          <Editable kind="asset" id={o.id}>
+                            <span className="text-[11px] text-textItemBlur truncate flex-1">{o.name || o.id}</span>
+                          </Editable>
+                          <button type="button" title="Rename" className={iconBtn + ' h-[24px] w-[24px]'} onClick={() => startRename('asset', o.id, o.name || o.id)}><IconEdit /></button>
                           <button type="button" title="Open" className={iconBtn + ' h-[24px] w-[24px]'} disabled={!url} onClick={() => openAsset(url)}><IconOpen /></button>
                           <button type="button" title="Copy link" className={iconBtn + ' h-[24px] w-[24px]'} disabled={!url} onClick={() => copyLink(url)}><IconLink /></button>
                           <button type="button" title="Remove from ad" className={trashBtn + ' h-[24px] w-[24px]'} onClick={() => askRemoveAssets([o.id])}><IconTrash /></button>
@@ -507,12 +560,21 @@ export const StudioAssetsPanel: FC = () => {
                   })}
                 </div>
               )}
+        </div>
+      )}
 
-          <div className="flex flex-col gap-[8px]">
-            <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-wide">Add to this ad</span>
+      {/* Add-files modal — opened by the "+ Add files" header button (drag-drop OR browse). */}
+      {filesModal && viewAdId && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => setFilesModal(false)}>
+          <div className="w-[560px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[14px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[15px] font-[600] text-btnText flex-1">Add files to {viewAd?.name ?? 'this ad'}</span>
+              <button type="button" onClick={() => setFilesModal(false)} className={iconBtn} aria-label="Close"><IconClose /></button>
+            </div>
             <StudioDropZone onUploaded={linkUpload} />
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Create modal — opened by the "+ Campaign" / "+ Ad" header buttons. */}

@@ -31,6 +31,7 @@ import {
   addObject,
   getAdObjects,
   updateAd,
+  updateCampaign,
   deleteCampaign,
   deleteAd,
 } from '@gitroom/frontend/components/studio/studio.project-client';
@@ -355,6 +356,30 @@ export function buildStudioCapabilities(
         await deleteAd(id);
         // If we deleted the active ad, clear just the ad (keep the campaign active).
         if (getState().activeAdId === id) dispatch({ type: 'SET_ACTIVE_AD', adId: null });
+      },
+    },
+    {
+      id: 'project.renameCampaign',
+      namespace: 'project',
+      label: 'Rename a campaign',
+      params: ['name', 'campaignId'],
+      handler: async (p: { name?: string; campaignId?: string } = {}) => {
+        const id = p.campaignId ?? getState().activeCampaignId;
+        if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No campaign to rename.' }); return; }
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'New name required.' }); return; }
+        await updateCampaign(id, { name: p.name.trim() });
+      },
+    },
+    {
+      id: 'project.renameAd',
+      namespace: 'project',
+      label: 'Rename an ad',
+      params: ['name', 'adId'],
+      handler: async (p: { name?: string; adId?: string } = {}) => {
+        const id = p.adId ?? getState().activeAdId;
+        if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No ad to rename.' }); return; }
+        if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'New name required.' }); return; }
+        await updateAd(id, { name: p.name.trim() });
       },
     },
 
