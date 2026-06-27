@@ -263,9 +263,12 @@ const AssetCard: FC<{ asset: UploadedAsset }> = ({ asset }) => (
 export interface StudioDropZoneProps {
   /** Filter to one kind — when omitted all kinds are accepted. */
   accept?: UploadedAsset['kind'];
+  /** Fired once per file after a successful upload (post ADD_UPLOAD). Lets a host
+   * (e.g. the Assets panel) link the freshly uploaded asset to the active ad. */
+  onUploaded?: (asset: UploadedAsset) => void;
 }
 
-export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept }) => {
+export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept, onUploaded }) => {
   const { state, dispatch } = useStudio();
   const [dragging, setDragging] = useState(false);
   const [queue, setQueue] = useState<UploadEntry[]>([]);
@@ -326,6 +329,7 @@ export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept }) => {
               )
             );
             dispatch({ type: 'ADD_UPLOAD', asset });
+            onUploaded?.(asset);
           })
           .catch((err: unknown) => {
             setQueue((prev) =>
@@ -345,7 +349,7 @@ export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept }) => {
           });
       });
     },
-    [accept, dispatch]
+    [accept, dispatch, onUploaded]
   );
 
   // ---------------------------------------------------------------------------

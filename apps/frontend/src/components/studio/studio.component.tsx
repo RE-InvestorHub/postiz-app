@@ -21,7 +21,7 @@ import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.ava
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
-import { StudioProjectPanel } from '@gitroom/frontend/components/studio/studio.project-panel';
+import { StudioAssetsPanel } from '@gitroom/frontend/components/studio/studio.assets-panel';
 import { StudioComposerHub } from '@gitroom/frontend/components/studio/studio.composer-hub';
 import { StudioVideoComposerPanel } from '@gitroom/frontend/components/studio/studio.video-composer-panel';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
@@ -103,7 +103,7 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'audio', label: 'Audio', icon: <IconAudio /> },
   { key: 'editor', label: 'Video Editor', icon: <IconEditor /> },
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
-  { key: 'project', label: 'Project', icon: <IconProject /> },
+  { key: 'project', label: 'Assets', icon: <IconProject /> },
   { key: 'composer', label: 'Composer', icon: <IconComposer /> },
 ];
 
@@ -339,7 +339,7 @@ const StudioInner: FC = () => {
           <RemotionEditorPanel />
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
-        {state.activeTab === 'project' && <StudioProjectPanel />}
+        {state.activeTab === 'project' && <StudioAssetsPanel />}
         {state.activeTab === 'composer' && <StudioComposerHub />}
       </div>
 

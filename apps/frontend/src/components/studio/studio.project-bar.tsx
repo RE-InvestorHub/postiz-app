@@ -58,7 +58,7 @@ export const StudioProjectBar: FC = () => {
 
   return (
     <div className="flex flex-wrap items-center gap-[10px] rounded-[8px] border border-newBorder bg-newBgColor px-[12px] py-[10px]">
-      <span className="text-[12px] font-[600] text-textItemBlur uppercase tracking-wide">Project</span>
+      {/* Campaign → Ad breadcrumb (no standalone "Project" label — Campaign/Ad are the real entities) */}
 
       {/* Campaign */}
       <select className={selectCls} value={state.activeCampaignId ?? ''}
@@ -70,7 +70,7 @@ export const StudioProjectBar: FC = () => {
       <button type="button" disabled={creating === 'campaign' || !newCampaign.trim()} onClick={doCreateCampaign}
         className="h-[36px] px-[12px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] disabled:opacity-50">＋ Campaign</button>
 
-      <span className="text-textItemBlur">/</span>
+      <span className="text-textItemBlur text-[16px] leading-none" aria-hidden="true">›</span>
 
       {/* Ad (within the active campaign) */}
       <select className={selectCls} value={state.activeAdId ?? ''} disabled={!state.activeCampaignId}
