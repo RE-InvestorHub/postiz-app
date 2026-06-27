@@ -45,7 +45,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // --- Campaigns ---
-export function listCampaigns(): Promise<Campaign[]> { return req<Campaign[]>('/campaigns'); }
+export function listCampaigns(brandKitId?: string): Promise<Campaign[]> {
+  return req<Campaign[]>(`/campaigns${brandKitId ? `?brandKitId=${encodeURIComponent(brandKitId)}` : ''}`);
+}
 export function createCampaign(payload: { name: string; brand_kit_id?: string }): Promise<Campaign> {
   return req<Campaign>('/campaigns/create', { method: 'POST', body: JSON.stringify(payload) });
 }

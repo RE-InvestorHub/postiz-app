@@ -27,6 +27,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
+import { Brand, listBrands, createBrand, deleteBrand } from '@gitroom/frontend/components/studio/studio.brand-client';
 
 const BRAIN_BASE = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_BRAIN_URL) || '/api/brain';
 
@@ -71,6 +72,7 @@ const IconEdit: FC = () => svg(<><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2
 // A pending delete request — single or bulk, unified.
 // ---------------------------------------------------------------------------
 type DeleteReq =
+  | { kind: 'brand'; items: { id: string; name: string; campaignCount: number }[] }
   | { kind: 'campaign'; items: { id: string; name: string; adCount: number }[] }
   | { kind: 'ad'; items: { id: string; name: string; assetCount: number }[] }
   | { kind: 'asset'; adId: string; items: { id: string; name: string; type: ObjectType }[] };
@@ -84,9 +86,13 @@ export const StudioAssetsPanel: FC = () => {
   const { state, dispatch } = useStudio();
 
   // Local breadcrumb view — independent of the bar so "up" navigation is free.
+  // Hierarchy: Brands › Campaigns › Ads › assets. viewBrandId null = the Brands root.
+  // Browsing state, decoupled from the composer's active brand — the tab opens at the root.
+  const [viewBrandId, setViewBrandId] = useState<string | null>(null);
   const [viewCampaignId, setViewCampaignId] = useState<string | null>(state.activeCampaignId);
   const [viewAdId, setViewAdId] = useState<string | null>(state.activeAdId);
 
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
   const [objects, setObjects] = useState<ResolvedObject[]>([]);
@@ -100,7 +106,7 @@ export const StudioAssetsPanel: FC = () => {
   const [sortKey, setSortKey] = useState<'name' | 'meta'>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [view, setView] = useState<'list' | 'grid'>('list');
-  const [createKind, setCreateKind] = useState<'campaign' | 'ad' | null>(null); // open create modal
+  const [createKind, setCreateKind] = useState<'brand' | 'campaign' | 'ad' | null>(null); // open create modal
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
   const [filesModal, setFilesModal] = useState(false); // open the "Add files" drag/drop modal
@@ -108,14 +114,23 @@ export const StudioAssetsPanel: FC = () => {
   const [renaming, setRenaming] = useState<{ kind: 'campaign' | 'ad' | 'asset'; id: string } | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
-  const level: 'campaigns' | 'campaign' | 'ad' = viewAdId ? 'ad' : viewCampaignId ? 'campaign' : 'campaigns';
+  const level: 'brands' | 'campaigns' | 'campaign' | 'ad' =
+    viewAdId ? 'ad' : viewCampaignId ? 'campaign' : viewBrandId ? 'campaigns' : 'brands';
+  const viewBrand = brands.find((b) => b.brand_kit_id === viewBrandId) ?? null;
   const viewCampaign = campaigns.find((c) => c.campaign_id === viewCampaignId) ?? null;
   const viewAd = ads.find((a) => a.ad_id === viewAdId) ?? null;
 
   // ---- loaders ----
-  const loadCampaigns = useCallback(async () => {
-    try { setCampaigns(await listCampaigns()); } catch (e) { setError(msg(e)); }
+  const loadBrands = useCallback(async () => {
+    try { setBrands(await listBrands()); } catch (e) { setError(msg(e)); }
   }, []);
+  useEffect(() => { void loadBrands(); }, [loadBrands]);
+
+  // Campaigns are scoped to the brand we're inside (the Brands root shows brands, not campaigns).
+  const loadCampaigns = useCallback(async () => {
+    if (!viewBrandId) { setCampaigns([]); return; }
+    try { setCampaigns(await listCampaigns(viewBrandId)); } catch (e) { setError(msg(e)); }
+  }, [viewBrandId]);
   useEffect(() => { void loadCampaigns(); }, [loadCampaigns]);
 
   useEffect(() => {
@@ -138,23 +153,28 @@ export const StudioAssetsPanel: FC = () => {
     return () => { live = false; };
   }, [viewAdId]);
 
-  // ---- bar → breadcrumb (zoom to the bar's selection whenever it changes) ----
+  // ---- bar → breadcrumb (zoom to the bar's campaign/ad selection) ----
+  // viewBrandId is browse-only (not synced from the active brand) so the tab opens at
+  // the Brands root and "up" navigation past a brand stays put.
   useEffect(() => {
     setViewCampaignId(state.activeCampaignId);
     setViewAdId(state.activeAdId);
-    void loadCampaigns();
-  }, [state.activeCampaignId, state.activeAdId, loadCampaigns]);
+    void loadBrands();
+  }, [state.activeCampaignId, state.activeAdId, loadBrands]);
 
   // Reset transient UI (selection, search, modals, rename) whenever the level/view changes.
   useEffect(() => {
     setSelected(new Set()); setQuery('');
     setCreateKind(null); setNewName(''); setFilesModal(false); setRenaming(null);
-  }, [level, viewCampaignId, viewAdId]);
+  }, [level, viewBrandId, viewCampaignId, viewAdId]);
 
   // ---- navigation ----
+  // Drilling a brand sets it active; the campaign/ad below are unchanged.
+  const openBrand = (id: string) => { setViewAdId(null); setViewCampaignId(null); setViewBrandId(id); dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: id }); };
   const openCampaign = (id: string) => { setViewAdId(null); setViewCampaignId(id); dispatch({ type: 'SET_ACTIVE_CAMPAIGN', campaignId: id }); };
   const openAd = (id: string) => { setViewAdId(id); dispatch({ type: 'SET_ACTIVE_AD', adId: id }); };
-  const crumbToRoot = () => { setViewAdId(null); setViewCampaignId(null); };
+  const crumbToBrands = () => { setViewAdId(null); setViewCampaignId(null); setViewBrandId(null); };
+  const crumbToCampaigns = () => { setViewAdId(null); setViewCampaignId(null); }; // back to a brand's campaign list
   const crumbToCampaign = () => { setViewAdId(null); };
 
   // ---- filtered + sorted display lists ----
@@ -163,6 +183,10 @@ export const StudioAssetsPanel: FC = () => {
   const cmp = (a: string | number, b: string | number) =>
     (typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b))) * dir;
 
+  const displayBrands = useMemo(() => brands
+    .filter((b) => !q || b.name.toLowerCase().includes(q))
+    .sort((a, b) => cmp(a.name, b.name)),
+    [brands, q, dir]);
   const displayCampaigns = useMemo(() => campaigns
     .filter((c) => !q || c.name.toLowerCase().includes(q))
     .sort((a, b) => cmp(sortKey === 'name' ? a.name : a.ad_ids.length, sortKey === 'name' ? b.name : b.ad_ids.length)),
@@ -176,11 +200,12 @@ export const StudioAssetsPanel: FC = () => {
     .sort((a, b) => cmp(sortKey === 'name' ? a.id : a.type, sortKey === 'name' ? b.id : b.type)),
     [objects, q, sortKey, dir]);
 
-  const rowIds = level === 'campaigns' ? displayCampaigns.map((c) => c.campaign_id)
-    : level === 'campaign' ? displayAds.map((a) => a.ad_id)
-      : displayObjects.map((o) => o.id);
-  const totalCount = level === 'campaigns' ? campaigns.length : level === 'campaign' ? ads.length : objects.length;
-  const metaLabel = level === 'campaigns' ? 'Ads' : level === 'campaign' ? 'Assets' : 'Type';
+  const rowIds = level === 'brands' ? displayBrands.filter((b) => !b.builtin).map((b) => b.brand_kit_id)
+    : level === 'campaigns' ? displayCampaigns.map((c) => c.campaign_id)
+      : level === 'campaign' ? displayAds.map((a) => a.ad_id)
+        : displayObjects.map((o) => o.id);
+  const totalCount = level === 'brands' ? brands.length : level === 'campaigns' ? campaigns.length : level === 'campaign' ? ads.length : objects.length;
+  const metaLabel = level === 'campaign' ? 'Assets' : level === 'ad' ? 'Type' : 'Name';
 
   // ---- selection ----
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -188,6 +213,14 @@ export const StudioAssetsPanel: FC = () => {
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rowIds));
 
   // ---- ask to delete ----
+  const askDeleteBrands = async (ids: string[]) => {
+    // count campaigns per brand for the confirm copy (they'll move to Default, not be deleted)
+    const items = await Promise.all(brands.filter((b) => ids.includes(b.brand_kit_id) && !b.builtin).map(async (b) => {
+      let campaignCount = 0; try { campaignCount = (await listCampaigns(b.brand_kit_id)).length; } catch { /* */ }
+      return { id: b.brand_kit_id, name: b.name, campaignCount };
+    }));
+    if (items.length) setPending({ kind: 'brand', items });
+  };
   const askDeleteCampaigns = (ids: string[]) => {
     const items = campaigns.filter((c) => ids.includes(c.campaign_id)).map((c) => ({ id: c.campaign_id, name: c.name, adCount: c.ad_ids.length }));
     if (items.length) setPending({ kind: 'campaign', items });
@@ -203,7 +236,8 @@ export const StudioAssetsPanel: FC = () => {
   };
   const askDeleteSelection = () => {
     const ids = [...selected];
-    if (level === 'campaigns') askDeleteCampaigns(ids);
+    if (level === 'brands') void askDeleteBrands(ids);
+    else if (level === 'campaigns') askDeleteCampaigns(ids);
     else if (level === 'campaign') askDeleteAds(ids);
     else askRemoveAssets(ids);
   };
@@ -213,7 +247,17 @@ export const StudioAssetsPanel: FC = () => {
     if (!pending) return;
     setBusy(true); setError(null);
     try {
-      if (pending.kind === 'campaign') {
+      if (pending.kind === 'brand') {
+        for (const it of pending.items) {
+          // reassign the brand's campaigns to Default (un-brand them), then delete the brand
+          const cs = await listCampaigns(it.id);
+          for (const c of cs) await updateCampaign(c.campaign_id, { brand_kit_id: null });
+          await deleteBrand(it.id);
+          if (viewBrandId === it.id) { setViewBrandId(null); setViewCampaignId(null); setViewAdId(null); }
+          if (state.composerBrandKitId === it.id) dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: 'default' });
+        }
+        await loadBrands();
+      } else if (pending.kind === 'campaign') {
         for (const it of pending.items) await deleteCampaign(it.id);
         const ids = pending.items.map((i) => i.id);
         if (state.activeCampaignId && ids.includes(state.activeCampaignId)) dispatch({ type: 'SET_ACTIVE_CAMPAIGN', campaignId: null });
@@ -235,20 +279,28 @@ export const StudioAssetsPanel: FC = () => {
     } catch (e) { setError(msg(e)); } finally { setBusy(false); }
   };
 
-  // ---- create modal: open a "+ Campaign" / "+ Ad" naming dialog, then create ----
-  const openCreate = (kind: 'campaign' | 'ad') => { setNewName(''); setError(null); setCreateKind(kind); };
+  // ---- create modal: open a "+ Brand" / "+ Campaign" / "+ Ad" dialog, then create ----
+  const openCreate = (kind: 'brand' | 'campaign' | 'ad') => { setNewName(''); setError(null); setCreateKind(kind); };
   const submitCreate = async () => {
     const name = newName.trim();
     if (!name || creating || !createKind) return;
     setCreating(true); setError(null);
     try {
-      if (createKind === 'campaign') {
-        await createCampaign({ name });
+      if (createKind === 'brand') {
+        const b = await createBrand({ name });
+        await loadBrands();
+        // Redirect to the Brand tab to finish setup (logos, colors, fonts, voice).
+        dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: b.brand_kit_id });
+        dispatch({ type: 'SET_TAB', tab: 'brand' });
+      } else if (createKind === 'campaign') {
+        // New campaign belongs to the brand we're inside (Default → no brand_kit_id).
+        await createCampaign({ name, ...(viewBrandId && viewBrandId !== 'default' ? { brand_kit_id: viewBrandId } : {}) });
         await loadCampaigns();
+        await loadBrands(); // refresh the brand's campaign count
       } else if (createKind === 'ad' && viewCampaignId) {
         await createAd({ campaignId: viewCampaignId, name });
         setAds(await listAds(viewCampaignId));
-        await loadCampaigns(); // refresh the campaign's ad count at root
+        await loadCampaigns(); // refresh the campaign's ad count
       }
       setNewName('');
       setCreateKind(null);
@@ -328,9 +380,11 @@ export const StudioAssetsPanel: FC = () => {
 
   return (
     <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[16px] flex flex-col gap-[14px]">
-      {/* Header: breadcrumb + count + container delete */}
+      {/* Header: breadcrumb (Brands › Brand › Campaign › Ad) + count + container actions */}
       <div className="flex items-center gap-[8px] flex-wrap">
-        <button type="button" onClick={crumbToRoot} className={level === 'campaigns' ? 'text-[13px] font-[600] text-btnText' : crumbBtn}>Campaigns</button>
+        <button type="button" onClick={crumbToBrands} className={level === 'brands' ? 'text-[13px] font-[600] text-btnText' : crumbBtn}>Brands</button>
+        {viewBrand && (<><span className="text-textItemBlur"><IconChevron /></span>
+          <button type="button" onClick={crumbToCampaigns} className={level === 'campaigns' ? 'text-[13px] font-[600] text-btnText' : crumbBtn}>{viewBrand.name}</button></>)}
         {viewCampaign && (<><span className="text-textItemBlur"><IconChevron /></span>
           <button type="button" onClick={crumbToCampaign} className={level === 'campaign' ? 'text-[13px] font-[600] text-btnText' : crumbBtn}>{viewCampaign.name}</button></>)}
         {viewAd && (<><span className="text-textItemBlur"><IconChevron /></span>
@@ -338,8 +392,13 @@ export const StudioAssetsPanel: FC = () => {
         <span className="text-[12px] text-textItemBlur">({totalCount})</span>
         <span className="ml-auto flex items-center gap-[8px]">
           {busy && <span className="text-[11px] text-textItemBlur">Working…</span>}
-          {/* Root: create a campaign. */}
-          {level === 'campaigns' && (<button type="button" className={addBtn} onClick={() => openCreate('campaign')}>+ Campaign</button>)}
+          {/* Brands root: create a brand (→ redirects to the Brand tab). */}
+          {level === 'brands' && (<button type="button" className={addBtn} onClick={() => openCreate('brand')}>+ Brand</button>)}
+          {/* Inside a brand: "+ Campaign" + (delete the brand, reassigns its campaigns to Default). */}
+          {level === 'campaigns' && (<>
+            <button type="button" className={addBtn} onClick={() => openCreate('campaign')}>+ Campaign</button>
+            {viewBrand && !viewBrand.builtin && <button type="button" className={dangerBtn} onClick={() => void askDeleteBrands([viewBrand.brand_kit_id])}>Delete brand</button>}
+          </>)}
           {/* Inside a campaign: "+ Ad" sits immediately left of "Delete campaign". */}
           {level === 'campaign' && viewCampaign && (<>
             <button type="button" className={addBtn} onClick={() => openCreate('ad')}>+ Ad</button>
@@ -396,6 +455,12 @@ export const StudioAssetsPanel: FC = () => {
       {pending && (
         <div className="rounded-[8px] border border-[#ff7eb6]/40 bg-[#ff7eb6]/5 px-[14px] py-[12px] flex items-center gap-[12px] flex-wrap">
           <span className="text-[13px] text-btnText flex-1 min-w-[200px]">
+            {pending.kind === 'brand' && (() => {
+              const campTotal = pending.items.reduce((n, i) => n + i.campaignCount, 0);
+              return pending.items.length === 1
+                ? <>Delete brand <b>{pending.items[0].name}</b>? Its {plural(pending.items[0].campaignCount, 'campaign')} will move to <b>Default</b> (not deleted).</>
+                : <>Delete {plural(pending.items.length, 'brand')}? Their {plural(campTotal, 'campaign')} will move to <b>Default</b> (not deleted).</>;
+            })()}
             {pending.kind === 'campaign' && (() => {
               const adTotal = pending.items.reduce((n, i) => n + i.adCount, 0);
               return pending.items.length === 1
@@ -421,9 +486,36 @@ export const StudioAssetsPanel: FC = () => {
 
       {error && <div className="text-[12px] text-red-400">{error}</div>}
 
-      {/* ---- Level: Campaigns (root) ---- */}
+      {/* ---- Level: Brands (root) ---- */}
+      {level === 'brands' && (
+        displayBrands.length === 0 ? <Empty>No brands match “{query}”.</Empty>
+          : (
+            <div className="flex flex-col gap-[8px]">
+              {displayBrands.map((b) => {
+                const pill = b.tier === 'complete' ? ['Complete', 'text-[#1db97a]'] : b.tier === 'partial' ? ['Live', 'text-ai'] : ['Draft', 'text-[#ff7eb6]'];
+                return (
+                  <Row key={b.brand_kit_id} active={state.composerBrandKitId === b.brand_kit_id}>
+                    {!b.builtin && <Checkbox id={b.brand_kit_id} label={`Select ${b.name}`} />}
+                    {b.builtin && <span className="w-[15px] shrink-0" />}
+                    <button type="button" className="flex items-center gap-[12px] flex-1 min-w-0 text-left" onClick={() => openBrand(b.brand_kit_id)}>
+                      <span className="text-textItemBlur"><IconFolder /></span>
+                      <span className="text-[14px] font-[600] text-btnText truncate flex-1">{b.name}</span>
+                      <span className={`text-[10px] uppercase tracking-wide font-[700] ${pill[1]}`}>{pill[0]}</span>
+                      <span className="text-textItemBlur opacity-60"><IconChevron /></span>
+                    </button>
+                    {!b.builtin
+                      ? <button type="button" title="Delete brand" className={trashBtn} onClick={() => void askDeleteBrands([b.brand_kit_id])}><IconTrash /></button>
+                      : <span className="w-[30px] shrink-0" />}
+                  </Row>
+                );
+              })}
+            </div>
+          )
+      )}
+
+      {/* ---- Level: Campaigns (inside a Brand) ---- */}
       {level === 'campaigns' && (
-        campaigns.length === 0 ? <Empty>No campaigns yet. Use <b>+ Campaign</b> (top right) to create one.</Empty>
+        campaigns.length === 0 ? <Empty>No campaigns in this brand yet. Use <b>+ Campaign</b> (top right) to create one.</Empty>
           : displayCampaigns.length === 0 ? <Empty>No campaigns match “{query}”.</Empty>
             : view === 'grid' ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-[10px]">
@@ -582,16 +674,17 @@ export const StudioAssetsPanel: FC = () => {
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]"
           onClick={() => { if (!creating) setCreateKind(null); }}>
           <div className="w-[420px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[14px] shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <span className="text-[15px] font-[600] text-btnText">{createKind === 'campaign' ? 'New campaign' : 'New ad'}</span>
+            <span className="text-[15px] font-[600] text-btnText">{createKind === 'brand' ? 'New brand' : createKind === 'campaign' ? 'New campaign' : 'New ad'}</span>
+            {createKind === 'brand' && <span className="text-[12px] text-textItemBlur">We'll open the Brand tab so you can add logos, colors, fonts and a voice.</span>}
             <input autoFocus value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') { e.preventDefault(); void submitCreate(); }
                 else if (e.key === 'Escape' && !creating) setCreateKind(null);
               }}
-              placeholder={createKind === 'campaign' ? 'Campaign name' : 'Ad name'}
+              placeholder={createKind === 'brand' ? 'Brand name' : createKind === 'campaign' ? 'Campaign name' : 'Ad name'}
               className={ctrlCls + ' px-[12px] w-full placeholder:text-textItemBlur'}
-              aria-label={createKind === 'campaign' ? 'Campaign name' : 'Ad name'} />
+              aria-label={createKind === 'brand' ? 'Brand name' : createKind === 'campaign' ? 'Campaign name' : 'Ad name'} />
             {error && <span className="text-[12px] text-red-400">{error}</span>}
             <div className="flex items-center justify-end gap-[8px]">
               <button type="button" disabled={creating} onClick={() => setCreateKind(null)}
