@@ -34,6 +34,7 @@ import {
   ToolCallDecision,
 } from '@gitroom/frontend/components/studio/studio.chat-message';
 import { CompletenessMeter } from '@gitroom/frontend/components/studio/studio.completeness-meter';
+import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import {
   dispatchToolCall,
   requiresApproval,
@@ -151,6 +152,7 @@ export const StudioAgentPanel: FC<{
   /** Called with the final brief when the user clicks Create. */
   onCreate?: (brief: Record<string, unknown>) => void;
 }> = ({ caps, onClose, onCreate }) => {
+  const { state } = useStudio();
   // Chat state
   const [messages, setMessages] = useState<InternalMessage[]>([]);
   const [input, setInput] = useState('');
@@ -360,7 +362,7 @@ export const StudioAgentPanel: FC<{
         finalizeLastAssistant();
         setStreaming(false);
       },
-    });
+    }, state.composerBrandKitId);
   }, [
     input,
     streaming,
@@ -368,6 +370,7 @@ export const StudioAgentPanel: FC<{
     appendMessage,
     handleEvent,
     finalizeLastAssistant,
+    state.composerBrandKitId,
   ]);
 
   const stopStream = useCallback(() => {
