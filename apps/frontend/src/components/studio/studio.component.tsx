@@ -2,7 +2,6 @@
 
 import { FC, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { useT } from '@gitroom/react/translation/get.transation.service.client';
 import {
   StudioProvider,
   useStudio,
@@ -98,12 +97,12 @@ const IconComposer: FC = () => (
 );
 
 const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
+  { key: 'project', label: 'Assets', icon: <IconProject /> },
   { key: 'images', label: 'Images', icon: <IconImages /> },
   { key: 'video', label: 'Video', icon: <IconVideo /> },
   { key: 'audio', label: 'Audio', icon: <IconAudio /> },
   { key: 'editor', label: 'Video Editor', icon: <IconEditor /> },
   { key: 'avatars', label: 'Avatars', icon: <IconAvatar /> },
-  { key: 'project', label: 'Assets', icon: <IconProject /> },
   { key: 'composer', label: 'Composer', icon: <IconComposer /> },
 ];
 
@@ -213,7 +212,6 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
 };
 
 const StudioInner: FC = () => {
-  const t = useT();
   const { state, dispatch } = useStudio();
   const [agentOpen, setAgentOpen] = useState(false);
   // Storyboard submission feedback: null = idle, string = message to show.
@@ -256,13 +254,7 @@ const StudioInner: FC = () => {
   return (
     <div className="bg-newBgColorInner flex flex-1 h-full transition-all">
       <div className="flex flex-1 flex-col gap-[15px] p-[20px] overflow-y-auto">
-        <div className="flex items-start justify-between gap-[12px]">
-          <div className="flex flex-col gap-[4px]">
-            <h1 className="text-[24px] font-[600] text-btnText">{t('studio', 'Studio')}</h1>
-            <p className="text-[13px] text-textItemBlur">
-              {t('studio_subtitle', 'Create and manage your images, video, and audio — all in one place.')}
-            </p>
-          </div>
+        <div className="flex items-center justify-end gap-[12px]">
           <button
             type="button"
             onClick={() => setAgentOpen((v) => !v)}
