@@ -360,16 +360,21 @@ export const StudioBrandPanel: FC = () => {
 // Live brand preview — composes logo + palette + sample type.
 const BrandPreview: FC<{ brand: Brand }> = ({ brand }) => {
   const sw = (role: ColorRole, shade: 'base' | 'alt' = 'base') => (brand.palette || []).find((s) => s.role === role && (s.shade || 'base') === shade)?.hex;
-  const bg = sw('neutral', 'alt') || '#FFFFFF';
-  const text = sw('neutral', 'base') || '#0B1220';
+  // When the neutral-light surface isn't set yet (new/empty draft) fall back to the
+  // dark Studio surface instead of a hard white slab; real colors take over once set.
+  const surface = sw('neutral', 'alt') || null;
+  const text = sw('neutral', 'base') || (surface ? '#0B1220' : undefined);
   const primary = sw('primary') || '#5279BC';
   const accent = sw('accent') || '#42B75E';
+  const onColor = surface || '#0B1220'; // chip text — sits on the primary/accent fill
   const logo = logoUrl((brand.logo as any)?.lockupColor) || logoUrl((brand.logo as any)?.mark);
   const headline = (brand.typography as any)?.primary;
   const body = (brand.typography as any)?.secondary;
   return (
     <div className="rounded-[8px] border border-newBorder overflow-hidden">
-      <div className="p-[20px] flex flex-col gap-[10px]" style={{ background: bg, color: text }}>
+      <div
+        className={'p-[20px] flex flex-col gap-[10px]' + (surface ? '' : ' bg-newBgColorInner text-btnText')}
+        style={surface ? { background: surface, color: text } : undefined}>
         <div className="flex items-center gap-[10px]">
           {logo
             // eslint-disable-next-line @next/next/no-img-element
@@ -380,8 +385,8 @@ const BrandPreview: FC<{ brand: Brand }> = ({ brand }) => {
         <div className="text-[22px] font-[700]" style={{ fontFamily: headline ? `'${headline}', sans-serif` : undefined }}>Your headline, on brand.</div>
         <div className="text-[13px]" style={{ fontFamily: body ? `'${body}', sans-serif` : undefined, opacity: 0.85 }}>Body copy renders in your secondary font, on your neutral background.</div>
         <div className="flex gap-[8px] mt-[4px]">
-          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: primary, color: bg }}>Primary CTA</span>
-          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: accent, color: bg }}>Accent</span>
+          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: primary, color: onColor }}>Primary CTA</span>
+          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: accent, color: onColor }}>Accent</span>
         </div>
       </div>
     </div>
