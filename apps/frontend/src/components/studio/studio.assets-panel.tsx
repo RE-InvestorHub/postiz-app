@@ -18,10 +18,11 @@
 // bar's active selection (two-way). Clicking a breadcrumb crumb navigates up freely.
 
 import { ChangeEvent, FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import {
   listCampaigns, listAds, getAdObjects, addObject, removeObject,
-  deleteCampaign, deleteAd,
+  createCampaign, createAd, deleteCampaign, deleteAd,
   Campaign, Ad, ResolvedObject, ObjectType,
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
@@ -99,6 +100,9 @@ export const StudioAssetsPanel: FC = () => {
   const [sortKey, setSortKey] = useState<'name' | 'meta'>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [view, setView] = useState<'list' | 'grid'>('list');
+  const [createKind, setCreateKind] = useState<'campaign' | 'ad' | null>(null); // open modal
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const level: 'campaigns' | 'campaign' | 'ad' = viewAdId ? 'ad' : viewCampaignId ? 'campaign' : 'campaigns';
@@ -138,8 +142,8 @@ export const StudioAssetsPanel: FC = () => {
     void loadCampaigns();
   }, [state.activeCampaignId, state.activeAdId, loadCampaigns]);
 
-  // Reset selection + search whenever the level/view changes.
-  useEffect(() => { setSelected(new Set()); setQuery(''); }, [level, viewCampaignId, viewAdId]);
+  // Reset selection + search + any open create-modal whenever the level/view changes.
+  useEffect(() => { setSelected(new Set()); setQuery(''); setCreateKind(null); setNewName(''); }, [level, viewCampaignId, viewAdId]);
 
   // ---- navigation ----
   const openCampaign = (id: string) => { setViewAdId(null); setViewCampaignId(id); dispatch({ type: 'SET_ACTIVE_CAMPAIGN', campaignId: id }); };
@@ -225,6 +229,26 @@ export const StudioAssetsPanel: FC = () => {
     } catch (e) { setError(msg(e)); } finally { setBusy(false); }
   };
 
+  // ---- create modal: open a "+ Campaign" / "+ Ad" naming dialog, then create ----
+  const openCreate = (kind: 'campaign' | 'ad') => { setNewName(''); setError(null); setCreateKind(kind); };
+  const submitCreate = async () => {
+    const name = newName.trim();
+    if (!name || creating || !createKind) return;
+    setCreating(true); setError(null);
+    try {
+      if (createKind === 'campaign') {
+        await createCampaign({ name });
+        await loadCampaigns();
+      } else if (createKind === 'ad' && viewCampaignId) {
+        await createAd({ campaignId: viewCampaignId, name });
+        setAds(await listAds(viewCampaignId));
+        await loadCampaigns(); // refresh the campaign's ad count at root
+      }
+      setNewName('');
+      setCreateKind(null);
+    } catch (e) { setError(msg(e)); } finally { setCreating(false); }
+  };
+
   // ---- uploads: drop zone callback + "Add files" picker (both link to the active ad) ----
   const linkUpload = useCallback(async (asset: UploadedAsset) => {
     if (!viewAdId) return;
@@ -257,6 +281,8 @@ export const StudioAssetsPanel: FC = () => {
   const iconBtn = 'shrink-0 h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText hover:bg-newBgColor transition-colors';
   const crumbBtn = 'text-[13px] font-[600] text-textItemBlur hover:text-btnText transition-colors';
   const dangerBtn = 'h-[32px] px-[12px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10 disabled:opacity-40';
+  // Identical shape to dangerBtn, hollow + green (mirrors the hollow + red delete button).
+  const addBtn = 'h-[32px] px-[12px] rounded-[8px] border border-[#1db97a]/40 text-[#1db97a] text-[12px] font-[600] hover:bg-[#1db97a]/10 disabled:opacity-40';
   const ctrlCls = 'h-[34px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
@@ -276,7 +302,13 @@ export const StudioAssetsPanel: FC = () => {
         <span className="text-[12px] text-textItemBlur">({totalCount})</span>
         <span className="ml-auto flex items-center gap-[8px]">
           {busy && <span className="text-[11px] text-textItemBlur">Working…</span>}
-          {level === 'campaign' && viewCampaign && (<button type="button" className={dangerBtn} onClick={() => askDeleteCampaigns([viewCampaign.campaign_id])}>Delete campaign</button>)}
+          {/* Root: create a campaign. */}
+          {level === 'campaigns' && (<button type="button" className={addBtn} onClick={() => openCreate('campaign')}>+ Campaign</button>)}
+          {/* Inside a campaign: "+ Ad" sits immediately left of "Delete campaign". */}
+          {level === 'campaign' && viewCampaign && (<>
+            <button type="button" className={addBtn} onClick={() => openCreate('ad')}>+ Ad</button>
+            <button type="button" className={dangerBtn} onClick={() => askDeleteCampaigns([viewCampaign.campaign_id])}>Delete campaign</button>
+          </>)}
           {level === 'ad' && viewAd && (<button type="button" className={dangerBtn} onClick={() => askDeleteAds([viewAd.ad_id])}>Delete ad</button>)}
         </span>
       </div>
@@ -481,6 +513,33 @@ export const StudioAssetsPanel: FC = () => {
             <StudioDropZone onUploaded={linkUpload} />
           </div>
         </div>
+      )}
+
+      {/* Create modal — opened by the "+ Campaign" / "+ Ad" header buttons. */}
+      {createKind && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]"
+          onClick={() => { if (!creating) setCreateKind(null); }}>
+          <div className="w-[420px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[14px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[15px] font-[600] text-btnText">{createKind === 'campaign' ? 'New campaign' : 'New ad'}</span>
+            <input autoFocus value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); void submitCreate(); }
+                else if (e.key === 'Escape' && !creating) setCreateKind(null);
+              }}
+              placeholder={createKind === 'campaign' ? 'Campaign name' : 'Ad name'}
+              className={ctrlCls + ' px-[12px] w-full placeholder:text-textItemBlur'}
+              aria-label={createKind === 'campaign' ? 'Campaign name' : 'Ad name'} />
+            {error && <span className="text-[12px] text-red-400">{error}</span>}
+            <div className="flex items-center justify-end gap-[8px]">
+              <button type="button" disabled={creating} onClick={() => setCreateKind(null)}
+                className="h-[34px] px-[14px] rounded-[8px] border border-newBorder text-btnText text-[12px] font-[600] disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={!newName.trim() || creating} onClick={() => void submitCreate()}
+                className="h-[34px] px-[16px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[700] disabled:opacity-50">{creating ? 'Creating…' : 'Create'}</button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
