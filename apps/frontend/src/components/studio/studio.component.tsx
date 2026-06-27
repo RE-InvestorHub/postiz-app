@@ -22,6 +22,7 @@ import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.aud
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
 import { StudioAssetsPanel } from '@gitroom/frontend/components/studio/studio.assets-panel';
+import { StudioBrandPanel } from '@gitroom/frontend/components/studio/studio.brand-panel';
 import { StudioComposerHub } from '@gitroom/frontend/components/studio/studio.composer-hub';
 import { StudioVideoComposerPanel } from '@gitroom/frontend/components/studio/studio.video-composer-panel';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
@@ -96,8 +97,15 @@ const IconComposer: FC = () => (
     <path d="M6 7h6" />
   </svg>
 );
+const IconBrand: FC = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="13.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="10.5" r="2.5" /><circle cx="8.5" cy="7.5" r="2.5" /><circle cx="6.5" cy="12.5" r="2.5" />
+    <path d="M12 22a10 10 0 1 1 0-20 6 6 0 0 0 0 12h1.5a2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 0 0 3Z" />
+  </svg>
+);
 
 const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
+  { key: 'brand', label: 'Brand', icon: <IconBrand /> },
   { key: 'project', label: 'Assets', icon: <IconProject /> },
   { key: 'images', label: 'Images', icon: <IconImages /> },
   { key: 'video', label: 'Video', icon: <IconVideo /> },
@@ -337,6 +345,7 @@ const StudioInner: FC = () => {
           <RemotionEditorPanel />
         )}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
+        {state.activeTab === 'brand' && <StudioBrandPanel />}
         {state.activeTab === 'project' && <StudioAssetsPanel />}
         {state.activeTab === 'composer' && <StudioComposerHub />}
       </div>

@@ -42,6 +42,8 @@ export interface Brand {
   files: string[];
   status: 'draft' | 'live';
   tier: 'incomplete' | 'partial' | 'complete';
+  missing: BrandCompletenessGap[];
+  score?: number;
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
