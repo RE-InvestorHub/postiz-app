@@ -80,6 +80,11 @@ export function addBrandFile(id: string, payload: { slot?: LogoSlot; assetId?: s
 export function deleteBrand(id: string): Promise<{ ok: boolean }> {
   return req<{ ok: boolean }>('/brandkits/delete', { method: 'POST', body: JSON.stringify({ id }) });
 }
+export interface BrandExtract { palette: PaletteSwatch[]; typography: BrandTypography; persona: BrandPersona }
+/** Normalize pasted brand info → { palette, typography, persona } (apply with updateBrand). */
+export function extractBrand(text: string): Promise<BrandExtract> {
+  return req<BrandExtract>('/brand/extract', { method: 'POST', body: JSON.stringify({ text }) });
+}
 
 /** Resolve a logo ref to a viewable URL (uploaded asset → brain /assets; else null for built-in variants). */
 export function logoUrl(ref?: LogoRef): string | null {

@@ -13,7 +13,7 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
 import {
   Brand, ColorRole, LogoSlot, LOGO_SLOTS, LOGO_SLOT_LABELS,
-  listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, logoUrl,
+  listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, logoUrl,
 } from '@gitroom/frontend/components/studio/studio.brand-client';
 
 const FONTS = [
@@ -51,6 +51,8 @@ export const StudioBrandPanel: FC = () => {
   const [newName, setNewName] = useState('');
   const uploadRef = useRef<HTMLInputElement>(null);
   const pendingSlot = useRef<LogoSlot | null>(null);
+  const [importText, setImportText] = useState('');
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     try { setBrands(await listBrands()); } catch (e) { setError(msg(e)); }
@@ -91,6 +93,21 @@ export const StudioBrandPanel: FC = () => {
       setBrand(updated); await load();
       if (before !== 'live' && updated.status === 'live') toaster.show('This brand is now live — it can be used in the Composer.', 'success');
     } catch (e) { setError(msg(e)); }
+  };
+
+  const doImport = async () => {
+    if (!brand || brand.builtin || !importText.trim() || importing) return;
+    setImporting(true); setError(null);
+    try {
+      const ex = await extractBrand(importText.trim());
+      await patch({
+        ...(ex.palette?.length ? { palette: ex.palette } : {}),
+        ...(ex.typography && Object.keys(ex.typography).length ? { typography: ex.typography } : {}),
+        ...(ex.persona && Object.keys(ex.persona).length ? { persona: ex.persona } : {}),
+      });
+      setImportText('');
+      toaster.show('Brand info imported — review the palette, fonts and voice, then add your 5 logos.', 'success');
+    } catch (e) { setError(msg(e)); } finally { setImporting(false); }
   };
 
   const setSwatch = (role: ColorRole, shade: 'base' | 'alt', hex: string) => {
@@ -256,6 +273,21 @@ export const StudioBrandPanel: FC = () => {
                 placeholder="e.g. Confident, approachable, and data-driven — a mentor for active real-estate investors."
                 className="min-h-[80px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText p-[10px] placeholder:text-textItemBlur" />
             </div>
+
+            {/* Import / extract — paste brand info, we normalize it into the kit */}
+            {!brand.builtin && (
+              <div className={card + ' flex flex-col gap-[8px]'}>
+                <span className={sectionTitle}>Import brand — paste colors, fonts, or a brand guide and we'll standardize it</span>
+                <textarea value={importText} onChange={(e) => setImportText(e.target.value)} disabled={importing}
+                  placeholder="Paste anything: hex colors (#5279BC …), font names, a brand description / brand-guide text. We'll categorize colors (primary/secondary/neutral/accent), map fonts, and summarize the voice."
+                  className="min-h-[90px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText p-[10px] placeholder:text-textItemBlur" />
+                <button type="button" onClick={doImport} disabled={!importText.trim() || importing}
+                  className="self-start h-[34px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] disabled:opacity-50">
+                  {importing ? 'Extracting…' : 'Extract & apply'}
+                </button>
+                <span className="text-[11px] text-textItemBlur">Colors/fonts/voice are filled in; you still add the 5 logos to go live.</span>
+              </div>
+            )}
           </>
         )}
       </div>

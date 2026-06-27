@@ -110,6 +110,8 @@ export function requiresApproval(toolName: string): boolean {
     'brand.update',
     'brand.addLogo',
     'brand.delete',
+    // brand.extract is a cheap text-LLM normalization (no image credits) → auto.
+    'brand.extract',
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',

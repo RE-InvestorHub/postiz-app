@@ -37,7 +37,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { createFromPreset as createDataRecordPreset, setRecordField, removeRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
 import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
-import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand } from '@gitroom/frontend/components/studio/studio.brand-client';
+import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
@@ -450,6 +450,16 @@ export function buildStudioCapabilities(
         if (!id || id === 'default') { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No custom brand to delete.' }); return; }
         await deleteBrand(id);
         if (getState().composerBrandKitId === id) dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: 'default' });
+      },
+    },
+    {
+      id: 'brand.extract',
+      namespace: 'brand',
+      label: 'Normalize pasted brand info into { palette, typography, persona } (apply with brand.update)',
+      params: ['text'],
+      handler: async (p: { text?: string } = {}) => {
+        if (!p.text?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Brand text required.' }); return; }
+        return extractBrand(p.text);
       },
     },
 
