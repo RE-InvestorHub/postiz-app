@@ -104,5 +104,6 @@ export function logoUrl(ref?: LogoRef): string | null {
   if (!ref) return null;
   if (ref.path) return `${base()}/assets/${ref.path.replace(/^.*\/assets\//, '')}`;
   if (ref.assetId) return `${base()}/assets/uploads/${ref.assetId}.${ref.kind || 'png'}`;
-  return null; // built-in `variant` logos are server-side SVG keys, not directly viewable here
+  if (ref.variant) return `${base()}/brand/logo/${encodeURIComponent(ref.variant)}`; // built-in SVG keys
+  return null;
 }

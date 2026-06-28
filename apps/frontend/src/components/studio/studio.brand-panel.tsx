@@ -44,6 +44,41 @@ const StatusPill: FC<{ b: Brand }> = ({ b }) => {
   return <span className={`text-[10px] uppercase tracking-wide font-[700] px-[8px] py-[2px] rounded-full border ${cls}`}>{label}</span>;
 };
 
+// A 3- or 6-digit hex (with or without #).
+const HEX_RE = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const normHex = (v: string) => {
+  let s = v.trim().replace(/^#/, '');
+  if (s.length === 3) s = s.split('').map((c) => c + c).join('');
+  return '#' + s.toLowerCase();
+};
+// One palette cell: a swatch (native picker on click) + a typeable/pasteable hex field.
+const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; onCommit: (hex: string) => void }> = ({ label, hex, disabled, onCommit }) => {
+  const [val, setVal] = useState(hex || '');
+  useEffect(() => { setVal(hex || ''); }, [hex]);
+  const commit = () => {
+    const t = val.trim();
+    if (t && HEX_RE.test(t)) { if (normHex(t) !== (hex || '').toLowerCase()) onCommit(normHex(t)); }
+    else setVal(hex || ''); // revert invalid / empty
+  };
+  return (
+    <div className="flex flex-col gap-[5px]">
+      <span className="relative block h-[54px] rounded-[8px] border border-newBorder overflow-hidden" style={hex ? { background: hex } : undefined}>
+        {!hex && <span className="absolute inset-0 flex items-center justify-center text-[18px] text-textItemBlur border border-dashed border-newBorder rounded-[8px]">+</span>}
+        <input type="color" value={hex || '#888888'} disabled={disabled}
+          onChange={(e) => onCommit(e.target.value)}
+          className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-default" aria-label={`${label} color picker`} />
+      </span>
+      <span className="text-[11px] text-textItemBlur">{label}</span>
+      <input type="text" value={val} disabled={disabled} placeholder="#RRGGBB" spellCheck={false}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === 'Escape') { setVal(hex || ''); (e.target as HTMLInputElement).blur(); } }}
+        className="h-[28px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText px-[8px] uppercase placeholder:text-textItemBlur focus:border-ai outline-none disabled:opacity-50"
+        aria-label={`${label} hex value`} />
+    </div>
+  );
+};
+
 export const StudioBrandPanel: FC = () => {
   const { state, dispatch } = useStudio();
   const toaster = useToaster();
@@ -261,23 +296,10 @@ export const StudioBrandPanel: FC = () => {
             <div className={card + ' flex flex-col gap-[10px]'}>
               <span className={sectionTitle}>Color palette — 4 (1 each) to start · 8 for a complete kit</span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-[10px]">
-                {PALETTE_CELLS.map((c) => {
-                  const hex = swatchHex(c.role, c.shade);
-                  return (
-                    <label key={`${c.role}:${c.shade}`} className="flex flex-col gap-[5px] cursor-pointer">
-                      <span className="relative block h-[54px] rounded-[8px] border border-newBorder overflow-hidden"
-                        style={hex ? { background: hex } : undefined}>
-                        {!hex && <span className="absolute inset-0 flex items-center justify-center text-[18px] text-textItemBlur border border-dashed border-newBorder rounded-[8px]">+</span>}
-                        <input type="color" value={hex || '#888888'} disabled={brand.builtin}
-                          onChange={(e) => setSwatch(c.role, c.shade, e.target.value)}
-                          className="absolute inset-0 opacity-0 cursor-pointer" aria-label={c.label} />
-                      </span>
-                      <span className="text-[11px] text-textItemBlur flex items-center justify-between">
-                        <span>{c.label}</span><span className="uppercase">{hex || ''}</span>
-                      </span>
-                    </label>
-                  );
-                })}
+                {PALETTE_CELLS.map((c) => (
+                  <HexSwatch key={`${c.role}:${c.shade}`} label={c.label} hex={swatchHex(c.role, c.shade)}
+                    disabled={brand.builtin} onCommit={(hex) => setSwatch(c.role, c.shade, hex)} />
+                ))}
               </div>
             </div>
 
