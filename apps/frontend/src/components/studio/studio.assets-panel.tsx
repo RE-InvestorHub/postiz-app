@@ -249,14 +249,13 @@ export const StudioAssetsPanel: FC = () => {
     try {
       if (pending.kind === 'brand') {
         for (const it of pending.items) {
-          // reassign the brand's campaigns to Default (un-brand them), then delete the brand
-          const cs = await listCampaigns(it.id);
-          for (const c of cs) await updateCampaign(c.campaign_id, { brand_kit_id: null });
+          // Cascade: the brain deletes every campaign under this brand (and their ads),
+          // then the brand record. Unbranded composition falls back to a bare system kit.
           await deleteBrand(it.id);
           if (viewBrandId === it.id) { setViewBrandId(null); setViewCampaignId(null); setViewAdId(null); }
           if (state.composerBrandKitId === it.id) dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: 'default' });
         }
-        await loadBrands();
+        await loadBrands(); await loadCampaigns();
       } else if (pending.kind === 'campaign') {
         for (const it of pending.items) await deleteCampaign(it.id);
         const ids = pending.items.map((i) => i.id);
@@ -458,8 +457,8 @@ export const StudioAssetsPanel: FC = () => {
             {pending.kind === 'brand' && (() => {
               const campTotal = pending.items.reduce((n, i) => n + i.campaignCount, 0);
               return pending.items.length === 1
-                ? <>Delete brand <b>{pending.items[0].name}</b>? Its {plural(pending.items[0].campaignCount, 'campaign')} will move to <b>Default</b> (not deleted).</>
-                : <>Delete {plural(pending.items.length, 'brand')}? Their {plural(campTotal, 'campaign')} will move to <b>Default</b> (not deleted).</>;
+                ? <>Delete brand <b>{pending.items[0].name}</b>? This also deletes its {plural(pending.items[0].campaignCount, 'campaign')} and every ad inside them. The underlying media in the library is kept.</>
+                : <>Delete {plural(pending.items.length, 'brand')}? This also deletes their {plural(campTotal, 'campaign')} and every ad inside them. The underlying media in the library is kept.</>;
             })()}
             {pending.kind === 'campaign' && (() => {
               const adTotal = pending.items.reduce((n, i) => n + i.adCount, 0);

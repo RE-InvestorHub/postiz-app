@@ -13,6 +13,7 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
+import { listCampaigns } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   Brand, ColorRole, LogoSlot, LOGO_SLOTS, LOGO_SLOT_LABELS,
   listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrandFromAsset, logoUrl,
@@ -56,6 +57,8 @@ export const StudioBrandPanel: FC = () => {
   const pendingSlot = useRef<LogoSlot | null>(null);
   const [importModal, setImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Two-step delete confirm: null = idle, number = # campaigns the cascade will remove.
+  const [confirmDel, setConfirmDel] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try { setBrands(await listBrands()); } catch (e) { setError(msg(e)); }
@@ -69,7 +72,7 @@ export const StudioBrandPanel: FC = () => {
   }, [state.composerBrandKitId]);
 
   const select = async (id: string) => {
-    setError(null);
+    setError(null); setConfirmDel(null);
     try { const b = await getBrand(id); setBrand(b); dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: id }); }
     catch (e) { setError(msg(e)); }
   };
@@ -153,10 +156,23 @@ export const StudioBrandPanel: FC = () => {
     } catch (err) { setError(msg(err)); } finally { setBusy(false); }
   };
 
+  // Step 1: arm the confirm, fetching how many campaigns the cascade will remove.
+  const startDelete = async () => {
+    if (!brand) return;
+    let n = 0;
+    try { n = (await listCampaigns(brand.brand_kit_id)).length; } catch { /* count is advisory */ }
+    setConfirmDel(n);
+  };
+  // Step 2: cascade-delete the brand (brain removes its campaigns + ads), then refresh.
   const doDelete = async () => {
-    if (!brand || brand.builtin) return;
+    if (!brand) return;
     setBusy(true);
-    try { await deleteBrand(brand.brand_kit_id); if (state.composerBrandKitId === brand.brand_kit_id) dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: 'default' }); setBrand(null); await load(); }
+    try {
+      await deleteBrand(brand.brand_kit_id);
+      if (state.composerBrandKitId === brand.brand_kit_id) dispatch({ type: 'SET_COMPOSER_BRANDKIT', brandKitId: 'default' });
+      toaster.show(`Deleted “${brand.name}” and its campaigns.`, 'success');
+      setConfirmDel(null); setBrand(null); await load();
+    }
     catch (e) { setError(msg(e)); } finally { setBusy(false); }
   };
 
@@ -201,9 +217,20 @@ export const StudioBrandPanel: FC = () => {
               <span className="text-[18px] font-[700] text-btnText">{brand.name}</span>
               <StatusPill b={brand} />
               {busy && <span className="text-[11px] text-textItemBlur">Working…</span>}
-              {!brand.builtin && <button type="button" onClick={doDelete}
-                className="ml-auto h-[32px] px-[12px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10">Delete brand</button>}
-              {brand.builtin && <span className="ml-auto text-[11px] text-textItemBlur">Built-in (read-only)</span>}
+              {confirmDel === null ? (
+                <button type="button" onClick={startDelete} disabled={busy}
+                  className="ml-auto h-[32px] px-[12px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10 disabled:opacity-50">Delete brand</button>
+              ) : (
+                <span className="ml-auto flex items-center gap-[8px]">
+                  <span className="text-[12px] text-[#ff7eb6]">
+                    Delete <b>{brand.name}</b>{confirmDel > 0 ? <> and its {confirmDel} {confirmDel === 1 ? 'campaign' : 'campaigns'} (+ their ads)</> : null}? Library media is kept.
+                  </span>
+                  <button type="button" onClick={doDelete} disabled={busy}
+                    className="h-[30px] px-[12px] rounded-[8px] bg-[#ff7eb6] text-[#1a0a12] text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">{busy ? 'Deleting…' : 'Delete'}</button>
+                  <button type="button" onClick={() => setConfirmDel(null)} disabled={busy}
+                    className="h-[30px] px-[12px] rounded-[8px] border border-newBorder text-btnText text-[12px] font-[600] hover:border-ai/50 disabled:opacity-50">Cancel</button>
+                </span>
+              )}
             </div>
 
             {/* Brand preview */}
