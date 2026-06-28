@@ -174,6 +174,7 @@ export const StudioBrandPanel: FC = () => {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [logoSlot, setLogoSlot] = useState<LogoSlot | null>(null); // which logo slot's add modal is open
+  const [confirmClear, setConfirmClear] = useState<LogoSlot | null>(null); // which slot's remove is being confirmed
   const [viewLogo, setViewLogo] = useState<{ url: string; label: string } | null>(null); // logo lightbox
   const [importModal, setImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -308,6 +309,17 @@ export const StudioBrandPanel: FC = () => {
 
   // Clicking any logo "+" opens a modal: upload (left) or generate with AI (right).
   const pickLogo = (slot: LogoSlot) => setLogoSlot(slot);
+  // Clear a filled logo slot back to empty (null clears it; the brain re-derives roles).
+  const onClearLogo = async (slot: LogoSlot) => {
+    if (!brand || brand.builtin) return;
+    setBusy(true); setError(null);
+    try {
+      const updated = await updateBrand(brand.brand_kit_id, { logo: { [slot]: null } });
+      setBrand(updated); await load();
+      setConfirmClear(null);
+      toaster.show(`${LOGO_SLOT_LABELS[slot]} removed.`, 'success');
+    } catch (e) { setError(msg(e)); } finally { setBusy(false); }
+  };
   // Left card: an uploaded image (png/jpg/svg) → set this slot to it.
   const onLogoUploaded = async (asset: UploadedAsset) => {
     const slot = logoSlot;
@@ -541,6 +553,20 @@ export const StudioBrandPanel: FC = () => {
                             <button type="button" onClick={(e) => { e.stopPropagation(); setViewLogo({ url, label: LOGO_SLOT_LABELS[slot] }); }}
                               title="View full size" aria-label={`View ${LOGO_SLOT_LABELS[slot]} full size`}
                               className="absolute top-[4px] right-[4px] h-[20px] w-[20px] rounded-[5px] bg-black/45 text-white/90 text-[11px] leading-none flex items-center justify-center hover:bg-black/65">⛶</button>
+                          )}
+                          {ref && !brand.builtin && confirmClear !== slot && (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmClear(slot); }} disabled={busy}
+                              title={`Remove ${LOGO_SLOT_LABELS[slot]}`} aria-label={`Remove ${LOGO_SLOT_LABELS[slot]}`}
+                              className="absolute top-[4px] left-[4px] h-[20px] w-[20px] rounded-[5px] bg-black/45 text-white/90 text-[12px] leading-none flex items-center justify-center hover:bg-[#ff7eb6]/80 disabled:opacity-50">✕</button>
+                          )}
+                          {confirmClear === slot && (
+                            <span className="absolute inset-0 z-[1] flex items-center justify-center gap-[8px] bg-black/70 backdrop-blur-[1px]">
+                              <span className="text-[11px] text-white/90">Remove?</span>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); onClearLogo(slot); }} disabled={busy}
+                                className="h-[22px] px-[10px] rounded-[6px] bg-[#ff7eb6] text-[#3a0d23] text-[11px] font-[700] hover:opacity-90 disabled:opacity-50">{busy ? '…' : 'Remove'}</button>
+                              <button type="button" onClick={(e) => { e.stopPropagation(); setConfirmClear(null); }}
+                                className="h-[22px] px-[10px] rounded-[6px] border border-white/30 text-white/85 text-[11px] hover:bg-white/10">Cancel</button>
+                            </span>
                           )}
                         </span>
                         <span className="text-[11px] text-textItemBlur">{LOGO_SLOT_LABELS[slot]}</span>

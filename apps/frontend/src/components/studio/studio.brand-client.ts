@@ -69,7 +69,8 @@ export function createBrand(payload: { name: string }): Promise<Brand> {
 }
 export function updateBrand(id: string, patch: {
   name?: string; persona?: BrandPersona; palette?: PaletteSwatch[]; typography?: BrandTypography;
-  logo?: Partial<Record<LogoSlot, LogoRef>>; roles?: Record<string, unknown>;
+  // A slot value of null CLEARS that logo slot back to empty.
+  logo?: Partial<Record<LogoSlot, LogoRef | null>>; roles?: Record<string, unknown>;
 }): Promise<Brand> {
   return req<Brand>('/brandkits/update', { method: 'POST', body: JSON.stringify({ id, patch }) });
 }
