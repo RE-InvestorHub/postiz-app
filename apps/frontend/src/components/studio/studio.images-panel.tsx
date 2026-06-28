@@ -13,7 +13,7 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
-import { listBrandImages, deleteBrandImage, deleteBrandImages, BrandImage } from '@gitroom/frontend/components/studio/studio.image-client';
+import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
 
 type ModelOpt = { value: string; label: string; credits: string };
 interface StudioImagesPanelProps {
@@ -48,6 +48,11 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Channel reshape (canvas).
+  const [channels, setChannels] = useState<ChannelPreset[]>([]);
+  const [reshapeChannel, setReshapeChannel] = useState('');
+  const [reshapeFit, setReshapeFit] = useState<'crop' | 'pad'>('crop');
+  const [reshaping, setReshaping] = useState(false);
 
   const selected = images.find((i) => i.id === selectedId) || null;
 
@@ -73,6 +78,20 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
       caps['studio.selectModel']?.handler({ model: models[0].value });
     }
   }, [models, state.model, caps]);
+
+  // Channel presets for the canvas Reshape control.
+  useEffect(() => { listChannelPresets().then((c) => { setChannels(c); setReshapeChannel((prev) => prev || c[0]?.id || ''); }).catch(() => {}); }, []);
+
+  const onReshape = async () => {
+    if (!selected || !reshapeChannel || reshaping) return;
+    setReshaping(true); setError(null);
+    try {
+      const variant = await reshapeImage(selected.id, reshapeChannel, reshapeFit);
+      await load();
+      setSelectedId(variant.id); // jump to the new channel-sized variant
+      toaster.show(`Reshaped to ${variant.channelLabel} (${variant.w}×${variant.h}). Original kept.`, 'success');
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setReshaping(false); }
+  };
 
   const onUploaded = (_a: UploadedAsset) => { void load(); };
   const addToAd = async () => {
@@ -170,6 +189,10 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
                     className={'relative aspect-square rounded-[6px] overflow-hidden border ' + ring}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={img.url} alt={img.prompt || img.id} className="w-full h-full object-cover" />
+                    {/* Channel chip — makes each reshaped variant instantly identifiable. */}
+                    {img.channelShort && (
+                      <span className="absolute bottom-[3px] left-[3px] right-[3px] truncate rounded-[4px] bg-ai/85 text-white text-[9px] font-[700] leading-none px-[4px] py-[3px] text-center">{img.channelShort}</span>
+                    )}
                     {selectMode && (
                       <span className={'absolute top-[3px] left-[3px] h-[18px] w-[18px] rounded-[4px] border flex items-center justify-center text-[11px] leading-none ' + (isChecked ? 'bg-[#ff7eb6] border-[#ff7eb6] text-[#3a0d23]' : 'bg-black/45 border-white/50 text-transparent')}>✓</span>
                     )}
@@ -212,8 +235,31 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
                     className="h-[36px] px-[14px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10">Delete</button>
                 )}
               </div>
+              {/* Reshape for a channel — non-destructive: produces a new channel-sized variant. */}
+              <div className="flex flex-wrap items-center gap-[8px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[10px] py-[8px]">
+                <span className="text-[12px] font-[600] text-btnText">Prep for a channel</span>
+                <select value={reshapeChannel} onChange={(e) => setReshapeChannel(e.target.value)} title="Channel size"
+                  className="h-[34px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">
+                  {channels.map((c) => <option key={c.id} value={c.id}>{c.label} ({c.w}×{c.h})</option>)}
+                </select>
+                {/* Crop / Pad fit toggle */}
+                <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
+                  {(['crop', 'pad'] as const).map((f) => (
+                    <button key={f} type="button" onClick={() => setReshapeFit(f)}
+                      title={f === 'crop' ? 'Fill the frame (center-crop)' : 'Fit with padding (no crop)'}
+                      className={'h-[34px] px-[12px] text-[12px] font-[600] capitalize ' + (reshapeFit === f ? 'bg-btnPrimary text-btnText' : 'text-textItemBlur hover:text-btnText')}>{f}</button>
+                  ))}
+                </span>
+                <button type="button" onClick={onReshape} disabled={reshaping || !reshapeChannel}
+                  className="h-[34px] px-[14px] rounded-[8px] bg-ai text-white text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">
+                  {reshaping ? 'Reshaping…' : `Reshape to ${channels.find((c) => c.id === reshapeChannel)?.short ?? 'channel'}`}
+                </button>
+                <span className="text-[10px] text-textItemBlur">New variant — original kept.</span>
+              </div>
+
               {/* Metadata */}
               <div className="text-[11px] text-textItemBlur flex flex-col gap-[3px]">
+                {selected.channelLabel && <span className="text-[12px] font-[700] text-ai">{selected.channelLabel} · {selected.w}×{selected.h}{selected.fit ? ` · ${selected.fit}` : ''}</span>}
                 {selected.prompt && <span className="text-btnText/80 line-clamp-2"><b className="text-textItemBlur font-[600]">Prompt:</b> {selected.prompt}</span>}
                 <span className="flex flex-wrap gap-x-[14px] gap-y-[2px]">
                   {selected.model && <span>Model: {selected.model}</span>}
