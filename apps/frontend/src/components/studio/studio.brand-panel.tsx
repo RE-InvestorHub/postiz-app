@@ -437,36 +437,46 @@ export const StudioBrandPanel: FC = () => {
   );
 };
 
-// Live brand preview — composes logo + palette + sample type.
+// Live brand preview — composes logo + palette + sample type, with a Light/Dark toggle
+// that swaps the neutral surface/text and the mode-appropriate logo lockup.
 const BrandPreview: FC<{ brand: Brand }> = ({ brand }) => {
+  const [mode, setMode] = useState<'light' | 'dark'>('light');
   const sw = (role: ColorRole, shade: 'base' | 'alt' = 'base') => (brand.palette || []).find((s) => s.role === role && (s.shade || 'base') === shade)?.hex;
-  // When the neutral-light surface isn't set yet (new/empty draft) fall back to the
-  // dark Studio surface instead of a hard white slab; real colors take over once set.
-  const surface = sw('neutral', 'alt') || null;
-  const text = sw('neutral', 'base') || (surface ? '#0B1220' : undefined);
   const primary = sw('primary') || '#5279BC';
   const accent = sw('accent') || '#42B75E';
-  const onColor = surface || '#0B1220'; // chip text — sits on the primary/accent fill
-  const logo = logoUrl((brand.logo as any)?.lockupColor) || logoUrl((brand.logo as any)?.mark);
   const headline = (brand.typography as any)?.primary;
   const body = (brand.typography as any)?.secondary;
+  const dark = mode === 'dark';
+  // neutral base = dark shade, neutral alt = light shade.
+  const surface = dark ? (sw('neutral', 'base') || '#0B1220') : (sw('neutral', 'alt') || '#F4F7FB');
+  const text = dark ? (sw('neutral', 'alt') || '#F4F7FB') : (sw('neutral', 'base') || '#0B1220');
+  const lg = (brand.logo || {}) as any;
+  const logo = dark
+    ? (logoUrl(lg.lockupDark) || logoUrl(lg.mark) || logoUrl(lg.lockupColor))
+    : (logoUrl(lg.lockupLight) || logoUrl(lg.lockupColor) || logoUrl(lg.wordmark) || logoUrl(lg.mark));
+  const seg = (m: 'light' | 'dark', label: string) => (
+    <button type="button" onClick={() => setMode(m)}
+      className={'px-[10px] py-[3px] text-[11px] font-[600] ' + (mode === m ? 'bg-ai text-white' : 'text-textItemBlur hover:text-btnText')}>{label}</button>
+  );
   return (
     <div className="rounded-[8px] border border-newBorder overflow-hidden">
-      <div
-        className={'p-[20px] flex flex-col gap-[10px]' + (surface ? '' : ' bg-newBgColorInner text-btnText')}
-        style={surface ? { background: surface, color: text } : undefined}>
+      <div className="flex items-center justify-between px-[12px] py-[6px] bg-newBgColorInner border-b border-newBorder">
+        <span className="text-[10px] uppercase tracking-wide text-textItemBlur">Preview</span>
+        <div className="flex rounded-[6px] border border-newBorder overflow-hidden">{seg('light', '☀ Light')}{seg('dark', '🌙 Dark')}</div>
+      </div>
+      <div className="p-[20px] flex flex-col gap-[10px]" style={{ background: surface, color: text }}>
         <div className="flex items-center gap-[10px]">
           {logo
             // eslint-disable-next-line @next/next/no-img-element
             ? <img src={logo} alt="logo" className="h-[28px] object-contain" />
             : <span className="text-[16px] font-[700]" style={{ color: primary }}>{brand.name}</span>}
-          <span className="ml-auto text-[10px] uppercase tracking-wide" style={{ color: accent }}>preview</span>
+          <span className="ml-auto text-[10px] uppercase tracking-wide" style={{ color: accent }}>{dark ? 'dark mode' : 'light mode'}</span>
         </div>
         <div className="text-[22px] font-[700]" style={{ fontFamily: headline ? `'${headline}', sans-serif` : undefined }}>Your headline, on brand.</div>
         <div className="text-[13px]" style={{ fontFamily: body ? `'${body}', sans-serif` : undefined, opacity: 0.85 }}>Body copy renders in your secondary font, on your neutral background.</div>
         <div className="flex gap-[8px] mt-[4px]">
-          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: primary, color: onColor }}>Primary CTA</span>
-          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: accent, color: onColor }}>Accent</span>
+          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: primary, color: onColorFor(primary) }}>Primary CTA</span>
+          <span className="px-[12px] py-[6px] rounded-[6px] text-[12px] font-[600]" style={{ background: accent, color: onColorFor(accent) }}>Accent</span>
         </div>
       </div>
     </div>
