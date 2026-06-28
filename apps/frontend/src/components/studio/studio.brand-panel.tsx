@@ -17,7 +17,7 @@ import {
   Brand, ColorRole, LogoSlot, LOGO_SLOTS, LOGO_SLOT_LABELS,
   listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrandFromAsset, logoUrl,
   completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos,
-  GoogleFont, listGoogleFonts, ensureGoogleFont,
+  GoogleFont, listGoogleFonts, ensureGoogleFont, downloadBrandKit,
 } from '@gitroom/frontend/components/studio/studio.brand-client';
 
 const FONTS = [
@@ -250,6 +250,14 @@ export const StudioBrandPanel: FC = () => {
     toaster.show('Brand saved — all changes are stored.', 'success');
   };
 
+  // Download the full brand kit as a .zip (agency hand-off). Only enabled when the
+  // brand is complete — the brain gates the same way (409 otherwise).
+  const onDownload = () => {
+    if (!brand || brand.tier !== 'complete') return;
+    downloadBrandKit(brand.brand_kit_id);
+    toaster.show('Packaging your brand kit — the download will start shortly.', 'success');
+  };
+
   const [assisting, setAssisting] = useState<string | null>(null);
   const runAssist = async (which: 'palette' | 'fonts' | 'voice' | 'logo') => {
     if (!brand || brand.builtin || assisting) return;
@@ -401,6 +409,19 @@ export const StudioBrandPanel: FC = () => {
                 ? <span className="text-[11px] text-textItemBlur">Saving…</span>
                 : <span className="text-[11px] text-[#1db97a]">✓ Saved</span>)}
               <div className="ml-auto flex items-center gap-[8px] flex-wrap">
+                {confirmDel === null && (brand.tier === 'complete' ? (
+                  <button type="button" onClick={onDownload}
+                    title="Download every brand asset — logos, guidelines, colors and font links — as a .zip to hand to a designer or agency."
+                    className="h-[32px] px-[12px] rounded-[8px] border border-[#1db97a]/40 text-[#1db97a] text-[12px] font-[600] hover:bg-[#1db97a]/10">
+                    ⬇ Download kit
+                  </button>
+                ) : (
+                  <button type="button" disabled
+                    title="Complete the brand kit first (5 logos, 8 colors, 3 fonts and a brand voice) to download it."
+                    className="h-[32px] px-[12px] rounded-[8px] border border-white/10 text-textItemBlur text-[12px] font-[600] opacity-50 cursor-not-allowed">
+                    ⬇ Download kit
+                  </button>
+                ))}
                 {!brand.builtin && confirmDel === null && (
                   <button type="button" onClick={onSave} disabled={saving}
                     title="Your edits save automatically; click to confirm everything is stored."
