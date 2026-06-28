@@ -14,6 +14,7 @@ import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
+import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 
 type ModelOpt = { value: string; label: string; credits: string };
 interface StudioImagesPanelProps {
@@ -71,6 +72,12 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   // Pick up agent/inline generations (they push to state.results) without a manual refresh.
   const genCount = state.results.filter((r) => r.tab === 'images').length;
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [genCount]);
+  // Scene Director / agent renders fire this event when a new shot lands in the library.
+  useEffect(() => {
+    const onRefresh = () => void load();
+    if (typeof window !== 'undefined') window.addEventListener('reinvestorhub:images-refresh', onRefresh);
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('reinvestorhub:images-refresh', onRefresh); };
+  }, [load]);
 
   // Keep the selected model valid for the Images tab.
   useEffect(() => {
@@ -132,6 +139,9 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
 
   return (
     <div className="flex flex-col gap-[14px]">
+      {/* Scene Director — build an ad shot object-by-object, then develop + render with AI. */}
+      <StudioSceneDirector brandKitId={brandKitId} />
+
       {/* Top bar: generation SETTINGS (used by the AI Agent) + Upload */}
       <div className="flex flex-wrap items-center gap-[10px] rounded-[8px] border border-newBorder bg-newBgColor px-[12px] py-[10px]">
         <select value={state.model} onChange={(e) => caps['studio.selectModel']?.handler({ model: e.target.value })} className={selectCls} title="Image model">
