@@ -108,6 +108,11 @@ export function logoUrl(ref?: LogoRef): string | null {
   return null;
 }
 
+/** PAID — generate ONE logo for a slot from the agent's spec (the human Create gate). */
+export function generateLogoFromSpec(id: string, spec: Record<string, unknown>): Promise<{ brand: Brand; slot: string; generated: { id: string } }> {
+  return req('/brand/logo/generate', { method: 'POST', body: JSON.stringify({ id, spec }) });
+}
+
 export interface GoogleFont { family: string; category: string }
 /** The full Google Fonts family list (name + category) for the font pickers. */
 export function listGoogleFonts(): Promise<GoogleFont[]> {
