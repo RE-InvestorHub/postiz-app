@@ -23,7 +23,14 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
   const [aspect, setAspect] = useState('4:5');
 
-  useEffect(() => { if (open) listDirectorDimensions(brandKitId).then(setDims).catch(() => {}); }, [open, brandKitId]);
+  const reload = () => { if (open) listDirectorDimensions(brandKitId).then(setDims).catch(() => {}); };
+  useEffect(reload, [open, brandKitId]);
+  // A new component captured elsewhere (the canvas "Save as component") → refresh the dropdowns.
+  useEffect(() => {
+    const onRefresh = () => listDirectorDimensions(brandKitId).then(setDims).catch(() => {});
+    if (typeof window !== 'undefined') window.addEventListener('reinvestorhub:director-refresh', onRefresh);
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('reinvestorhub:director-refresh', onRefresh); };
+  }, [brandKitId]);
 
   const chosenCount = Object.values(sel).filter((v) => v && v !== 'auto').length;
 

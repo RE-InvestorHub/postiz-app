@@ -28,6 +28,18 @@ export function listDirectorDimensions(brandKitId: string): Promise<DirectorDime
   return req<{ dimensions: DirectorDimension[] }>(`/director/dimensions?brandKitId=${encodeURIComponent(brandKitId)}`).then((r) => r.dimensions || []);
 }
 
+/** Component kinds a library image can be captured as (character = previs anchor; rest = lookrefs). */
+export const COMPONENT_KINDS: { id: string; label: string }[] = [
+  { id: 'character', label: 'Character' }, { id: 'environment', label: 'Scene / Background' },
+  { id: 'lighting', label: 'Lighting' }, { id: 'style', label: 'Style' },
+  { id: 'palette', label: 'Palette' }, { id: 'lens', label: 'Lens / Look' },
+];
+
+/** Capture a library image as a reusable, named, brand-scoped Director component. */
+export function captureComponent(imageId: string, kind: string, name: string, brandKitId: string): Promise<{ type: string; id: string; name: string }> {
+  return req('/director/capture-component', { method: 'POST', body: JSON.stringify({ imageId, kind, name, brandKitId }) });
+}
+
 /**
  * Render a shot via the layered-comp pipeline (the Create gate — spends credits). The agent's
  * spec carries the dimension fields + renderMode/aspectRatio/anchorId; this maps them to the endpoint.
