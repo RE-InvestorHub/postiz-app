@@ -43,12 +43,19 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { generateLogoFromSpec } from '@gitroom/frontend/components/studio/studio.brand-client';
+import { renderDirectorShot } from '@gitroom/frontend/components/studio/studio.director-client';
 
 /** Dispatch a kind's generator from the agent's final spec. Returns a human result line. */
 async function runGeneration(kind: string, brandKitId: string, spec: Record<string, unknown>): Promise<string> {
   if (kind === 'logo') {
     const r = await generateLogoFromSpec(brandKitId, spec);
     return `Logo generated and applied to the ${r.slot} slot.`;
+  }
+  if (kind === 'shot') {
+    const r = await renderDirectorShot(brandKitId, spec);
+    // Tell the Images tab to refresh its library so the new shot appears.
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
+    return `Ad shot rendered (${r.mode}) and added to your image library.`;
   }
   throw new Error(`No generator registered for "${kind}".`);
 }

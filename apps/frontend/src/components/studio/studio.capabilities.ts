@@ -39,6 +39,7 @@ import { createFromPreset as createDataRecordPreset, setRecordField, removeRecor
 import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
 import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit, deriveLogoSlot, LogoSlot } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
+import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
 
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
@@ -804,6 +805,16 @@ export function buildStudioCapabilities(
         const adId = getState().activeAdId;
         if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Select an ad first.' }); return; }
         await updateAd(adId, { data_record_id: p.recordId || null });
+      },
+    },
+    {
+      id: 'image.reshape',
+      namespace: 'image',
+      label: 'Reshape a library image to a channel size (free — new variant)',
+      params: ['id', 'channel', 'fit'],
+      handler: async (p: { id?: string; channel?: string; fit?: 'crop' | 'pad' } = {}) => {
+        if (!p.id || !p.channel) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need an image id + channel to reshape.' }); return; }
+        return reshapeImage(p.id, p.channel, p.fit === 'pad' ? 'pad' : 'crop');
       },
     },
   ];

@@ -16,6 +16,16 @@ export interface BrandImage {
   w: number | null;
   h: number | null;
   createdAt: string | null;
+  // Channel-reshape lineage (present on reshaped variants).
+  channel?: string | null;
+  channelLabel?: string | null;
+  channelShort?: string | null;
+  fit?: string | null;
+  sourceId?: string | null;
+}
+
+export interface ChannelPreset {
+  id: string; label: string; short: string; w: number; h: number; aspectRatio: string;
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -40,4 +50,14 @@ export function deleteBrandImage(id: string): Promise<{ ok: boolean }> {
 /** Bulk-remove images from the library (select-and-delete). */
 export function deleteBrandImages(ids: string[]): Promise<{ ok: boolean; deleted: number }> {
   return req<{ ok: boolean; deleted: number }>('/images/delete', { method: 'POST', body: JSON.stringify({ ids }) });
+}
+
+/** Social channel size presets for the canvas Reshape dropdown. */
+export function listChannelPresets(): Promise<ChannelPreset[]> {
+  return req<{ channels: ChannelPreset[] }>('/images/channels').then((r) => r.channels || []);
+}
+
+/** Reshape an image to a channel's exact size (non-destructive — returns a NEW variant). */
+export function reshapeImage(id: string, channel: string, fit: 'crop' | 'pad'): Promise<BrandImage> {
+  return req<BrandImage>('/images/reshape', { method: 'POST', body: JSON.stringify({ id, channel, fit }) });
 }

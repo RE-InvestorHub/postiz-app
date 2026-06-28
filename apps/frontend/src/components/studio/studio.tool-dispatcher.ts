@@ -121,6 +121,8 @@ export function requiresApproval(toolName: string): boolean {
     'brand.exportKit',
     // brand.deriveSlot cuts a new slot from existing logos (crop/recolor/compose) — no spend.
     'brand.deriveSlot',
+    // image.reshape resizes a library image to a channel size (ImageMagick) — no spend.
+    'image.reshape',
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',
