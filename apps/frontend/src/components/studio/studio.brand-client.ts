@@ -18,7 +18,7 @@ export const LOGO_SLOT_LABELS: Record<LogoSlot, string> = {
   lockupDark: 'Dark-mode lockup', lockupLight: 'Light-mode lockup',
 };
 
-export interface PaletteSwatch { name?: string; hex: string; role: ColorRole; shade?: 'base' | 'alt' }
+export interface PaletteSwatch { name?: string; hex: string; role: ColorRole; shade?: 'base' | 'alt'; pinned?: boolean }
 export interface BrandPersona { voice?: string; description?: string; tone?: string }
 export interface BrandTypography { primary?: string | null; secondary?: string | null; accent?: string | null; sources?: string[] }
 export interface LogoRef { assetId?: string; path?: string; variant?: string; kind?: string }

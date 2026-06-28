@@ -59,8 +59,9 @@ const onColorFor = (hex?: string) => {
   return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0B1220' : '#FFFFFF';
 };
 // One palette cell: the hex value sits ON the colored swatch (auto-contrast); type/paste
-// to edit it, or click the small chip to open the native picker.
-const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; onCommit: (hex: string) => void }> = ({ label, hex, disabled, onCommit }) => {
+// to edit it, or click the small chip to open the native picker. A pin toggle locks the
+// color so "Complete palette" keeps it while re-rolling the unpinned ones.
+const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; pinned?: boolean; onCommit: (hex: string) => void; onPin?: (pinned: boolean) => void }> = ({ label, hex, disabled, pinned, onCommit, onPin }) => {
   const [val, setVal] = useState(hex || '');
   useEffect(() => { setVal(hex || ''); }, [hex]);
   const commit = () => {
@@ -71,7 +72,16 @@ const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; onCommit:
   const onColor = onColorFor(hex);
   return (
     <div className="flex flex-col gap-[5px]">
-      <span className="text-[11px] text-textItemBlur">{label}</span>
+      <span className="flex items-center gap-[6px]">
+        <span className="flex-1 truncate text-[11px] text-textItemBlur">{label}</span>
+        {hex && onPin && !disabled && (
+          <button type="button" onClick={() => onPin(!pinned)}
+            title={pinned ? 'Pinned — kept when you Complete palette' : 'Pin this color — keep it when you Complete palette'}
+            className={'shrink-0 text-[10px] leading-none px-[5px] py-[2px] rounded-[4px] border ' + (pinned ? 'border-ai text-ai bg-ai/10' : 'border-newBorder text-textItemBlur hover:text-btnText')}>
+            {pinned ? '📌 Pinned' : 'Pin'}
+          </button>
+        )}
+      </span>
       <div className={'relative flex items-center h-[44px] rounded-[8px] border overflow-hidden ' + (hex ? 'border-newBorder' : 'border-dashed border-newBorder')}
         style={hex ? { background: hex } : undefined}>
         <input type="text" value={val} disabled={disabled} placeholder="#RRGGBB" spellCheck={false}
@@ -187,14 +197,22 @@ export const StudioBrandPanel: FC = () => {
     } catch (e) { setError(msg(e)); } finally { setImporting(false); }
   };
 
+  const swatchAt = (role: ColorRole, shade: 'base' | 'alt') =>
+    (brand?.palette || []).find((s) => s.role === role && (s.shade || 'base') === shade);
   const setSwatch = (role: ColorRole, shade: 'base' | 'alt', hex: string) => {
     if (!brand) return;
     const others = (brand.palette || []).filter((s) => !(s.role === role && (s.shade || 'base') === shade));
     const label = PALETTE_CELLS.find((c) => c.role === role && c.shade === shade)?.label;
-    void patch({ palette: [...others, { role, shade, hex, name: label }] });
+    const prev = swatchAt(role, shade);
+    void patch({ palette: [...others, { role, shade, hex, name: label, ...(prev?.pinned ? { pinned: true } : {}) }] });
   };
-  const swatchHex = (role: ColorRole, shade: 'base' | 'alt') =>
-    (brand?.palette || []).find((s) => s.role === role && (s.shade || 'base') === shade)?.hex;
+  const setPinned = (role: ColorRole, shade: 'base' | 'alt', pinned: boolean) => {
+    if (!brand) return;
+    const next = (brand.palette || []).map((s) => (s.role === role && (s.shade || 'base') === shade) ? { ...s, pinned } : s);
+    void patch({ palette: next });
+  };
+  const swatchHex = (role: ColorRole, shade: 'base' | 'alt') => swatchAt(role, shade)?.hex;
+  const swatchPinned = (role: ColorRole, shade: 'base' | 'alt') => !!swatchAt(role, shade)?.pinned;
 
   const pickLogo = (slot: LogoSlot) => { pendingSlot.current = slot; uploadRef.current?.click(); };
   const onLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -317,8 +335,12 @@ export const StudioBrandPanel: FC = () => {
             {!brand.builtin && (
               <div className="flex items-center gap-[8px] flex-wrap">
                 <span className="text-[12px] text-textItemBlur">Generate with AI:</span>
-                {([['palette', 'Complete palette'], ['fonts', 'Suggest fonts'], ['voice', 'Draft voice']] as const).map(([k, label]) => (
-                  <button key={k} type="button" disabled={!!assisting} onClick={() => runAssist(k)}
+                {([
+                  ['palette', 'Complete palette', 'Generate a full 8-color palette. Pinned colors are kept; click again to re-roll the rest.'],
+                  ['fonts', 'Suggest fonts', 'Suggest a font pairing. Click again for a different pairing.'],
+                  ['voice', 'Draft voice', 'Draft a brand voice. Click again for a different take.'],
+                ] as const).map(([k, label, tip]) => (
+                  <button key={k} type="button" disabled={!!assisting} onClick={() => runAssist(k)} title={tip}
                     className="h-[30px] px-[12px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10 disabled:opacity-50">
                     {assisting === k ? '…' : `✨ ${label}`}
                   </button>
@@ -339,7 +361,8 @@ export const StudioBrandPanel: FC = () => {
                 <div className="grid grid-cols-2 gap-[10px]">
                   {PALETTE_CELLS.map((c) => (
                     <HexSwatch key={`${c.role}:${c.shade}`} label={c.label} hex={swatchHex(c.role, c.shade)}
-                      disabled={brand.builtin} onCommit={(hex) => setSwatch(c.role, c.shade, hex)} />
+                      disabled={brand.builtin} pinned={swatchPinned(c.role, c.shade)}
+                      onCommit={(hex) => setSwatch(c.role, c.shade, hex)} onPin={(p) => setPinned(c.role, c.shade, p)} />
                   ))}
                 </div>
               </div>
