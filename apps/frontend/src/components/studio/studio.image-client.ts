@@ -36,3 +36,8 @@ export function listBrandImages(brandKitId: string): Promise<BrandImage[]> {
 export function deleteBrandImage(id: string): Promise<{ ok: boolean }> {
   return req<{ ok: boolean }>('/images/delete', { method: 'POST', body: JSON.stringify({ id }) });
 }
+
+/** Bulk-remove images from the library (select-and-delete). */
+export function deleteBrandImages(ids: string[]): Promise<{ ok: boolean; deleted: number }> {
+  return req<{ ok: boolean; deleted: number }>('/images/delete', { method: 'POST', body: JSON.stringify({ ids }) });
+}

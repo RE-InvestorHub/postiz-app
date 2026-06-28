@@ -13,7 +13,7 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
-import { listBrandImages, deleteBrandImage, BrandImage } from '@gitroom/frontend/components/studio/studio.image-client';
+import { listBrandImages, deleteBrandImage, deleteBrandImages, BrandImage } from '@gitroom/frontend/components/studio/studio.image-client';
 
 type ModelOpt = { value: string; label: string; credits: string };
 interface StudioImagesPanelProps {
@@ -43,6 +43,11 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   const [uploadOpen, setUploadOpen] = useState(false);
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [confirmDel, setConfirmDel] = useState(false);
+  // Bulk select-and-delete.
+  const [selectMode, setSelectMode] = useState(false);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const selected = images.find((i) => i.id === selectedId) || null;
 
@@ -86,6 +91,23 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
   };
 
+  // --- bulk select-and-delete ---
+  const exitSelect = () => { setSelectMode(false); setChecked(new Set()); setConfirmBulk(false); };
+  const toggleCheck = (id: string) => setChecked((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const selectAll = () => setChecked(new Set(images.map((i) => i.id)));
+  const doBulkDelete = async () => {
+    if (!checked.size) return;
+    setBulkBusy(true); setError(null);
+    try {
+      const ids = [...checked];
+      await deleteBrandImages(ids);
+      setImages((prev) => prev.filter((i) => !checked.has(i.id)));
+      setSelectedId((prev) => (prev && checked.has(prev) ? null : prev));
+      toaster.show(`${ids.length} image${ids.length === 1 ? '' : 's'} deleted from the brand.`, 'success');
+      exitSelect();
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
+  };
+
   const card = 'rounded-[8px] border border-newBorder bg-newBgColor p-[16px]';
   const selectCls = 'h-[36px] px-[10px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText';
 
@@ -113,19 +135,47 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
           <div className="flex items-center gap-[8px]">
             <span className="text-[14px] font-[600] text-btnText flex-1">Image library</span>
             <span className="text-[11px] text-textItemBlur">{loading ? '…' : images.length}</span>
+            {images.length > 0 && !selectMode && (
+              <button type="button" onClick={() => setSelectMode(true)} className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">Select</button>
+            )}
           </div>
+          {selectMode && (
+            <div className="flex items-center gap-[6px] flex-wrap text-[11px]">
+              <span className="text-textItemBlur">{checked.size} selected</span>
+              <button type="button" onClick={selectAll} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">All</button>
+              <button type="button" onClick={() => setChecked(new Set())} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">None</button>
+              <button type="button" onClick={exitSelect} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">Done</button>
+              {confirmBulk ? (
+                <>
+                  <button type="button" disabled={!checked.size || bulkBusy} onClick={doBulkDelete} className="px-[8px] h-[24px] rounded-[5px] bg-[#ff7eb6] text-[#3a0d23] font-[700] disabled:opacity-50">{bulkBusy ? '…' : `Delete ${checked.size}`}</button>
+                  <button type="button" onClick={() => setConfirmBulk(false)} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">Cancel</button>
+                </>
+              ) : (
+                <button type="button" disabled={!checked.size} onClick={() => setConfirmBulk(true)} className="px-[8px] h-[24px] rounded-[5px] border border-[#ff7eb6]/40 text-[#ff7eb6] font-[600] disabled:opacity-40 hover:bg-[#ff7eb6]/10">Delete ({checked.size})</button>
+              )}
+            </div>
+          )}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
           {!loading && images.length === 0 ? (
             <div className="text-[12px] text-textItemBlur py-[14px]">No images yet. Generate with the AI Agent or ⬆ Upload your own.</div>
           ) : (
             <div className="grid grid-cols-2 gap-[8px] overflow-y-auto max-h-[60vh] pr-[2px]">
-              {images.map((img) => (
-                <button key={img.id} type="button" onClick={() => setSelectedId(img.id)}
-                  className={'aspect-square rounded-[6px] overflow-hidden border ' + (img.id === selectedId ? 'border-ai ring-1 ring-ai' : 'border-newBorder hover:border-btnText/40')}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={img.url} alt={img.prompt || img.id} className="w-full h-full object-cover" />
-                </button>
-              ))}
+              {images.map((img) => {
+                const isChecked = checked.has(img.id);
+                const ring = selectMode
+                  ? (isChecked ? 'border-[#ff7eb6] ring-1 ring-[#ff7eb6]' : 'border-newBorder hover:border-btnText/40')
+                  : (img.id === selectedId ? 'border-ai ring-1 ring-ai' : 'border-newBorder hover:border-btnText/40');
+                return (
+                  <button key={img.id} type="button" onClick={() => (selectMode ? toggleCheck(img.id) : setSelectedId(img.id))}
+                    className={'relative aspect-square rounded-[6px] overflow-hidden border ' + ring}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt={img.prompt || img.id} className="w-full h-full object-cover" />
+                    {selectMode && (
+                      <span className={'absolute top-[3px] left-[3px] h-[18px] w-[18px] rounded-[4px] border flex items-center justify-center text-[11px] leading-none ' + (isChecked ? 'bg-[#ff7eb6] border-[#ff7eb6] text-[#3a0d23]' : 'bg-black/45 border-white/50 text-transparent')}>✓</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
