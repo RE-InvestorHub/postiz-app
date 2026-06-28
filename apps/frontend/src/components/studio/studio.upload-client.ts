@@ -38,14 +38,15 @@ function base(url: string): string {
  */
 export async function uploadFileToBrain(
   file: File,
-  onProgress?: UploadProgressCallback
+  onProgress?: UploadProgressCallback,
+  brandKitId?: string
 ): Promise<UploadedAsset> {
   const brainBase = base(BRAIN_URL);
 
   if (file.size <= CHUNK_THRESHOLD) {
-    return uploadSingle(brainBase, file, onProgress);
+    return uploadSingle(brainBase, file, onProgress, brandKitId);
   }
-  return uploadChunked(brainBase, file, onProgress);
+  return uploadChunked(brainBase, file, onProgress, brandKitId);
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +55,8 @@ export async function uploadFileToBrain(
 async function uploadSingle(
   brainBase: string,
   file: File,
-  onProgress?: UploadProgressCallback
+  onProgress?: UploadProgressCallback,
+  brandKitId?: string
 ): Promise<UploadedAsset> {
   // Report indeterminate progress until the request resolves.
   onProgress?.(10);
@@ -62,7 +64,8 @@ async function uploadSingle(
   const form = new FormData();
   form.append('file', file, file.name);
 
-  const res = await fetch(`${brainBase}/studio/upload`, {
+  const qs = brandKitId ? `?brandKitId=${encodeURIComponent(brandKitId)}` : '';
+  const res = await fetch(`${brainBase}/studio/upload${qs}`, {
     method: 'POST',
     body: form,
   });
@@ -83,7 +86,8 @@ async function uploadSingle(
 async function uploadChunked(
   brainBase: string,
   file: File,
-  onProgress?: UploadProgressCallback
+  onProgress?: UploadProgressCallback,
+  brandKitId?: string
 ): Promise<UploadedAsset> {
   // 1. Init
   const initRes = await fetch(`${brainBase}/studio/upload/init`, {
@@ -123,7 +127,7 @@ async function uploadChunked(
   const completeRes = await fetch(`${brainBase}/studio/upload/complete`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ uploadId }),
+    body: JSON.stringify({ uploadId, ...(brandKitId ? { brandKitId } : {}) }),
   });
   if (!completeRes.ok) {
     const detail = await completeRes.text().catch(() => '');

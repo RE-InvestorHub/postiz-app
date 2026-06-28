@@ -266,9 +266,11 @@ export interface StudioDropZoneProps {
   /** Fired once per file after a successful upload (post ADD_UPLOAD). Lets a host
    * (e.g. the Assets panel) link the freshly uploaded asset to the active ad. */
   onUploaded?: (asset: UploadedAsset) => void;
+  /** Tags each uploaded asset with this brand so it shows in that brand's image library. */
+  brandKitId?: string;
 }
 
-export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept, onUploaded }) => {
+export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept, onUploaded, brandKitId }) => {
   const { state, dispatch } = useStudio();
   const [dragging, setDragging] = useState(false);
   const [queue, setQueue] = useState<UploadEntry[]>([]);
@@ -319,7 +321,7 @@ export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept, onUploaded }) 
               e.localId === entry.localId ? { ...e, progress: pct } : e
             )
           );
-        })
+        }, brandKitId)
           .then((asset) => {
             setQueue((prev) =>
               prev.map((e) =>
@@ -349,7 +351,7 @@ export const StudioDropZone: FC<StudioDropZoneProps> = ({ accept, onUploaded }) 
           });
       });
     },
-    [accept, dispatch, onUploaded]
+    [accept, dispatch, onUploaded, brandKitId]
   );
 
   // ---------------------------------------------------------------------------

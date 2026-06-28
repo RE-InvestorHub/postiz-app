@@ -16,6 +16,8 @@ export interface GenerateArgs {
   model: string;
   aspectRatio: string;
   resolution: string;
+  // Tags the generated image with the active brand so it lands in that brand's library.
+  brandKitId?: string;
 }
 
 export async function generateAsset(args: GenerateArgs): Promise<StudioResult> {

@@ -16,6 +16,7 @@ import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.age
 import { FloatingWindow } from '@gitroom/frontend/components/studio/studio.floating-window';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
+import { StudioImagesPanel } from '@gitroom/frontend/components/studio/studio.images-panel';
 import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
@@ -316,7 +317,9 @@ const StudioInner: FC = () => {
           ))}
         </div>
 
-        {state.activeTab === 'images' && <GeneratePanel caps={caps} kind="images" />}
+        {state.activeTab === 'images' && (
+          <StudioImagesPanel caps={caps} models={modelsForKind('images')} aspects={STUDIO_ASPECT_RATIOS} resolutions={STUDIO_RESOLUTIONS} />
+        )}
         {state.activeTab === 'video' && (
           <div className="flex flex-col gap-[18px]">
             {/* Video composer — brief → clips → review → assemble (the Storyboard tab folded in here) */}

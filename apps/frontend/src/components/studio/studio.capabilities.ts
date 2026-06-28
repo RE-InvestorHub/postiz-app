@@ -61,6 +61,7 @@ export interface StudioCapabilityDeps {
     model: string;
     aspectRatio: string;
     resolution: string;
+    brandKitId?: string;
   }) => Promise<StudioResult>;
   /**
    * Storyboard assembly transport — submits the brief + current slots to the
@@ -144,6 +145,7 @@ export function buildStudioCapabilities(
             model: s.model,
             aspectRatio: s.aspectRatio,
             resolution: s.resolution,
+            brandKitId: s.composerBrandKitId,
           });
           dispatch({ type: 'ADD_RESULT', result });
           dispatch({ type: 'SET_STATUS', status: 'idle' });
