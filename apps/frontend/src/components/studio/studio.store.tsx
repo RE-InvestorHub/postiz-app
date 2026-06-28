@@ -45,6 +45,8 @@ export type StudioAction =
   | { type: 'SET_ACTIVE_AD'; adId: string | null }
   | { type: 'SET_COMPOSER_BRANDKIT'; brandKitId: string }
   | { type: 'SET_COMPOSER_TEMPLATE'; templateId: string }
+  | { type: 'OPEN_FLOATING_AGENT'; seed?: string }
+  | { type: 'CLOSE_FLOATING_AGENT' }
   | { type: 'RESET' };
 
 export const initialStudioState: StudioState = {
@@ -66,6 +68,7 @@ export const initialStudioState: StudioState = {
   activeAdId: null,
   composerBrandKitId: 'default',
   composerTemplateId: '',
+  floatingAgent: null,
 };
 
 /** A fresh onboarding-wizard state (wizard opened at step 0). */
@@ -126,6 +129,10 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       return { ...state, composerBrandKitId: action.brandKitId };
     case 'SET_COMPOSER_TEMPLATE':
       return { ...state, composerTemplateId: action.templateId };
+    case 'OPEN_FLOATING_AGENT':
+      return { ...state, floatingAgent: { seed: action.seed } };
+    case 'CLOSE_FLOATING_AGENT':
+      return { ...state, floatingAgent: null };
     case 'SET_AUDIO_SCRIPT':
       return { ...state, audioScript: action.script };
     case 'RESET':

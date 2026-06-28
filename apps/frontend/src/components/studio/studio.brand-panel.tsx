@@ -10,7 +10,6 @@ import { FC, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
-import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { listCampaigns } from '@gitroom/frontend/components/studio/studio.project-client';
@@ -37,7 +36,8 @@ const FONT_ROLES: { key: 'primary' | 'secondary' | 'accent'; label: string }[] =
 ];
 
 const msg = (e: unknown) => (e as Error)?.message ?? String(e);
-const kindFor = (name: string) => (/\.(svg)$/i.test(name) ? 'svg' : 'png');
+// Real file extension (png/jpg/jpeg/svg…) — uploads are stored as `${assetId}.${ext}`.
+const extOf = (name: string) => (name.match(/\.([a-z0-9]+)(?:[?#].*)?$/i)?.[1] || 'png').toLowerCase();
 
 const StatusPill: FC<{ b: Brand }> = ({ b }) => {
   const map = { complete: ['Complete', 'text-[#1db97a] border-[#1db97a]/40'], live: ['Live', 'text-ai border-ai/40'], incomplete: ['Draft', 'text-[#ff7eb6] border-[#ff7eb6]/40'] } as const;
@@ -173,8 +173,7 @@ export const StudioBrandPanel: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const pendingSlot = useRef<LogoSlot | null>(null);
+  const [logoSlot, setLogoSlot] = useState<LogoSlot | null>(null); // which logo slot's add modal is open
   const [importModal, setImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
   // Full Google Fonts list for the pickers (seeded with the curated set as a fallback).
@@ -289,19 +288,28 @@ export const StudioBrandPanel: FC = () => {
   const swatchHex = (role: ColorRole, shade: 'base' | 'alt') => swatchAt(role, shade)?.hex;
   const swatchPinned = (role: ColorRole, shade: 'base' | 'alt') => !!swatchAt(role, shade)?.pinned;
 
-  const pickLogo = (slot: LogoSlot) => { pendingSlot.current = slot; uploadRef.current?.click(); };
-  const onLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; const slot = pendingSlot.current;
-    e.target.value = '';
-    if (!file || !slot || !brand) return;
+  // Clicking any logo "+" opens a modal: upload (left) or generate with AI (right).
+  const pickLogo = (slot: LogoSlot) => setLogoSlot(slot);
+  // Left card: an uploaded image (png/jpg/svg) → set this slot to it.
+  const onLogoUploaded = async (asset: UploadedAsset) => {
+    const slot = logoSlot;
+    if (!slot || !brand) return;
     setBusy(true); setError(null);
     try {
-      const asset = await uploadFileToBrain(file, () => {});
       const before = brand.status;
-      const updated = await addBrandFile(brand.brand_kit_id, { slot, assetId: asset.assetId, kind: kindFor(file.name) });
+      const updated = await addBrandFile(brand.brand_kit_id, { slot, assetId: asset.assetId, kind: extOf(asset.filename) });
       setBrand(updated); await load();
+      setLogoSlot(null);
       if (before !== 'live' && updated.status === 'live') toaster.show('All 5 logos set — this brand is now live!', 'success');
+      else toaster.show(`${LOGO_SLOT_LABELS[slot]} set.`, 'success');
     } catch (err) { setError(msg(err)); } finally { setBusy(false); }
+  };
+  // Right card: open the draggable agent chat, seeded for this logo slot. The agent gets
+  // the brand's colors/fonts/filled-slots context server-side (via the active brandKitId).
+  const onLogoAI = () => {
+    const slot = logoSlot;
+    setLogoSlot(null);
+    dispatch({ type: 'OPEN_FLOATING_AGENT', seed: `Help me create the ${slot ? LOGO_SLOT_LABELS[slot] : 'logo'} for my brand “${brand?.name ?? ''}”. Use my existing brand colors and fill the empty logo slots.` });
   };
 
   // Step 1: arm the confirm, fetching how many campaigns the cascade will remove.
@@ -331,9 +339,6 @@ export const StudioBrandPanel: FC = () => {
 
   return (
     <div className="flex flex-col md:flex-row gap-[14px]">
-      {/* hidden file input shared by logo slots */}
-      <input ref={uploadRef} type="file" accept="image/*,.svg" className="sr-only" aria-hidden="true" onChange={onLogoFile} />
-
       {/* Library */}
       <div className={card + ' md:w-[260px] shrink-0 flex flex-col gap-[10px]'}>
         <div className="flex items-center gap-[8px]">
@@ -505,6 +510,34 @@ export const StudioBrandPanel: FC = () => {
       </div>
 
       {/* Import modal — drag-drop / browse a brand asset, then extract */}
+      {/* Add-logo modal: upload (left) or generate with AI (right) */}
+      {logoSlot && brand && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => !busy && !assisting && setLogoSlot(null)}>
+          <div className="w-[680px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[14px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[15px] font-[700] text-btnText flex-1">Add {LOGO_SLOT_LABELS[logoSlot]}</span>
+              <button type="button" onClick={() => setLogoSlot(null)} className="h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText">✕</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px] items-stretch">
+              {/* Left — upload */}
+              <div className="rounded-[8px] border border-newBorder p-[14px] flex flex-col gap-[10px]">
+                <span className="text-[13px] font-[700] text-btnText">Upload an image</span>
+                <span className="text-[11px] text-textItemBlur">Drag &amp; drop or browse — PNG, JPG, or SVG.</span>
+                <StudioDropZone accept="image" onUploaded={onLogoUploaded} />
+              </div>
+              {/* Right — AI */}
+              <div className="rounded-[8px] border border-ai/40 bg-ai/5 p-[14px] flex flex-col gap-[10px]">
+                <span className="text-[13px] font-[700] text-ai">✨ Use AI</span>
+                <span className="text-[11px] text-textItemBlur flex-1">Generate a logo from your brand name and colors, then apply it to the logo set. Uses image credits.</span>
+                <button type="button" onClick={onLogoAI} disabled={!!assisting}
+                  className="h-[38px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
+                  {assisting === 'logo' ? 'Generating…' : 'Generate with AI'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>, document.body)}
+
       {importModal && brand && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => !importing && setImportModal(false)}>
           <div className="w-[560px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[12px] shadow-xl" onClick={(e) => e.stopPropagation()}>

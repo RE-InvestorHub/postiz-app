@@ -151,11 +151,15 @@ export const StudioAgentPanel: FC<{
   onClose: () => void;
   /** Called with the final brief when the user clicks Create. */
   onCreate?: (brief: Record<string, unknown>) => void;
-}> = ({ caps, onClose, onCreate }) => {
+  /** Floating mode: fill the host window + hide the internal header (the window has one). */
+  floating?: boolean;
+  /** Prefill the message box (e.g. opened from the logo "Generate with AI" button). */
+  initialInput?: string;
+}> = ({ caps, onClose, onCreate, floating, initialInput }) => {
   const { state } = useStudio();
   // Chat state
   const [messages, setMessages] = useState<InternalMessage[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialInput ?? '');
   const [streaming, setStreaming] = useState(false);
   const [conversationId] = useState<string | null>(null);
 
@@ -408,22 +412,26 @@ export const StudioAgentPanel: FC<{
   const showThinking = streaming && !assistantStreamingWithText;
 
   return (
-    <div className="w-[320px] shrink-0 bg-newBgColor border-l border-[var(--new-table-border)] flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-[16px] py-[12px] border-b border-[var(--new-table-border)]">
-        <div className="flex items-center gap-[8px]">
-          <span className="w-[8px] h-[8px] rounded-full bg-ai" />
-          <span className="text-[14px] font-[600] text-btnText">AI Agent</span>
+    <div className={floating
+      ? 'w-full h-full bg-newBgColor flex flex-col'
+      : 'w-[320px] shrink-0 bg-newBgColor border-l border-[var(--new-table-border)] flex flex-col h-full'}>
+      {/* Header — hidden in floating mode (the floating window provides its own title bar) */}
+      {!floating && (
+        <div className="flex items-center justify-between px-[16px] py-[12px] border-b border-[var(--new-table-border)]">
+          <div className="flex items-center gap-[8px]">
+            <span className="w-[8px] h-[8px] rounded-full bg-ai" />
+            <span className="text-[14px] font-[600] text-btnText">AI Agent</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[var(--new-table-text)] hover:text-btnText text-[18px] leading-none"
+            aria-label="Close agent panel"
+          >
+            ×
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-[var(--new-table-text)] hover:text-btnText text-[18px] leading-none"
-          aria-label="Close agent panel"
-        >
-          ×
-        </button>
-      </div>
+      )}
 
       {/* Completeness meter */}
       {answered > 0 && (
