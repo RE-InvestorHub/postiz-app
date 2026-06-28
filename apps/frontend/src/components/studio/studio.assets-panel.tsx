@@ -206,6 +206,8 @@ export const StudioAssetsPanel: FC = () => {
         : displayObjects.map((o) => o.id);
   const totalCount = level === 'brands' ? brands.length : level === 'campaigns' ? campaigns.length : level === 'campaign' ? ads.length : objects.length;
   const metaLabel = level === 'campaign' ? 'Assets' : level === 'ad' ? 'Type' : 'Name';
+  // Search placeholder names the role of the rows at the current level.
+  const searchNoun = level === 'brands' ? 'brand' : level === 'campaigns' ? 'campaign' : level === 'campaign' ? 'ad' : 'asset';
 
   // ---- selection ----
   const toggle = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -416,8 +418,8 @@ export const StudioAssetsPanel: FC = () => {
         <div className="flex items-center gap-[10px] flex-wrap">
           <div className="relative">
             <span className="absolute left-[10px] top-1/2 -translate-y-1/2 text-textItemBlur"><IconSearch /></span>
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or type…"
-              className={ctrlCls + ' pl-[30px] pr-[10px] w-[220px] placeholder:text-textItemBlur'} aria-label="Search" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${searchNoun} name…`}
+              className={ctrlCls + ' pl-[30px] pr-[10px] w-[220px] placeholder:text-textItemBlur'} aria-label={`Search ${searchNoun} name`} />
           </div>
           <label className="flex items-center gap-[6px] text-[12px] text-textItemBlur">
             Sort
