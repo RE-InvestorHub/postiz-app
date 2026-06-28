@@ -51,7 +51,15 @@ const normHex = (v: string) => {
   if (s.length === 3) s = s.split('').map((c) => c + c).join('');
   return '#' + s.toLowerCase();
 };
-// One palette cell: a swatch (native picker on click) + a typeable/pasteable hex field.
+// Pick legible text for a hex background (relative luminance).
+const onColorFor = (hex?: string) => {
+  if (!hex || !/^#?[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#0B1220' : '#FFFFFF';
+};
+// One palette cell: the hex value sits ON the colored swatch (auto-contrast); type/paste
+// to edit it, or click the small chip to open the native picker.
 const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; onCommit: (hex: string) => void }> = ({ label, hex, disabled, onCommit }) => {
   const [val, setVal] = useState(hex || '');
   useEffect(() => { setVal(hex || ''); }, [hex]);
@@ -60,22 +68,24 @@ const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; onCommit:
     if (t && HEX_RE.test(t)) { if (normHex(t) !== (hex || '').toLowerCase()) onCommit(normHex(t)); }
     else setVal(hex || ''); // revert invalid / empty
   };
+  const onColor = onColorFor(hex);
   return (
     <div className="flex flex-col gap-[5px]">
-      <span className={'relative block h-[54px] rounded-[8px] border border-newBorder overflow-hidden transition-colors ' + (disabled ? '' : 'cursor-pointer hover:border-ai/60')}
-        style={hex ? { background: hex } : undefined} title={disabled ? undefined : 'Click to open the color picker'}>
-        {!hex && <span className="absolute inset-0 flex items-center justify-center text-[18px] text-textItemBlur border border-dashed border-newBorder rounded-[8px]">+</span>}
-        <input type="color" value={hex || '#888888'} disabled={disabled}
-          onChange={(e) => onCommit(e.target.value)}
-          className="absolute inset-0 opacity-0 cursor-pointer disabled:cursor-default" aria-label={`${label} color picker`} />
-      </span>
       <span className="text-[11px] text-textItemBlur">{label}</span>
-      <input type="text" value={val} disabled={disabled} placeholder="#RRGGBB" spellCheck={false}
-        onChange={(e) => setVal(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === 'Escape') { setVal(hex || ''); (e.target as HTMLInputElement).blur(); } }}
-        className="h-[28px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText px-[8px] uppercase placeholder:text-textItemBlur focus:border-ai outline-none disabled:opacity-50"
-        aria-label={`${label} hex value`} />
+      <div className={'relative flex items-center h-[44px] rounded-[8px] border overflow-hidden ' + (hex ? 'border-newBorder' : 'border-dashed border-newBorder')}
+        style={hex ? { background: hex } : undefined}>
+        <input type="text" value={val} disabled={disabled} placeholder="#RRGGBB" spellCheck={false}
+          onChange={(e) => setVal(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } if (e.key === 'Escape') { setVal(hex || ''); (e.target as HTMLInputElement).blur(); } }}
+          style={onColor ? { color: onColor } : undefined}
+          className="flex-1 min-w-0 bg-transparent px-[10px] text-[12px] font-[700] uppercase tracking-wide outline-none placeholder:text-textItemBlur placeholder:normal-case placeholder:font-[400] placeholder:tracking-normal disabled:opacity-60"
+          aria-label={`${label} hex value`} />
+        <input type="color" value={hex || '#888888'} disabled={disabled}
+          onChange={(e) => onCommit(e.target.value)} title="Open the color picker"
+          className="w-[26px] h-[26px] mr-[8px] shrink-0 rounded-[6px] border border-white/50 shadow-sm cursor-pointer bg-transparent disabled:cursor-default disabled:opacity-50"
+          aria-label={`${label} color picker`} />
+      </div>
     </div>
   );
 };
@@ -95,6 +105,7 @@ export const StudioBrandPanel: FC = () => {
   const [importing, setImporting] = useState(false);
   // Two-step delete confirm: null = idle, number = # campaigns the cascade will remove.
   const [confirmDel, setConfirmDel] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false); // a field edit is being persisted
 
   const load = useCallback(async () => {
     try { setBrands(await listBrands()); } catch (e) { setError(msg(e)); }
@@ -129,12 +140,20 @@ export const StudioBrandPanel: FC = () => {
 
   const patch = async (p: Parameters<typeof updateBrand>[1]) => {
     if (!brand || brand.builtin) return;
+    setSaving(true);
     try {
       const before = brand.status;
       const updated = await updateBrand(brand.brand_kit_id, p);
       setBrand(updated); await load();
       if (before !== 'live' && updated.status === 'live') toaster.show('This brand is now live — it can be used in the Composer.', 'success');
-    } catch (e) { setError(msg(e)); }
+    } catch (e) { setError(msg(e)); } finally { setSaving(false); }
+  };
+
+  // Edits auto-persist as you go; Save flushes any focused field (its onBlur commits)
+  // and confirms — so a user knows the brand is stored before moving on.
+  const onSave = () => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    toaster.show('Brand saved — all changes are stored.', 'success');
   };
 
   const [assisting, setAssisting] = useState<string | null>(null);
@@ -253,7 +272,17 @@ export const StudioBrandPanel: FC = () => {
               <span className="text-[18px] font-[700] text-btnText">{brand.name}</span>
               <StatusPill b={brand} />
               {busy && <span className="text-[11px] text-textItemBlur">Working…</span>}
+              {!brand.builtin && !busy && (saving
+                ? <span className="text-[11px] text-textItemBlur">Saving…</span>
+                : <span className="text-[11px] text-[#1db97a]">✓ Saved</span>)}
               <div className="ml-auto flex items-center gap-[8px] flex-wrap">
+                {!brand.builtin && confirmDel === null && (
+                  <button type="button" onClick={onSave} disabled={saving}
+                    title="Your edits save automatically; click to confirm everything is stored."
+                    className="h-[32px] px-[14px] rounded-[8px] bg-[#1db97a] text-[#06281c] text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                )}
                 {!brand.builtin && confirmDel === null && (
                   <button type="button" onClick={() => setImportModal(true)} disabled={importing}
                     title="Upload a brand board, palette, or logo image — we'll extract the colors, fonts & brand voice from it. You still add the 5 logos to make the brand live."
