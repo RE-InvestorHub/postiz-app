@@ -119,6 +119,8 @@ export function requiresApproval(toolName: string): boolean {
     'brand.draftVoice',
     // brand.exportKit packages a complete brand into a .zip download — read-only, no spend.
     'brand.exportKit',
+    // brand.deriveSlot cuts a new slot from existing logos (crop/recolor/compose) — no spend.
+    'brand.deriveSlot',
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',

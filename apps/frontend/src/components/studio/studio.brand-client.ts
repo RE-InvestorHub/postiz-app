@@ -69,7 +69,8 @@ export function createBrand(payload: { name: string }): Promise<Brand> {
 }
 export function updateBrand(id: string, patch: {
   name?: string; persona?: BrandPersona; palette?: PaletteSwatch[]; typography?: BrandTypography;
-  logo?: Partial<Record<LogoSlot, LogoRef>>; roles?: Record<string, unknown>;
+  // A slot value of null CLEARS that logo slot back to empty.
+  logo?: Partial<Record<LogoSlot, LogoRef | null>>; roles?: Record<string, unknown>;
 }): Promise<Brand> {
   return req<Brand>('/brandkits/update', { method: 'POST', body: JSON.stringify({ id, patch }) });
 }
@@ -111,6 +112,18 @@ export function logoUrl(ref?: LogoRef): string | null {
 /** PAID — generate ONE logo for a slot from the agent's spec (the human Create gate). */
 export function generateLogoFromSpec(id: string, spec: Record<string, unknown>): Promise<{ brand: Brand; slot: string; generated: { id: string } }> {
   return req('/brand/logo/generate', { method: 'POST', body: JSON.stringify({ id, spec }) });
+}
+
+export interface DeriveResult {
+  ok: boolean; slot: string; method?: string; sourceSlot?: string;
+  previewAssetId?: string; kind?: string; note?: string; url?: string;
+  needsGeneration?: 'mark' | 'wordmark' | 'logo'; reason?: string;
+}
+/** FREE — derive a logo slot from the brand's EXISTING logos (crop/recolor/compose).
+ *  Returns a PREVIEW to accept (apply via addBrandFile with previewAssetId), or
+ *  { ok:false, needsGeneration } when a needed component must be generated instead. */
+export function deriveLogoSlot(id: string, slot: LogoSlot): Promise<DeriveResult> {
+  return req<DeriveResult>('/brand/logo/derive', { method: 'POST', body: JSON.stringify({ id, slot }) });
 }
 
 /** The brain URL that streams a COMPLETE brand as a portable .zip (agency hand-off). */
