@@ -394,7 +394,7 @@ export const StudioAgentPanel: FC<{
         finalizeLastAssistant();
         setStreaming(false);
       },
-    }, generation?.brandKitId || state.composerBrandKitId, genKind ? { kind: genKind } : null);
+    }, generation?.brandKitId || state.composerBrandKitId, genKind ? { kind: genKind, ...(generation?.slot ? { slot: generation.slot } : {}) } : null);
   }, [
     input,
     streaming,
@@ -420,7 +420,7 @@ export const StudioAgentPanel: FC<{
         conversationId,
         { onEvent: handleEvent, onAbort: () => { finalizeLastAssistant(); setStreaming(false); } },
         generation?.brandKitId || state.composerBrandKitId,
-        genKind ? { kind: genKind } : null
+        genKind ? { kind: genKind, ...(generation?.slot ? { slot: generation.slot } : {}) } : null
       );
     }
   }, [streaming, conversationId, handleEvent, finalizeLastAssistant, appendMessage, generation?.brandKitId, state.composerBrandKitId, genKind]);
@@ -436,11 +436,30 @@ export const StudioAgentPanel: FC<{
       toaster.show(line, 'success');
       // Tell the Brand tab to refresh so the new logo shows in its slot.
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:brand-refresh'));
-      onClose();
+      if (generation?.slot) {
+        // Pre-scoped to one slot → done, close the window.
+        onClose();
+      } else {
+        // Slot-picker mode → loop: reset the plan and ask the agent which target is next
+        // (it re-streams with the now-updated brand context, so it knows what's still empty).
+        setGenPlan(null);
+        setRefAssetIds([]);
+        appendMessage({ id: makeId(), role: 'system', text: line });
+        if (BRAIN_CONFIGURED) {
+          setStreaming(true);
+          abortRef.current = streamToBrain(
+            `Done — that one's generated. Which logo slot should we work on next?`,
+            conversationId,
+            { onEvent: handleEvent, onAbort: () => { finalizeLastAssistant(); setStreaming(false); } },
+            brandKitId,
+            { kind: genKind }
+          );
+        }
+      }
     } catch (e) {
       appendMessage({ id: makeId(), role: 'system', text: `Generation failed: ${(e as Error)?.message ?? e}` });
     } finally { setGenerating(false); }
-  }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, refAssetIds, state.composerBrandKitId, toaster, onClose, appendMessage]);
+  }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, refAssetIds, state.composerBrandKitId, toaster, onClose, appendMessage, conversationId, handleEvent, finalizeLastAssistant]);
 
   // Create gate: in generation mode, lit only when the agent published ready + ≥95% confidence.
   const genReady = !!genPlan?.ready && (genPlan?.confidence ?? 0) >= 0.95;

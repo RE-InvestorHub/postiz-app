@@ -327,6 +327,17 @@ export const StudioBrandPanel: FC = () => {
       seed: `I want to create the ${slot ? LOGO_SLOT_LABELS[slot] : 'logo'} for my brand “${brand?.name ?? ''}”.`,
     });
   };
+  // "Generate logo ($)" — open the agent with NO slot pre-chosen, so it asks which logo slot
+  // to focus on, scopes to it, and (after generating) loops to ask for the next slot.
+  const onGenerateLogoAgent = () => {
+    dispatch({
+      type: 'OPEN_FLOATING_AGENT',
+      kind: 'logo',
+      brandKitId: brand?.brand_kit_id,
+      // no slot → the agent picks the target with the user
+      seed: `I'd like to create a logo for my brand “${brand?.name ?? ''}”. Which logo slot should we start with?`,
+    });
+  };
 
   // Step 1: arm the confirm, fetching how many campaigns the cascade will remove.
   const startDelete = async () => {
@@ -441,10 +452,10 @@ export const StudioBrandPanel: FC = () => {
                     {assisting === k ? '…' : `✨ ${label}`}
                   </button>
                 ))}
-                <button type="button" disabled={!!assisting} onClick={() => runAssist('logo')}
-                  title="Generates a logo via image-gen — uses image credits"
+                <button type="button" onClick={onGenerateLogoAgent}
+                  title="Open the AI agent to design a logo — it asks which slot to focus on, then generates one (uses image credits)"
                   className="h-[30px] px-[12px] rounded-[8px] border border-[#d82d7e]/50 text-ai text-[12px] font-[600] hover:bg-ai/10 disabled:opacity-50">
-                  {assisting === 'logo' ? 'Generating…' : '✨ Generate logo ($)'}
+                  ✨ Generate logo ($)
                 </button>
               </div>
             )}
