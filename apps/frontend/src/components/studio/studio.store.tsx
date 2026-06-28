@@ -45,7 +45,7 @@ export type StudioAction =
   | { type: 'SET_ACTIVE_AD'; adId: string | null }
   | { type: 'SET_COMPOSER_BRANDKIT'; brandKitId: string }
   | { type: 'SET_COMPOSER_TEMPLATE'; templateId: string }
-  | { type: 'OPEN_FLOATING_AGENT'; seed?: string }
+  | { type: 'OPEN_FLOATING_AGENT'; seed?: string; kind?: string; brandKitId?: string; slot?: string }
   | { type: 'CLOSE_FLOATING_AGENT' }
   | { type: 'RESET' };
 
@@ -130,7 +130,7 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
     case 'SET_COMPOSER_TEMPLATE':
       return { ...state, composerTemplateId: action.templateId };
     case 'OPEN_FLOATING_AGENT':
-      return { ...state, floatingAgent: { seed: action.seed } };
+      return { ...state, floatingAgent: { seed: action.seed, kind: action.kind, brandKitId: action.brandKitId, slot: action.slot } };
     case 'CLOSE_FLOATING_AGENT':
       return { ...state, floatingAgent: null };
     case 'SET_AUDIO_SCRIPT':

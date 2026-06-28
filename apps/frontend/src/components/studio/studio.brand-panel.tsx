@@ -196,6 +196,15 @@ export const StudioBrandPanel: FC = () => {
     [t.primary, t.secondary, t.accent].forEach((f) => ensureGoogleFont(f));
   }, [brand?.typography]);
 
+  // The floating agent fires this after generating a logo → re-fetch the edited brand so
+  // the new logo shows in its slot.
+  useEffect(() => {
+    const onRefresh = () => { if (brand) getBrand(brand.brand_kit_id).then(setBrand).catch(() => {}); };
+    if (typeof window === 'undefined') return;
+    window.addEventListener('reinvestorhub:brand-refresh', onRefresh);
+    return () => window.removeEventListener('reinvestorhub:brand-refresh', onRefresh);
+  }, [brand?.brand_kit_id]);
+
   // Open the active brand (or the first custom one) for editing on mount.
   useEffect(() => {
     const id = state.composerBrandKitId && state.composerBrandKitId !== 'default' ? state.composerBrandKitId : null;
@@ -309,7 +318,13 @@ export const StudioBrandPanel: FC = () => {
   const onLogoAI = () => {
     const slot = logoSlot;
     setLogoSlot(null);
-    dispatch({ type: 'OPEN_FLOATING_AGENT', seed: `Help me create the ${slot ? LOGO_SLOT_LABELS[slot] : 'logo'} for my brand “${brand?.name ?? ''}”. Use my existing brand colors and fill the empty logo slots.` });
+    dispatch({
+      type: 'OPEN_FLOATING_AGENT',
+      kind: 'logo',
+      brandKitId: brand?.brand_kit_id,
+      slot: slot || 'mark',
+      seed: `I want to create the ${slot ? LOGO_SLOT_LABELS[slot] : 'logo'} for my brand “${brand?.name ?? ''}”.`,
+    });
   };
 
   // Step 1: arm the confirm, fetching how many campaigns the cascade will remove.

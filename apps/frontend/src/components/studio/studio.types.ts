@@ -150,8 +150,9 @@ export interface StudioState {
   composerBrandKitId: string;
   /** Composer tab: active Template id (shared by manual UI + agent's compose.useTemplate). */
   composerTemplateId: string;
-  /** Draggable floating agent chat window: null = closed, else open (with optional seed input). */
-  floatingAgent: { seed?: string } | null;
+  /** Draggable floating agent chat window: null = closed, else open. In generation-interview
+   *  mode it carries the kind + brand + target slot so Create can run that kind's generator. */
+  floatingAgent: { seed?: string; kind?: string; brandKitId?: string; slot?: string } | null;
 }
 
 export interface ModelOption {

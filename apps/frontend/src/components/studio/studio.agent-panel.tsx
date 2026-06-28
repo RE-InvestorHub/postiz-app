@@ -39,6 +39,19 @@ import {
   dispatchToolCall,
   requiresApproval,
 } from '@gitroom/frontend/components/studio/studio.tool-dispatcher';
+import { useToaster } from '@gitroom/react/toaster/toaster';
+import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
+import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
+import { generateLogoFromSpec } from '@gitroom/frontend/components/studio/studio.brand-client';
+
+/** Dispatch a kind's generator from the agent's final spec. Returns a human result line. */
+async function runGeneration(kind: string, brandKitId: string, spec: Record<string, unknown>): Promise<string> {
+  if (kind === 'logo') {
+    const r = await generateLogoFromSpec(brandKitId, spec);
+    return `Logo generated and applied to the ${r.slot} slot.`;
+  }
+  throw new Error(`No generator registered for "${kind}".`);
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,11 +168,20 @@ export const StudioAgentPanel: FC<{
   floating?: boolean;
   /** Prefill the message box (e.g. opened from the logo "Generate with AI" button). */
   initialInput?: string;
-}> = ({ caps, onClose, onCreate, floating, initialInput }) => {
+  /** Generation-interview mode: the agent interviews for this kind; Create runs its generator. */
+  generation?: { kind?: string; brandKitId?: string; slot?: string };
+}> = ({ caps, onClose, onCreate, floating, initialInput, generation }) => {
   const { state } = useStudio();
+  const toaster = useToaster();
   // Chat state
   const [messages, setMessages] = useState<InternalMessage[]>([]);
   const [input, setInput] = useState(initialInput ?? '');
+  // Generation-interview state: the agent's latest published plan + dropped reference assets.
+  const genKind = generation?.kind;
+  const [genPlan, setGenPlan] = useState<{ kind?: string; spec?: Record<string, unknown>; confidence?: number; ready?: boolean; summary?: string } | null>(null);
+  const [refAssetIds, setRefAssetIds] = useState<string[]>([]);
+  const [generating, setGenerating] = useState(false);
+  const [showRefDrop, setShowRefDrop] = useState(false); // reference uploader popover open?
   const [streaming, setStreaming] = useState(false);
   const [conversationId] = useState<string | null>(null);
 
@@ -306,7 +328,13 @@ export const StudioAgentPanel: FC<{
         case 'tool_call':
           // Finalize any open streaming bubble first.
           finalizeLastAssistant();
-          handleToolCallEvent(event.name, event.input);
+          // generation_plan is a signal (not a capability): capture it to drive the
+          // confidence meter + Create gate. Don't render it as a tool-call card.
+          if (event.name === 'generation_plan') {
+            setGenPlan((event.input as { confidence?: number }) || null);
+          } else {
+            handleToolCallEvent(event.name, event.input);
+          }
           break;
 
         case 'brief_complete':
@@ -366,7 +394,7 @@ export const StudioAgentPanel: FC<{
         finalizeLastAssistant();
         setStreaming(false);
       },
-    }, state.composerBrandKitId);
+    }, generation?.brandKitId || state.composerBrandKitId, genKind ? { kind: genKind } : null);
   }, [
     input,
     streaming,
@@ -375,7 +403,47 @@ export const StudioAgentPanel: FC<{
     handleEvent,
     finalizeLastAssistant,
     state.composerBrandKitId,
+    generation?.brandKitId,
+    genKind,
   ]);
+
+  // A dropped reference image: remember it (injected into the spec at Create) and tell the
+  // agent so it factors the reference into its plan/confidence.
+  const onRefUpload = useCallback((asset: UploadedAsset) => {
+    setShowRefDrop(false);
+    setRefAssetIds((ids) => (ids.includes(asset.assetId) ? ids : [...ids, asset.assetId]));
+    appendMessage({ id: makeId(), role: 'system', text: 'Reference image added — the agent will use it as an example.' });
+    if (!streaming && BRAIN_CONFIGURED) {
+      setStreaming(true);
+      abortRef.current = streamToBrain(
+        "I've added a reference logo I like — please use it as a style example.",
+        conversationId,
+        { onEvent: handleEvent, onAbort: () => { finalizeLastAssistant(); setStreaming(false); } },
+        generation?.brandKitId || state.composerBrandKitId,
+        genKind ? { kind: genKind } : null
+      );
+    }
+  }, [streaming, conversationId, handleEvent, finalizeLastAssistant, appendMessage, generation?.brandKitId, state.composerBrandKitId, genKind]);
+
+  // The human Create gate (generation mode): run the kind's generator from the agent's spec.
+  const doGenerate = useCallback(async () => {
+    if (!genKind || !genPlan?.spec || generating) return;
+    const brandKitId = generation?.brandKitId || state.composerBrandKitId;
+    setGenerating(true);
+    try {
+      const spec = { ...genPlan.spec, ...(generation?.slot ? { slot: generation.slot } : {}), referenceAssetIds: refAssetIds };
+      const line = await runGeneration(genKind, brandKitId, spec);
+      toaster.show(line, 'success');
+      // Tell the Brand tab to refresh so the new logo shows in its slot.
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:brand-refresh'));
+      onClose();
+    } catch (e) {
+      appendMessage({ id: makeId(), role: 'system', text: `Generation failed: ${(e as Error)?.message ?? e}` });
+    } finally { setGenerating(false); }
+  }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, refAssetIds, state.composerBrandKitId, toaster, onClose, appendMessage]);
+
+  // Create gate: in generation mode, lit only when the agent published ready + ≥95% confidence.
+  const genReady = !!genPlan?.ready && (genPlan?.confidence ?? 0) >= 0.95;
 
   const stopStream = useCallback(() => {
     abortRef.current?.abort();
@@ -445,9 +513,11 @@ export const StudioAgentPanel: FC<{
         {messages.length === 0 && (
           <div className="flex flex-col gap-[14px]">
             <p className="text-[12px] text-[var(--new-table-text)] leading-[1.5]">
-              {BRAIN_CONFIGURED
-                ? 'Ask the agent to help set up your content brief. It will drive the Studio controls as you answer its questions.'
-                : 'Connect the brain (NEXT_PUBLIC_BRAIN_URL) to enable the agent.'}
+              {!BRAIN_CONFIGURED
+                ? 'Connect the brain (NEXT_PUBLIC_BRAIN_URL) to enable the agent.'
+                : genKind
+                  ? `Tell me what kind of ${genKind} you're after. I'll ask a few questions — and drop in any ${genKind}s you like as examples. Create lights up once I'm confident I can make it.`
+                  : 'Ask the agent to help set up your content brief. It will drive the Studio controls as you answer its questions.'}
             </p>
           </div>
         )}
@@ -493,26 +563,67 @@ export const StudioAgentPanel: FC<{
         <div ref={bottomRef} />
       </div>
 
+      {/* Generation-interview gate: confidence meter + a thin reference-upload toggle */}
+      {genKind && (
+        <div className="px-[12px] pt-[10px] flex flex-col gap-[8px] border-t border-[var(--new-table-border)]">
+          <div className="flex items-center gap-[8px]">
+            <span className="text-[11px] text-textItemBlur shrink-0">Confidence</span>
+            <span className="flex-1 h-[6px] rounded-full bg-newBgColorInner overflow-hidden">
+              <span className="block h-full bg-ai transition-all" style={{ width: `${Math.round((genPlan?.confidence ?? 0) * 100)}%` }} />
+            </span>
+            <span className="text-[11px] font-[600] shrink-0" style={{ color: genReady ? '#1db97a' : undefined }}>{Math.round((genPlan?.confidence ?? 0) * 100)}%</span>
+            <button type="button" onClick={() => setShowRefDrop((v) => !v)} title="Upload reference images"
+              className={'shrink-0 h-[22px] px-[8px] rounded-[6px] border text-[10px] font-[600] ' + (showRefDrop ? 'border-ai text-ai bg-ai/10' : 'border-newBorder text-textItemBlur hover:text-btnText')}>
+              ⬆ Upload{refAssetIds.length ? ` (${refAssetIds.length})` : ''}
+            </button>
+          </div>
+          {showRefDrop && (
+            <div className="rounded-[8px] border border-newBorder bg-newBgColorInner p-[8px]">
+              <StudioDropZone accept="image" onUploaded={onRefUpload} />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Input + Create footer */}
       <div className="p-[12px] border-t border-[var(--new-table-border)] flex flex-col gap-[8px]">
-        {/* Create button — gated on brief_complete */}
-        <button
-          type="button"
-          disabled={!briefReady}
-          onClick={() => brief && onCreate?.(brief)}
-          className={[
-            'w-full flex items-center justify-center gap-[6px]',
-            'h-[40px] rounded-[8px] font-[600] text-[13px] transition-colors',
-            briefReady
-              ? 'bg-btnPrimary text-white cursor-pointer hover:opacity-90'
-              : 'bg-btnSimple text-[var(--new-table-text)] opacity-50 cursor-not-allowed',
-          ].join(' ')}
-          aria-label={briefReady ? 'Create content' : 'Answer all questions to unlock Create'}
-          title={briefReady ? 'Start content creation' : 'Answer the agent\'s questions to unlock Create'}
-        >
-          <IconCreate />
-          Create
-        </button>
+        {/* Create button — generation mode gates on confidence ≥ 95%; brief mode on brief_complete */}
+        {genKind ? (
+          <button
+            type="button"
+            disabled={!genReady || generating}
+            onClick={doGenerate}
+            className={[
+              'w-full flex items-center justify-center gap-[6px]',
+              'h-[40px] rounded-[8px] font-[600] text-[13px] transition-colors',
+              genReady && !generating
+                ? 'bg-btnPrimary text-white cursor-pointer hover:opacity-90'
+                : 'bg-btnSimple text-[var(--new-table-text)] opacity-50 cursor-not-allowed',
+            ].join(' ')}
+            title={genReady ? `Generate the ${genKind} (uses image credits)` : 'Keep answering — Create unlocks at 95% confidence'}
+          >
+            <IconCreate />
+            {generating ? 'Generating…' : `Create ${genKind}`}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={!briefReady}
+            onClick={() => brief && onCreate?.(brief)}
+            className={[
+              'w-full flex items-center justify-center gap-[6px]',
+              'h-[40px] rounded-[8px] font-[600] text-[13px] transition-colors',
+              briefReady
+                ? 'bg-btnPrimary text-white cursor-pointer hover:opacity-90'
+                : 'bg-btnSimple text-[var(--new-table-text)] opacity-50 cursor-not-allowed',
+            ].join(' ')}
+            aria-label={briefReady ? 'Create content' : 'Answer all questions to unlock Create'}
+            title={briefReady ? 'Start content creation' : 'Answer the agent\'s questions to unlock Create'}
+          >
+            <IconCreate />
+            Create
+          </button>
+        )}
 
         {/* Chat input */}
         <form onSubmit={onSubmit} className="flex gap-[8px]">
@@ -529,7 +640,7 @@ export const StudioAgentPanel: FC<{
                 : 'Ask the agent… (Enter to send)'
             }
             rows={1}
-            className="flex-1 min-h-[40px] max-h-[100px] px-[12px] py-[10px] rounded-[8px] bg-newBgColorInner border border-[var(--new-table-border)] text-[13px] text-btnText placeholder:text-[var(--new-table-text)] disabled:opacity-60 resize-none leading-[1.4] overflow-y-auto"
+            className="flex-1 min-h-[40px] max-h-[50vh] px-[12px] py-[10px] rounded-[8px] bg-newBgColorInner border border-[var(--new-table-border)] text-[13px] text-btnText placeholder:text-[var(--new-table-text)] disabled:opacity-60 resize-y leading-[1.4] overflow-y-auto"
           />
           <button
             type={streaming ? 'button' : 'submit'}
