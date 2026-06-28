@@ -102,6 +102,21 @@ export function requiresApproval(toolName: string): boolean {
     // Brand Kit authoring is structured data, no spend.
     'compose.createBrandKit',
     'compose.updateBrandKit',
+    // Brand entity — list/select/create/update/addLogo/delete are all structured-data
+    // setters/curation, no spend → auto. (AI logo/voice GENERATION lands later, gated.)
+    'brand.list',
+    'brand.create',
+    'brand.select',
+    'brand.update',
+    'brand.addLogo',
+    'brand.delete',
+    // brand.extract is a cheap text-LLM normalization (no image credits) → auto.
+    'brand.extract',
+    // AI-assist gap-fillers: palette/fonts/voice are deterministic/cheap-text → auto.
+    // brand.generateLogos SPENDS image credits → deliberately NOT here (stays gated).
+    'brand.completePalette',
+    'brand.suggestFonts',
+    'brand.draftVoice',
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',
