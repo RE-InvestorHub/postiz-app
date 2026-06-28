@@ -107,3 +107,22 @@ export function logoUrl(ref?: LogoRef): string | null {
   if (ref.variant) return `${base()}/brand/logo/${encodeURIComponent(ref.variant)}`; // built-in SVG keys
   return null;
 }
+
+export interface GoogleFont { family: string; category: string }
+/** The full Google Fonts family list (name + category) for the font pickers. */
+export function listGoogleFonts(): Promise<GoogleFont[]> {
+  return req<{ fonts: GoogleFont[] }>('/fonts/list').then((r) => r.fonts || []);
+}
+
+// Lazily inject a Google Fonts stylesheet so a family renders in previews. No-op if the
+// family is already requested, blank, or a non-Google system font.
+const _loadedFonts = new Set<string>();
+const SYSTEM_FONTS = new Set(['Helvetica Neue', 'Arial', 'Helvetica', 'Georgia', 'Times New Roman']);
+export function ensureGoogleFont(family?: string): void {
+  if (!family || typeof document === 'undefined' || _loadedFonts.has(family) || SYSTEM_FONTS.has(family)) return;
+  _loadedFonts.add(family);
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family).replace(/%20/g, '+')}:wght@400;600;700&display=swap`;
+  document.head.appendChild(link);
+}

@@ -18,6 +18,7 @@ import {
   Brand, ColorRole, LogoSlot, LOGO_SLOTS, LOGO_SLOT_LABELS,
   listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrandFromAsset, logoUrl,
   completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos,
+  GoogleFont, listGoogleFonts, ensureGoogleFont,
 } from '@gitroom/frontend/components/studio/studio.brand-client';
 
 const FONTS = [
@@ -100,6 +101,69 @@ const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; pinned?: 
   );
 };
 
+const CTRL = 'h-[36px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText px-[10px]';
+// One font row — renders its name in its own font, but only loads that font's CSS once it
+// scrolls into the dropdown (lazy via IntersectionObserver) so a 1,900-font list is cheap.
+const FontOption: FC<{ font: GoogleFont; selected: boolean; onPick: () => void }> = ({ font, selected, onPick }) => {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const root = el.closest('[data-font-scroll]');
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { ensureGoogleFont(font.family); setShow(true); io.disconnect(); }
+    }, { root, rootMargin: '200px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [font.family]);
+  return (
+    <button ref={ref} type="button" onClick={onPick} title={font.family}
+      className={'w-full text-left px-[10px] py-[6px] text-[14px] hover:bg-newBgColorInner flex items-center gap-[8px] ' + (selected ? 'text-ai' : 'text-btnText')}
+      style={show ? { fontFamily: `'${font.family}', sans-serif` } : undefined}>
+      <span className="truncate flex-1">{font.family}</span>
+      <span className="text-[10px] text-textItemBlur shrink-0 capitalize">{font.category}</span>
+    </button>
+  );
+};
+// Searchable font picker over the FULL Google Fonts list. Type to filter; every option
+// previews in its own font (lazy-loaded on scroll). The chosen font loads for the previews.
+const FontPicker: FC<{ value: string; fonts: GoogleFont[]; disabled?: boolean; ariaLabel: string; onChange: (family: string) => void }> = ({ value, fonts, disabled, ariaLabel, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) { setOpen(false); setQ(''); } };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  const ql = q.trim().toLowerCase();
+  const filtered = ql ? fonts.filter((f) => f.family.toLowerCase().includes(ql)) : fonts;
+  const pick = (family: string) => { if (family) ensureGoogleFont(family); onChange(family); setOpen(false); setQ(''); };
+  return (
+    <div ref={box} className="relative">
+      <button type="button" disabled={disabled} aria-label={ariaLabel} onClick={() => setOpen((o) => !o)}
+        className={CTRL + ' w-full flex items-center gap-[6px] disabled:opacity-60'}>
+        <span className={'truncate ' + (value ? 'text-btnText' : 'text-textItemBlur')} style={value ? { fontFamily: `'${value}', sans-serif` } : undefined}>{value || '— pick —'}</span>
+        <span className="ml-auto text-textItemBlur text-[10px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute z-[60] mt-[4px] w-full rounded-[8px] border border-newBorder bg-newBgColor shadow-xl overflow-hidden">
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${fonts.length} fonts…`}
+            className="w-full h-[34px] px-[10px] bg-newBgColorInner border-b border-newBorder text-[13px] text-btnText outline-none placeholder:text-textItemBlur" />
+          <div data-font-scroll className="max-h-[260px] overflow-auto py-[4px]">
+            <button type="button" onClick={() => pick('')} className="w-full text-left px-[10px] py-[6px] text-[12px] text-textItemBlur hover:bg-newBgColorInner">— none —</button>
+            {filtered.length === 0 && <div className="px-[10px] py-[8px] text-[12px] text-textItemBlur">No matching fonts</div>}
+            {filtered.map((f) => (
+              <FontOption key={f.family} font={f} selected={f.family === value} onPick={() => pick(f.family)} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const StudioBrandPanel: FC = () => {
   const { state, dispatch } = useStudio();
   const toaster = useToaster();
@@ -113,6 +177,9 @@ export const StudioBrandPanel: FC = () => {
   const pendingSlot = useRef<LogoSlot | null>(null);
   const [importModal, setImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
+  // Full Google Fonts list for the pickers (seeded with the curated set as a fallback).
+  const [fonts, setFonts] = useState<GoogleFont[]>(() => FONTS.map((f) => ({ family: f, category: '' })));
+  const [previewText, setPreviewText] = useState(''); // custom typography preview phrase
   // Two-step delete confirm: null = idle, number = # campaigns the cascade will remove.
   const [confirmDel, setConfirmDel] = useState<number | null>(null);
   const [saving, setSaving] = useState(false); // a field edit is being persisted
@@ -121,6 +188,14 @@ export const StudioBrandPanel: FC = () => {
     try { setBrands(await listBrands()); } catch (e) { setError(msg(e)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+
+  // Fetch the full Google Fonts list once for the pickers.
+  useEffect(() => { listGoogleFonts().then((f) => { if (f.length) setFonts(f); }).catch(() => {}); }, []);
+  // Lazy-load the brand's selected fonts so every preview renders in them.
+  useEffect(() => {
+    const t = (brand?.typography || {}) as any;
+    [t.primary, t.secondary, t.accent].forEach((f) => ensureGoogleFont(f));
+  }, [brand?.typography]);
 
   // Open the active brand (or the first custom one) for editing on mount.
   useEffect(() => {
@@ -370,19 +445,19 @@ export const StudioBrandPanel: FC = () => {
               {/* Typography */}
               <div className={card + ' flex flex-col gap-[10px]'}>
                 <span className={sectionTitle}>Typography — primary + secondary to start · accent for complete</span>
+                <input value={previewText} disabled={brand.builtin} onChange={(e) => setPreviewText(e.target.value)}
+                  placeholder="Preview text (e.g. your tagline)…" aria-label="Typography preview text"
+                  className={ctrl + ' w-full placeholder:text-textItemBlur'} />
                 <div className="grid grid-cols-1 gap-[10px]">
                   {FONT_ROLES.map((f) => {
                     const val = (brand.typography as any)?.[f.key] || '';
                     return (
                       <div key={f.key} className="flex flex-col gap-[6px]">
                         <span className="text-[12px] text-textItemBlur">{f.label} font</span>
-                        <select className={ctrl} value={val} disabled={brand.builtin}
-                          onChange={(e) => patch({ typography: { [f.key]: e.target.value || null } as any })} aria-label={`${f.label} font`}>
-                          <option value="">— pick —</option>
-                          {FONTS.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
-                        </select>
+                        <FontPicker value={val} fonts={fonts} disabled={brand.builtin} ariaLabel={`${f.label} font`}
+                          onChange={(family) => patch({ typography: { [f.key]: family || null } as any })} />
                         <span className="text-[18px] text-btnText truncate" style={val ? { fontFamily: `'${val}', sans-serif` } : undefined}>
-                          {val ? 'The quick brown fox' : <span className="text-textItemBlur text-[12px]">no font</span>}
+                          {val ? (previewText.trim() || 'The quick brown fox') : <span className="text-textItemBlur text-[12px]">no font</span>}
                         </span>
                       </div>
                     );
