@@ -50,7 +50,8 @@ export type StudioAction =
   | { type: 'RESET' };
 
 export const initialStudioState: StudioState = {
-  activeTab: 'images',
+  // Studio opens on the Brand tab — brand is the root of the Brand → Campaign → Ad flow.
+  activeTab: 'brand',
   prompt: '',
   model: 'nano_banana_flash',
   aspectRatio: '1:1',
