@@ -62,7 +62,8 @@ export function streamToBrain(
   message: string,
   conversationId: string | null,
   callbacks: BrainStreamCallbacks,
-  brandKitId?: string | null
+  brandKitId?: string | null,
+  interview?: { kind: string } | null
 ): AbortController {
   const controller = new AbortController();
 
@@ -73,7 +74,7 @@ export function streamToBrain(
         {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
-          body: JSON.stringify({ message, conversationId, ...(brandKitId && brandKitId !== 'default' ? { brandKitId } : {}) }),
+          body: JSON.stringify({ message, conversationId, ...(brandKitId && brandKitId !== 'default' ? { brandKitId } : {}), ...(interview ? { interview } : {}) }),
           signal: controller.signal,
         }
       );

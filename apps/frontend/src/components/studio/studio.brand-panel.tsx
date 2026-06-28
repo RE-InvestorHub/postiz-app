@@ -174,6 +174,7 @@ export const StudioBrandPanel: FC = () => {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [logoSlot, setLogoSlot] = useState<LogoSlot | null>(null); // which logo slot's add modal is open
+  const [viewLogo, setViewLogo] = useState<{ url: string; label: string } | null>(null); // logo lightbox
   const [importModal, setImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
   // Full Google Fonts list for the pickers (seeded with the curated set as a fallback).
@@ -195,6 +196,15 @@ export const StudioBrandPanel: FC = () => {
     const t = (brand?.typography || {}) as any;
     [t.primary, t.secondary, t.accent].forEach((f) => ensureGoogleFont(f));
   }, [brand?.typography]);
+
+  // The floating agent fires this after generating a logo → re-fetch the edited brand so
+  // the new logo shows in its slot.
+  useEffect(() => {
+    const onRefresh = () => { if (brand) getBrand(brand.brand_kit_id).then(setBrand).catch(() => {}); };
+    if (typeof window === 'undefined') return;
+    window.addEventListener('reinvestorhub:brand-refresh', onRefresh);
+    return () => window.removeEventListener('reinvestorhub:brand-refresh', onRefresh);
+  }, [brand?.brand_kit_id]);
 
   // Open the active brand (or the first custom one) for editing on mount.
   useEffect(() => {
@@ -309,7 +319,13 @@ export const StudioBrandPanel: FC = () => {
   const onLogoAI = () => {
     const slot = logoSlot;
     setLogoSlot(null);
-    dispatch({ type: 'OPEN_FLOATING_AGENT', seed: `Help me create the ${slot ? LOGO_SLOT_LABELS[slot] : 'logo'} for my brand “${brand?.name ?? ''}”. Use my existing brand colors and fill the empty logo slots.` });
+    dispatch({
+      type: 'OPEN_FLOATING_AGENT',
+      kind: 'logo',
+      brandKitId: brand?.brand_kit_id,
+      slot: slot || 'mark',
+      seed: `I want to create the ${slot ? LOGO_SLOT_LABELS[slot] : 'logo'} for my brand “${brand?.name ?? ''}”.`,
+    });
   };
 
   // Step 1: arm the confirm, fetching how many campaigns the cascade will remove.
@@ -479,17 +495,24 @@ export const StudioBrandPanel: FC = () => {
                     const url = logoUrl(ref);
                     const dark = slot === 'lockupDark';
                     return (
-                      <button key={slot} type="button" disabled={brand.builtin} onClick={() => pickLogo(slot)}
-                        className="flex flex-col gap-[5px] text-left group">
+                      <div key={slot} className="flex flex-col gap-[5px]">
                         <span className={'relative block h-[64px] rounded-[8px] border flex items-center justify-center overflow-hidden ' + (ref ? 'border-newBorder' : 'border-dashed border-newBorder') + (dark ? ' bg-[#0B1220]' : ' bg-newBgColorInner')}>
-                          {url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={url} alt={slot} className="max-h-[52px] max-w-[90%] object-contain" />
-                          ) : ref ? <span className="text-[10px] text-textItemBlur uppercase">set</span>
-                            : <span className="text-[18px] text-textItemBlur">+</span>}
+                          <button type="button" disabled={brand.builtin} onClick={() => pickLogo(slot)} aria-label={`Set ${LOGO_SLOT_LABELS[slot]}`}
+                            className="absolute inset-0 flex items-center justify-center">
+                            {url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={url} alt={slot} className="max-h-[52px] max-w-[90%] object-contain" />
+                            ) : ref ? <span className="text-[10px] text-textItemBlur uppercase">set</span>
+                              : <span className="text-[18px] text-textItemBlur">+</span>}
+                          </button>
+                          {url && (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setViewLogo({ url, label: LOGO_SLOT_LABELS[slot] }); }}
+                              title="View full size" aria-label={`View ${LOGO_SLOT_LABELS[slot]} full size`}
+                              className="absolute top-[4px] right-[4px] h-[20px] w-[20px] rounded-[5px] bg-black/45 text-white/90 text-[11px] leading-none flex items-center justify-center hover:bg-black/65">⛶</button>
+                          )}
                         </span>
                         <span className="text-[11px] text-textItemBlur">{LOGO_SLOT_LABELS[slot]}</span>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -510,6 +533,27 @@ export const StudioBrandPanel: FC = () => {
       </div>
 
       {/* Import modal — drag-drop / browse a brand asset, then extract */}
+      {/* Logo lightbox — view a logo full-size on a checkerboard (so transparency reads) */}
+      {viewLogo && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/75 p-[24px]" onClick={() => setViewLogo(null)}>
+          <div className="flex flex-col items-center gap-[12px]" onClick={(e) => e.stopPropagation()}>
+            <div className="rounded-[12px] overflow-hidden border border-newBorder p-[20px]"
+              style={{
+                backgroundColor: '#1a1f29',
+                backgroundImage: 'linear-gradient(45deg,#2a2f3a 25%,transparent 25%),linear-gradient(-45deg,#2a2f3a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#2a2f3a 75%),linear-gradient(-45deg,transparent 75%,#2a2f3a 75%)',
+                backgroundSize: '18px 18px', backgroundPosition: '0 0,0 9px,9px -9px,-9px 0',
+              }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={viewLogo.url} alt={viewLogo.label} className="max-w-[78vw] max-h-[70vh] object-contain block" />
+            </div>
+            <div className="flex items-center gap-[12px]">
+              <span className="text-[13px] text-white/85">{viewLogo.label}</span>
+              <a href={viewLogo.url} target="_blank" rel="noreferrer" className="text-[12px] text-ai hover:underline">Open original ↗</a>
+              <button type="button" onClick={() => setViewLogo(null)} className="text-[12px] text-white/70 hover:text-white">Close</button>
+            </div>
+          </div>
+        </div>, document.body)}
+
       {/* Add-logo modal: upload (left) or generate with AI (right) */}
       {logoSlot && brand && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => !busy && !assisting && setLogoSlot(null)}>

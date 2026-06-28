@@ -366,6 +366,7 @@ const StudioInner: FC = () => {
             floating
             caps={caps}
             initialInput={state.floatingAgent.seed}
+            generation={state.floatingAgent.kind ? { kind: state.floatingAgent.kind, brandKitId: state.floatingAgent.brandKitId, slot: state.floatingAgent.slot } : undefined}
             onClose={() => dispatch({ type: 'CLOSE_FLOATING_AGENT' })}
             onCreate={handleCreate}
           />
