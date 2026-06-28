@@ -62,7 +62,8 @@ const HexSwatch: FC<{ label: string; hex?: string; disabled?: boolean; onCommit:
   };
   return (
     <div className="flex flex-col gap-[5px]">
-      <span className="relative block h-[54px] rounded-[8px] border border-newBorder overflow-hidden" style={hex ? { background: hex } : undefined}>
+      <span className={'relative block h-[54px] rounded-[8px] border border-newBorder overflow-hidden transition-colors ' + (disabled ? '' : 'cursor-pointer hover:border-ai/60')}
+        style={hex ? { background: hex } : undefined} title={disabled ? undefined : 'Click to open the color picker'}>
         {!hex && <span className="absolute inset-0 flex items-center justify-center text-[18px] text-textItemBlur border border-dashed border-newBorder rounded-[8px]">+</span>}
         <input type="color" value={hex || '#888888'} disabled={disabled}
           onChange={(e) => onCommit(e.target.value)}
@@ -252,20 +253,29 @@ export const StudioBrandPanel: FC = () => {
               <span className="text-[18px] font-[700] text-btnText">{brand.name}</span>
               <StatusPill b={brand} />
               {busy && <span className="text-[11px] text-textItemBlur">Working…</span>}
-              {confirmDel === null ? (
-                <button type="button" onClick={startDelete} disabled={busy}
-                  className="ml-auto h-[32px] px-[12px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10 disabled:opacity-50">Delete brand</button>
-              ) : (
-                <span className="ml-auto flex items-center gap-[8px]">
-                  <span className="text-[12px] text-[#ff7eb6]">
-                    Delete <b>{brand.name}</b>{confirmDel > 0 ? <> and its {confirmDel} {confirmDel === 1 ? 'campaign' : 'campaigns'} (+ their ads)</> : null}? Library media is kept.
+              <div className="ml-auto flex items-center gap-[8px] flex-wrap">
+                {!brand.builtin && confirmDel === null && (
+                  <button type="button" onClick={() => setImportModal(true)} disabled={importing}
+                    title="Upload a brand board, palette, or logo image — we'll extract the colors, fonts & brand voice from it. You still add the 5 logos to make the brand live."
+                    className="h-[32px] px-[12px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10 disabled:opacity-50">
+                    {importing ? 'Extracting…' : '⬆ Import brand'}
+                  </button>
+                )}
+                {confirmDel === null ? (
+                  <button type="button" onClick={startDelete} disabled={busy}
+                    className="h-[32px] px-[12px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10 disabled:opacity-50">Delete brand</button>
+                ) : (
+                  <span className="flex items-center gap-[8px] flex-wrap">
+                    <span className="text-[12px] text-[#ff7eb6]">
+                      Delete <b>{brand.name}</b>{confirmDel > 0 ? <> and its {confirmDel} {confirmDel === 1 ? 'campaign' : 'campaigns'} (+ their ads)</> : null}? Library media is kept.
+                    </span>
+                    <button type="button" onClick={doDelete} disabled={busy}
+                      className="h-[30px] px-[12px] rounded-[8px] bg-[#ff7eb6] text-[#1a0a12] text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">{busy ? 'Deleting…' : 'Delete'}</button>
+                    <button type="button" onClick={() => setConfirmDel(null)} disabled={busy}
+                      className="h-[30px] px-[12px] rounded-[8px] border border-newBorder text-btnText text-[12px] font-[600] hover:border-ai/50 disabled:opacity-50">Cancel</button>
                   </span>
-                  <button type="button" onClick={doDelete} disabled={busy}
-                    className="h-[30px] px-[12px] rounded-[8px] bg-[#ff7eb6] text-[#1a0a12] text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">{busy ? 'Deleting…' : 'Delete'}</button>
-                  <button type="button" onClick={() => setConfirmDel(null)} disabled={busy}
-                    className="h-[30px] px-[12px] rounded-[8px] border border-newBorder text-btnText text-[12px] font-[600] hover:border-ai/50 disabled:opacity-50">Cancel</button>
-                </span>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Brand preview */}
@@ -292,62 +302,65 @@ export const StudioBrandPanel: FC = () => {
               </div>
             )}
 
-            {/* Color palette */}
-            <div className={card + ' flex flex-col gap-[10px]'}>
-              <span className={sectionTitle}>Color palette — 4 (1 each) to start · 8 for a complete kit</span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-[10px]">
-                {PALETTE_CELLS.map((c) => (
-                  <HexSwatch key={`${c.role}:${c.shade}`} label={c.label} hex={swatchHex(c.role, c.shade)}
-                    disabled={brand.builtin} onCommit={(hex) => setSwatch(c.role, c.shade, hex)} />
-                ))}
+            {/* Color palette + Typography + Logos — three columns */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-[14px] items-start">
+              {/* Color palette */}
+              <div className={card + ' flex flex-col gap-[10px]'}>
+                <span className={sectionTitle}>Color palette — 4 (1 each) to start · 8 for a complete kit</span>
+                <div className="grid grid-cols-2 gap-[10px]">
+                  {PALETTE_CELLS.map((c) => (
+                    <HexSwatch key={`${c.role}:${c.shade}`} label={c.label} hex={swatchHex(c.role, c.shade)}
+                      disabled={brand.builtin} onCommit={(hex) => setSwatch(c.role, c.shade, hex)} />
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Typography */}
-            <div className={card + ' flex flex-col gap-[10px]'}>
-              <span className={sectionTitle}>Typography — primary + secondary to start · accent for complete</span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-[10px]">
-                {FONT_ROLES.map((f) => {
-                  const val = (brand.typography as any)?.[f.key] || '';
-                  return (
-                    <div key={f.key} className="flex flex-col gap-[6px]">
-                      <span className="text-[12px] text-textItemBlur">{f.label} font</span>
-                      <select className={ctrl} value={val} disabled={brand.builtin}
-                        onChange={(e) => patch({ typography: { [f.key]: e.target.value || null } as any })} aria-label={`${f.label} font`}>
-                        <option value="">— pick —</option>
-                        {FONTS.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
-                      </select>
-                      <span className="text-[18px] text-btnText truncate" style={val ? { fontFamily: `'${val}', sans-serif` } : undefined}>
-                        {val ? 'The quick brown fox' : <span className="text-textItemBlur text-[12px]">no font</span>}
-                      </span>
-                    </div>
-                  );
-                })}
+              {/* Typography */}
+              <div className={card + ' flex flex-col gap-[10px]'}>
+                <span className={sectionTitle}>Typography — primary + secondary to start · accent for complete</span>
+                <div className="grid grid-cols-1 gap-[10px]">
+                  {FONT_ROLES.map((f) => {
+                    const val = (brand.typography as any)?.[f.key] || '';
+                    return (
+                      <div key={f.key} className="flex flex-col gap-[6px]">
+                        <span className="text-[12px] text-textItemBlur">{f.label} font</span>
+                        <select className={ctrl} value={val} disabled={brand.builtin}
+                          onChange={(e) => patch({ typography: { [f.key]: e.target.value || null } as any })} aria-label={`${f.label} font`}>
+                          <option value="">— pick —</option>
+                          {FONTS.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
+                        </select>
+                        <span className="text-[18px] text-btnText truncate" style={val ? { fontFamily: `'${val}', sans-serif` } : undefined}>
+                          {val ? 'The quick brown fox' : <span className="text-textItemBlur text-[12px]">no font</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            {/* Logos */}
-            <div className={card + ' flex flex-col gap-[10px]'}>
-              <span className={sectionTitle}>Logos — all 5 required to use this brand</span>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-[10px]">
-                {LOGO_SLOTS.map((slot) => {
-                  const ref = (brand.logo as any)?.[slot];
-                  const url = logoUrl(ref);
-                  const dark = slot === 'lockupDark';
-                  return (
-                    <button key={slot} type="button" disabled={brand.builtin} onClick={() => pickLogo(slot)}
-                      className="flex flex-col gap-[5px] text-left group">
-                      <span className={'relative block h-[64px] rounded-[8px] border flex items-center justify-center overflow-hidden ' + (ref ? 'border-newBorder' : 'border-dashed border-newBorder') + (dark ? ' bg-[#0B1220]' : ' bg-newBgColorInner')}>
-                        {url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={url} alt={slot} className="max-h-[52px] max-w-[90%] object-contain" />
-                        ) : ref ? <span className="text-[10px] text-textItemBlur uppercase">set</span>
-                          : <span className="text-[18px] text-textItemBlur">+</span>}
-                      </span>
-                      <span className="text-[11px] text-textItemBlur">{LOGO_SLOT_LABELS[slot]}</span>
-                    </button>
-                  );
-                })}
+              {/* Logos */}
+              <div className={card + ' flex flex-col gap-[10px]'}>
+                <span className={sectionTitle}>Logos — all 5 required to use this brand</span>
+                <div className="grid grid-cols-1 gap-[10px]">
+                  {LOGO_SLOTS.map((slot) => {
+                    const ref = (brand.logo as any)?.[slot];
+                    const url = logoUrl(ref);
+                    const dark = slot === 'lockupDark';
+                    return (
+                      <button key={slot} type="button" disabled={brand.builtin} onClick={() => pickLogo(slot)}
+                        className="flex flex-col gap-[5px] text-left group">
+                        <span className={'relative block h-[64px] rounded-[8px] border flex items-center justify-center overflow-hidden ' + (ref ? 'border-newBorder' : 'border-dashed border-newBorder') + (dark ? ' bg-[#0B1220]' : ' bg-newBgColorInner')}>
+                          {url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={url} alt={slot} className="max-h-[52px] max-w-[90%] object-contain" />
+                          ) : ref ? <span className="text-[10px] text-textItemBlur uppercase">set</span>
+                            : <span className="text-[18px] text-textItemBlur">+</span>}
+                        </span>
+                        <span className="text-[11px] text-textItemBlur">{LOGO_SLOT_LABELS[slot]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -360,17 +373,6 @@ export const StudioBrandPanel: FC = () => {
                 className="min-h-[80px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText p-[10px] placeholder:text-textItemBlur" />
             </div>
 
-            {/* Import — upload a brand asset; we extract colors/fonts/voice from it */}
-            {!brand.builtin && (
-              <div className={card + ' flex flex-col gap-[8px]'}>
-                <span className={sectionTitle}>Import brand — upload a brand board, palette or logo; we'll extract colors, fonts & voice</span>
-                <button type="button" onClick={() => setImportModal(true)} disabled={importing}
-                  className="self-start h-[34px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] flex items-center gap-[6px] disabled:opacity-50">
-                  {importing ? 'Extracting…' : '⬆ Import brand'}
-                </button>
-                <span className="text-[11px] text-textItemBlur">Colors/fonts/voice are filled in from the image; you still add the 5 logos to go live.</span>
-              </div>
-            )}
           </>
         )}
       </div>
