@@ -63,7 +63,7 @@ export function streamToBrain(
   conversationId: string | null,
   callbacks: BrainStreamCallbacks,
   brandKitId?: string | null,
-  interview?: { kind: string } | null
+  interview?: { kind: string; slot?: string } | null
 ): AbortController {
   const controller = new AbortController();
 
