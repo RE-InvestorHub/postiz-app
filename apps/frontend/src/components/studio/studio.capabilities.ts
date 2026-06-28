@@ -37,7 +37,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { createFromPreset as createDataRecordPreset, setRecordField, removeRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
 import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
-import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos } from '@gitroom/frontend/components/studio/studio.brand-client';
+import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
@@ -489,6 +489,23 @@ export function buildStudioCapabilities(
       label: 'GENERATE a logo for the active brand + bootstrap its 5 slots (SPENDS image credits)',
       params: ['brandKitId'],
       handler: (p: { brandKitId?: string } = {}) => { const id = p.brandKitId ?? getState().composerBrandKitId; return id && id !== 'default' ? generateBrandLogos(id) : undefined; },
+    },
+    {
+      id: 'brand.exportKit',
+      namespace: 'brand',
+      label: 'Download a COMPLETE brand as a .zip for agency hand-off (no spend)',
+      params: ['brandKitId'],
+      // Unlike the authoring helpers, the Default brand IS exportable (it is complete).
+      handler: async (p: { brandKitId?: string } = {}) => {
+        const id = p.brandKitId ?? getState().composerBrandKitId ?? 'default';
+        const brand = await getBrand(id);
+        if (brand?.tier !== 'complete') {
+          dispatch({ type: 'SET_STATUS', status: 'error', error: 'Brand kit is not complete yet — finish the logos, colors, fonts and voice first.' });
+          return { ok: false, tier: brand?.tier, missing: brand?.missing };
+        }
+        downloadBrandKit(id);
+        return { ok: true, downloaded: brand.name };
+      },
     },
 
     // --- Composer (Content Composer): Still deliverable. ---

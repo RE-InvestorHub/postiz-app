@@ -113,6 +113,28 @@ export function generateLogoFromSpec(id: string, spec: Record<string, unknown>):
   return req('/brand/logo/generate', { method: 'POST', body: JSON.stringify({ id, spec }) });
 }
 
+/** The brain URL that streams a COMPLETE brand as a portable .zip (agency hand-off). */
+export function brandKitDownloadUrl(id: string): string {
+  return `${base()}/brandkits/${encodeURIComponent(id)}/export`;
+}
+
+/**
+ * Trigger a browser download of the brand kit .zip (logos + guidelines + brand.json +
+ * font links). The brain gates this on tier==='complete' (returns 409 otherwise).
+ * Returns false if not running in a browser.
+ */
+export function downloadBrandKit(id: string): boolean {
+  if (typeof document === 'undefined') return false;
+  const a = document.createElement('a');
+  a.href = brandKitDownloadUrl(id);
+  a.rel = 'noopener';
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  return true;
+}
+
 export interface GoogleFont { family: string; category: string }
 /** The full Google Fonts family list (name + category) for the font pickers. */
 export function listGoogleFonts(): Promise<GoogleFont[]> {
