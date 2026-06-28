@@ -304,8 +304,13 @@ export const StudioBrandPanel: FC = () => {
       else toaster.show(`${LOGO_SLOT_LABELS[slot]} set.`, 'success');
     } catch (err) { setError(msg(err)); } finally { setBusy(false); }
   };
-  // Right card: hand off to the AI logo generator, then close.
-  const onLogoAI = () => { setLogoSlot(null); void runAssist('logo'); };
+  // Right card: open the draggable agent chat, seeded for this logo slot. The agent gets
+  // the brand's colors/fonts/filled-slots context server-side (via the active brandKitId).
+  const onLogoAI = () => {
+    const slot = logoSlot;
+    setLogoSlot(null);
+    dispatch({ type: 'OPEN_FLOATING_AGENT', seed: `Help me create the ${slot ? LOGO_SLOT_LABELS[slot] : 'logo'} for my brand “${brand?.name ?? ''}”. Use my existing brand colors and fill the empty logo slots.` });
+  };
 
   // Step 1: arm the confirm, fetching how many campaigns the cascade will remove.
   const startDelete = async () => {

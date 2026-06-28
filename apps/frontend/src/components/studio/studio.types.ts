@@ -150,6 +150,8 @@ export interface StudioState {
   composerBrandKitId: string;
   /** Composer tab: active Template id (shared by manual UI + agent's compose.useTemplate). */
   composerTemplateId: string;
+  /** Draggable floating agent chat window: null = closed, else open (with optional seed input). */
+  floatingAgent: { seed?: string } | null;
 }
 
 export interface ModelOption {

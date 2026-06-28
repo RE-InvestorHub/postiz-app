@@ -13,6 +13,7 @@ import {
 import { generateAsset } from '@gitroom/frontend/components/studio/studio.generate';
 import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.storyboard-client';
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
+import { FloatingWindow } from '@gitroom/frontend/components/studio/studio.floating-window';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
@@ -356,6 +357,19 @@ const StudioInner: FC = () => {
           onClose={() => setAgentOpen(false)}
           onCreate={handleCreate}
         />
+      )}
+
+      {/* Draggable floating agent chat (opened from the Brand tab's logo "Generate with AI") */}
+      {state.floatingAgent && (
+        <FloatingWindow title="Brand AI Agent" onClose={() => dispatch({ type: 'CLOSE_FLOATING_AGENT' })}>
+          <StudioAgentPanel
+            floating
+            caps={caps}
+            initialInput={state.floatingAgent.seed}
+            onClose={() => dispatch({ type: 'CLOSE_FLOATING_AGENT' })}
+            onCreate={handleCreate}
+          />
+        </FloatingWindow>
       )}
     </div>
   );
