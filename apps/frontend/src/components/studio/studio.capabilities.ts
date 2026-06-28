@@ -37,7 +37,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { createFromPreset as createDataRecordPreset, setRecordField, removeRecordField } from '@gitroom/frontend/components/studio/studio.datarecord-client';
 import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel, composeEmail, createBrandKit, updateBrandKit } from '@gitroom/frontend/components/studio/studio.composer-client';
-import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit } from '@gitroom/frontend/components/studio/studio.brand-client';
+import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit, deriveLogoSlot, LogoSlot } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 
 export interface Capability {
@@ -489,6 +489,17 @@ export function buildStudioCapabilities(
       label: 'GENERATE a logo for the active brand + bootstrap its 5 slots (SPENDS image credits)',
       params: ['brandKitId'],
       handler: (p: { brandKitId?: string } = {}) => { const id = p.brandKitId ?? getState().composerBrandKitId; return id && id !== 'default' ? generateBrandLogos(id) : undefined; },
+    },
+    {
+      id: 'brand.deriveSlot',
+      namespace: 'brand',
+      label: 'Derive a logo slot from the brand\'s existing logos (free, no spend)',
+      params: ['brandKitId', 'slot'],
+      handler: async (p: { brandKitId?: string; slot?: string } = {}) => {
+        const id = p.brandKitId ?? getState().composerBrandKitId ?? 'default';
+        if (!p.slot) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Pick a logo slot to derive.' }); return; }
+        return deriveLogoSlot(id, p.slot as LogoSlot);
+      },
     },
     {
       id: 'brand.exportKit',

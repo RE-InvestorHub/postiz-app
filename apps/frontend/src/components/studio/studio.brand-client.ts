@@ -114,6 +114,18 @@ export function generateLogoFromSpec(id: string, spec: Record<string, unknown>):
   return req('/brand/logo/generate', { method: 'POST', body: JSON.stringify({ id, spec }) });
 }
 
+export interface DeriveResult {
+  ok: boolean; slot: string; method?: string; sourceSlot?: string;
+  previewAssetId?: string; kind?: string; note?: string; url?: string;
+  needsGeneration?: 'mark' | 'wordmark' | 'logo'; reason?: string;
+}
+/** FREE — derive a logo slot from the brand's EXISTING logos (crop/recolor/compose).
+ *  Returns a PREVIEW to accept (apply via addBrandFile with previewAssetId), or
+ *  { ok:false, needsGeneration } when a needed component must be generated instead. */
+export function deriveLogoSlot(id: string, slot: LogoSlot): Promise<DeriveResult> {
+  return req<DeriveResult>('/brand/logo/derive', { method: 'POST', body: JSON.stringify({ id, slot }) });
+}
+
 /** The brain URL that streams a COMPLETE brand as a portable .zip (agency hand-off). */
 export function brandKitDownloadUrl(id: string): string {
   return `${base()}/brandkits/${encodeURIComponent(id)}/export`;

@@ -18,6 +18,7 @@ import {
   listBrands, getBrand, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrandFromAsset, logoUrl,
   completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos,
   GoogleFont, listGoogleFonts, ensureGoogleFont, downloadBrandKit,
+  deriveLogoSlot, DeriveResult,
 } from '@gitroom/frontend/components/studio/studio.brand-client';
 
 const FONTS = [
@@ -175,6 +176,8 @@ export const StudioBrandPanel: FC = () => {
   const [newName, setNewName] = useState('');
   const [logoSlot, setLogoSlot] = useState<LogoSlot | null>(null); // which logo slot's add modal is open
   const [confirmClear, setConfirmClear] = useState<LogoSlot | null>(null); // which slot's remove is being confirmed
+  const [deriving, setDeriving] = useState(false);                          // derive-from-existing in progress
+  const [derivePreview, setDerivePreview] = useState<DeriveResult | null>(null); // derive preview / needs-generation result
   const [viewLogo, setViewLogo] = useState<{ url: string; label: string } | null>(null); // logo lightbox
   const [importModal, setImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -307,8 +310,8 @@ export const StudioBrandPanel: FC = () => {
   const swatchHex = (role: ColorRole, shade: 'base' | 'alt') => swatchAt(role, shade)?.hex;
   const swatchPinned = (role: ColorRole, shade: 'base' | 'alt') => !!swatchAt(role, shade)?.pinned;
 
-  // Clicking any logo "+" opens a modal: upload (left) or generate with AI (right).
-  const pickLogo = (slot: LogoSlot) => setLogoSlot(slot);
+  // Clicking any logo "+" opens a modal: derive (if possible) / upload / generate with AI.
+  const pickLogo = (slot: LogoSlot) => { setDerivePreview(null); setDeriving(false); setLogoSlot(slot); };
   // Clear a filled logo slot back to empty (null clears it; the brain re-derives roles).
   const onClearLogo = async (slot: LogoSlot) => {
     if (!brand || brand.builtin) return;
@@ -333,6 +336,30 @@ export const StudioBrandPanel: FC = () => {
       if (before !== 'live' && updated.status === 'live') toaster.show('All 5 logos set — this brand is now live!', 'success');
       else toaster.show(`${LOGO_SLOT_LABELS[slot]} set.`, 'success');
     } catch (err) { setError(msg(err)); } finally { setBusy(false); }
+  };
+  // Derive: build this slot from the brand's existing logos (free, exact shape). Shows a
+  // preview the user accepts; if a needed component is absent, surfaces a generate fallback.
+  const onDerive = async () => {
+    const slot = logoSlot;
+    if (!slot || !brand) return;
+    setDeriving(true); setDerivePreview(null); setError(null);
+    try {
+      const r = await deriveLogoSlot(brand.brand_kit_id, slot);
+      setDerivePreview(r);
+    } catch (e) { setError(msg(e)); } finally { setDeriving(false); }
+  };
+  const onAcceptDerive = async () => {
+    const slot = logoSlot;
+    if (!slot || !brand || !derivePreview?.previewAssetId) return;
+    setBusy(true); setError(null);
+    try {
+      const before = brand.status;
+      const updated = await addBrandFile(brand.brand_kit_id, { slot, assetId: derivePreview.previewAssetId, kind: derivePreview.kind || 'png' });
+      setBrand(updated); await load();
+      setLogoSlot(null); setDerivePreview(null);
+      if (before !== 'live' && updated.status === 'live') toaster.show('All 5 logos set — this brand is now live!', 'success');
+      else toaster.show(`${LOGO_SLOT_LABELS[slot]} derived from your existing logo.`, 'success');
+    } catch (e) { setError(msg(e)); } finally { setBusy(false); }
   };
   // Right card: open the draggable agent chat, seeded for this logo slot. The agent gets
   // the brand's colors/fonts/filled-slots context server-side (via the active brandKitId).
@@ -620,6 +647,49 @@ export const StudioBrandPanel: FC = () => {
               <span className="text-[15px] font-[700] text-btnText flex-1">Add {LOGO_SLOT_LABELS[logoSlot]}</span>
               <button type="button" onClick={() => setLogoSlot(null)} className="h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText">✕</button>
             </div>
+
+            {/* Derive from existing logos — free, exact shape (recommended when any logo exists) */}
+            {LOGO_SLOTS.some((s) => s !== logoSlot && (brand.logo as any)?.[s]) && (
+              <div className="rounded-[8px] border border-[#1db97a]/40 bg-[#1db97a]/5 p-[14px] flex flex-col gap-[10px]">
+                <div className="flex items-center gap-[8px]">
+                  <span className="text-[13px] font-[700] text-[#1db97a] flex-1">✨ Derive from your existing logos <span className="text-[11px] font-[500] text-textItemBlur">— free, exact shape, recommended</span></span>
+                </div>
+                {!derivePreview && (
+                  <>
+                    <span className="text-[11px] text-textItemBlur">We cut this slot straight from your current logos — crop the {logoSlot === 'mark' ? 'icon' : logoSlot === 'wordmark' ? 'name' : 'lockup'}, recolor for dark/light, or compose a lockup. No credits, identical shape.</span>
+                    <button type="button" onClick={onDerive} disabled={deriving || busy}
+                      className="h-[38px] rounded-[8px] bg-[#1db97a] text-[#06281c] text-[13px] font-[700] hover:opacity-90 disabled:opacity-50 self-start px-[16px]">
+                      {deriving ? 'Deriving…' : `Derive ${LOGO_SLOT_LABELS[logoSlot]}`}
+                    </button>
+                  </>
+                )}
+                {derivePreview?.ok && derivePreview.previewAssetId && (
+                  <div className="flex flex-col gap-[10px]">
+                    <span className={'relative block h-[88px] rounded-[8px] border border-newBorder overflow-hidden flex items-center justify-center ' + (logoSlot === 'lockupDark' ? 'bg-[#0B1220]' : 'bg-newBgColorInner')}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={logoUrl({ assetId: derivePreview.previewAssetId, kind: derivePreview.kind || 'png' }) || ''} alt="derived preview" className="max-h-[72px] max-w-[92%] object-contain" />
+                    </span>
+                    <span className="text-[11px] text-textItemBlur">{derivePreview.note || `Derived from your ${derivePreview.sourceSlot} (${derivePreview.method}).`}</span>
+                    <div className="flex items-center gap-[8px]">
+                      <button type="button" onClick={onAcceptDerive} disabled={busy}
+                        className="h-[36px] px-[16px] rounded-[8px] bg-[#1db97a] text-[#06281c] text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">{busy ? 'Applying…' : 'Use this'}</button>
+                      <button type="button" onClick={onDerive} disabled={deriving || busy}
+                        className="h-[36px] px-[12px] rounded-[8px] border border-newBorder text-textItemBlur text-[12px] hover:text-btnText">Re-derive</button>
+                      <button type="button" onClick={() => setDerivePreview(null)} className="h-[36px] px-[12px] rounded-[8px] text-textItemBlur text-[12px] hover:text-btnText">Discard</button>
+                    </div>
+                  </div>
+                )}
+                {derivePreview && !derivePreview.ok && (
+                  <div className="flex flex-col gap-[8px]">
+                    <span className="text-[12px] text-[#ff7eb6]">{derivePreview.reason || 'Can\'t derive this slot from your current logos.'}</span>
+                    <span className="text-[11px] text-textItemBlur">This needs a new {derivePreview.needsGeneration === 'mark' ? 'icon/mark' : derivePreview.needsGeneration === 'wordmark' ? 'wordmark (text)' : 'logo'} — generate just that piece (it'll match your existing logo). Uses image credits.</span>
+                    <button type="button" onClick={onLogoAI}
+                      className="h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 self-start">Generate it with AI ($)</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-[14px] items-stretch">
               {/* Left — upload */}
               <div className="rounded-[8px] border border-newBorder p-[14px] flex flex-col gap-[10px]">
