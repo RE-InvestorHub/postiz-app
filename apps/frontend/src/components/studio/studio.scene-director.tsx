@@ -20,6 +20,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
   const [open, setOpen] = useState(false);
   const [dims, setDims] = useState<DirectorDimension[]>([]);
   const [sel, setSel] = useState<Record<string, string>>({}); // dimId -> 'auto' | 'p:<id>' | 'c:<id>'
+  const [locked, setLocked] = useState<Record<string, boolean>>({}); // dimId -> locked (agent must not change)
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
   const [aspect, setAspect] = useState('4:5');
 
@@ -39,14 +40,15 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
     for (const d of dims) {
       const v = sel[d.id];
       if (!v || v === 'auto') continue;
+      const lk = locked[d.id] ? ' [LOCKED — keep exactly, do not change]' : '';
       if (v.startsWith('p:')) {
         const p = d.presets.find((x) => x.id === v.slice(2));
-        if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})`);
+        if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})${lk}`);
       } else if (v.startsWith('c:')) {
         const c = d.components.find((x) => x.id === v.slice(2));
-        if (c) lines.push(d.component === 'character'
+        if (c) lines.push((d.component === 'character'
           ? `- ${d.label}: reuse saved character "${c.name}" (anchorId: ${c.id})`
-          : `- ${d.label}: reuse saved "${c.name}"`);
+          : `- ${d.label}: reuse saved "${c.name}"`) + lk);
       }
     }
     const seed =
@@ -71,7 +73,14 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
           <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
             {dims.map((d) => (
               <label key={d.id} className="flex flex-col gap-[3px]">
-                <span className="text-[11px] font-[600] text-btnText" title={d.hint}>{d.label}</span>
+                <span className="flex items-center gap-[4px]">
+                  <span className="text-[11px] font-[600] text-btnText flex-1" title={d.hint}>{d.label}</span>
+                  {sel[d.id] && sel[d.id] !== 'auto' && (
+                    <button type="button" onClick={(e) => { e.preventDefault(); setLocked((l) => ({ ...l, [d.id]: !l[d.id] })); }}
+                      title={locked[d.id] ? 'Locked — the agent keeps this exactly' : 'Lock this choice (agent won\'t change it)'}
+                      className={'text-[11px] leading-none ' + (locked[d.id] ? 'opacity-100' : 'opacity-40 hover:opacity-80')}>📌</button>
+                  )}
+                </span>
                 <select className={selectCls} value={sel[d.id] || 'auto'} onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
                   <option value="auto">Auto — let AI decide</option>
                   {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
