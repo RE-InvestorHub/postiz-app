@@ -9,8 +9,16 @@
 import { FC, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { STUDIO_RESOLUTIONS } from '@gitroom/frontend/components/studio/studio.types';
-import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate } from '@gitroom/frontend/components/studio/studio.director-client';
+import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate, renderDirectorShot, renderDirectorClip, gapFillVideo } from '@gitroom/frontend/components/studio/studio.director-client';
+import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 import { SoulControl } from '@gitroom/frontend/components/studio/studio.soul-control';
+
+// Camera-move / speed presets for the video "Motion & video" section (Video context only).
+const CAMERA_MOVES = ['static', 'slow push-in', 'pull-out', 'pan left', 'pan right', 'tilt up', 'orbit', 'tracking', 'handheld', 'crane up'];
+const MOTION_SPEEDS = ['slow', 'medium', 'fast'];
+// Gap-fill needs a start+end-frame model (Kling/Seedance/Wan); a single clip can also use Veo.
+const MORPH_MODELS = ['kling3_0', 'seedance_2_0', 'wan2_6']; // start+end capable (gap-fill)
+type DirectorOutput = 'keyframe' | 'clip' | 'video';
 
 // Aspect ratios Higgsfield's Soul model (text2image_soul_v2) accepts — when a saved character is
 // selected the render may run on the Soul, so we restrict to these (4:5 is the notable exclusion).
@@ -23,14 +31,25 @@ const BASE_ASPECT_IDS = ['4:5', '1:1', '9:16', '16:9'];
 // With a character selected, also offer the Soul portrait/landscape ratios.
 const CHAR_ASPECT_IDS = ['4:5', '1:1', '9:16', '16:9', '3:4', '4:3', '2:3', '3:2'];
 
-export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) => {
+export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 'video'; videoModel?: string }> = ({ brandKitId, context = 'images', videoModel = 'veo3_1' }) => {
   const { state, dispatch } = useStudio();
+  const isVideo = context === 'video';
   const [open, setOpen] = useState(false);
   const [dims, setDims] = useState<DirectorDimension[]>([]);
   const [sel, setSel] = useState<Record<string, string>>({}); // dimId -> 'auto' | 'p:<id>' | 'c:<id>'
   const [locked, setLocked] = useState<Record<string, boolean>>({}); // dimId -> locked (agent must not change)
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
   const [templates, setTemplates] = useState<DirectorTemplate[]>([]);
+  // Video context (the engine): output kind + the Motion & video section + a direct gated generate.
+  const [output, setOutput] = useState<DirectorOutput>('keyframe');
+  const [movement, setMovement] = useState('slow push-in');
+  const [action, setAction] = useState('');
+  const [speed, setSpeed] = useState('slow');
+  const [durationS, setDurationS] = useState(6);
+  const [totalDurationS, setTotalDurationS] = useState(15);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const seqIds = state.videoKeyframes.map((k) => k.id);
   // Aspect + resolution are STORE-backed (the single home for both — moved out of the bottom bar).
   const aspect = state.aspectRatio;
   const setAspect = (a: string) => dispatch({ type: 'SET_ASPECT_RATIO', aspectRatio: a });
@@ -93,6 +112,51 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
       `${lines.length ? lines.join('\n') : '- (all on Auto — propose a strong concept)'}\n` +
       `Render mode: ${renderMode}. Aspect ratio: ${aspect}. Resolution: ${state.resolution}. When you're confident, the Create button will render it.`;
     dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'shot', brandKitId, seed });
+  };
+
+  // Build a fragment-keyed spec (+ the character anchorId) from the dropdown picks — the same shape
+  // the agent produces, but direct (used by the Video context's gated generate).
+  const buildSpec = (): { spec: Record<string, string>; anchorId: string | null } => {
+    const spec: Record<string, string> = {};
+    let anchorId: string | null = null;
+    for (const d of dims) {
+      const v = sel[d.id];
+      if (!v || v === 'auto') continue;
+      if (v.startsWith('p:')) { const p = d.presets.find((x) => x.id === v.slice(2)); if (p) spec[d.id] = p.fragment; }
+      else if (v.startsWith('c:')) {
+        const c = d.components.find((x) => x.id === v.slice(2));
+        if (c) { spec[d.id] = c.name; if (d.component === 'character') anchorId = c.id; }
+      }
+    }
+    return { spec, anchorId };
+  };
+
+  const fireVideoRefresh = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh')); };
+
+  // Video context — direct, GATED generate. Routes by output: keyframe (still → mark keyframe),
+  // clip (single motion), or video (gap-fill across the numbered sequence).
+  const onGenerate = async () => {
+    setGenError(null);
+    const motion = { movement, action: action.trim(), speed };
+    if (output === 'video' && seqIds.length < 2) {
+      setGenError('Number at least 2 keyframes in the Library (right-click a keyframe → set position) before generating a gap-fill video.');
+      return;
+    }
+    setGenerating(true);
+    try {
+      if (output === 'keyframe') {
+        const { spec, anchorId } = buildSpec();
+        const r = await renderDirectorShot(brandKitId, { ...spec, renderMode, aspectRatio: aspect, anchorId });
+        await addKeyframes([r.id]); // mark the new still as a keyframe so it lands in the Video Library
+      } else if (output === 'clip') {
+        const { spec } = buildSpec();
+        await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS });
+      } else {
+        await gapFillVideo(brandKitId, seqIds, { motion, model: videoModel, aspectRatio: aspect, totalDurationS });
+      }
+      fireVideoRefresh();
+    } catch (e) { setGenError((e as Error)?.message ?? String(e)); }
+    finally { setGenerating(false); }
   };
 
   const selectCls = 'h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText w-full';
@@ -173,7 +237,21 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
             })}
           </div>
 
+          {/* Render / Output row — on Video the Output toggle is inline here (with Render/aspect/res). */}
           <div className="flex flex-wrap items-center gap-[10px]">
+            {isVideo && (
+              <>
+                <span className="text-[11px] font-[700] text-ai">Output</span>
+                <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
+                  {([['keyframe', '▦ Keyframe'], ['clip', '▶ Clip'], ['video', '🎬 Video']] as [DirectorOutput, string][]).map(([o, lbl]) => (
+                    <button key={o} type="button" onClick={() => setOutput(o)}
+                      title={o === 'keyframe' ? 'Compose a still → adds it to the keyframe pool' : o === 'clip' ? 'Generate one motion clip' : 'Gap-fill the numbered keyframe sequence into a short'}
+                      className={'h-[32px] px-[12px] text-[12px] font-[600] ' + (output === o ? 'bg-ai text-white' : 'text-textItemBlur hover:text-btnText')}>{lbl}</button>
+                  ))}
+                </span>
+                <span className="w-px h-[20px] bg-newBorder" />
+              </>
+            )}
             <span className="text-[11px] font-[600] text-textItemBlur">Render</span>
             <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
               {(['layered', 'single'] as const).map((m) => (
@@ -203,11 +281,49 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
             )}
             <button type="button" onClick={onSaveTemplate} title="Save the current picks as a reusable template"
               className="h-[32px] px-[10px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">Save template</button>
-            <button type="button" onClick={onDevelop} className="ml-auto h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90">
-              ✨ Develop with AI
-            </button>
+            {isVideo ? (
+              <button type="button" disabled={generating} onClick={onGenerate}
+                className="ml-auto h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
+                {generating ? 'Generating…' : output === 'keyframe' ? '✨ Generate keyframe' : output === 'clip' ? '✨ Generate clip ($)' : '🎬 Generate video ($)'}
+              </button>
+            ) : (
+              <button type="button" onClick={onDevelop} className="ml-auto h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90">
+                ✨ Develop with AI
+              </button>
+            )}
           </div>
-          <span className="text-[10px] text-textItemBlur">The agent asks a few questions, then the Create button renders it (uses image credits). Your picks seed the conversation; anything on Auto, it proposes.</span>
+
+          {/* Motion & video — Clip/Video only (stills don't move); the video model lives in the banner above. */}
+          {isVideo && output !== 'keyframe' && (
+            <div className="flex flex-wrap items-end gap-[8px]">
+              <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Camera move</span>
+                <select value={movement} onChange={(e) => setMovement(e.target.value)} className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">{CAMERA_MOVES.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
+              <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Action</span>
+                <input value={action} onChange={(e) => setAction(e.target.value)} placeholder="subject motion (optional)" className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText placeholder:text-textItemBlur w-[170px]" /></label>
+              <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Speed</span>
+                <select value={speed} onChange={(e) => setSpeed(e.target.value)} className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">{MOTION_SPEEDS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
+              {output === 'clip' ? (
+                <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Duration {durationS}s</span>
+                  <input type="range" min={2} max={10} step={1} value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
+              ) : (
+                <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Total {totalDurationS}s</span>
+                  <input type="range" min={4} max={30} step={1} value={totalDurationS} onChange={(e) => setTotalDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
+              )}
+              {output === 'video' && !MORPH_MODELS.includes(videoModel) && (
+                <span className="text-[11px] text-yellow-400 self-center">Gap-fill needs a start→end model — pick Kling/Seedance in the banner.</span>
+              )}
+            </div>
+          )}
+          {isVideo && output === 'video' && (
+            <span className="text-[11px] text-textItemBlur">{seqIds.length} keyframe{seqIds.length === 1 ? '' : 's'} numbered{seqIds.length < 2 ? ' — number ≥2 (right-click a keyframe in the Library) to gap-fill' : ''}</span>
+          )}
+          {isVideo && genError && <span className="text-[11px] text-red-400">{genError}</span>}
+
+          <span className="text-[10px] text-textItemBlur">
+            {isVideo
+              ? 'Direct generation from your picks. Keyframe = a still added to the pool. Clip + Video spend video credits; Video gap-fills the numbered keyframe sequence (Kling/Seedance morph).'
+              : 'The agent asks a few questions, then the Create button renders it (uses image credits). Your picks seed the conversation; anything on Auto, it proposes.'}
+          </span>
         </div>
       )}
     </div>

@@ -40,7 +40,7 @@ import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel,
 import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit, deriveLogoSlot, LogoSlot } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
-import { startSoulTraining, removeSoul } from '@gitroom/frontend/components/studio/studio.director-client';
+import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 
 /** Fire the library-refresh event so the Images canvas re-fetches (picks up a new variant). */
@@ -877,6 +877,35 @@ export function buildStudioCapabilities(
         if (!p.anchorId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need a character anchorId to remove its Soul.' }); return; }
         const r = await removeSoul(p.anchorId);
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:soul-refresh'));
+        return r;
+      },
+    },
+    {
+      // Scene Director → ONE motion clip from a spec + motion. SPENDS video credits → gated (omitted
+      // from AUTO_APPROVE). Lands in the Video Library; fires a refresh.
+      id: 'director.renderClip',
+      namespace: 'director',
+      label: 'Render one motion clip from a Scene Director spec (spends video credits)',
+      params: ['spec', 'motion', 'model', 'aspectRatio', 'durationS', 'firstFrameUrl', 'brandKitId'],
+      handler: async (p: { spec?: Record<string, unknown>; motion?: any; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string; brandKitId?: string } = {}) => {
+        const brandKitId = p.brandKitId || getState().composerBrandKitId || 'default';
+        const r = await renderDirectorClip(brandKitId, p.spec || {}, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, durationS: p.durationS, firstFrameUrl: p.firstFrameUrl });
+        refreshVideoLibrary();
+        return r;
+      },
+    },
+    {
+      // Scene Director → gap-fill the numbered keyframe sequence into a short. SPENDS → gated.
+      id: 'director.gapFill',
+      namespace: 'director',
+      label: 'Gap-fill the numbered keyframe sequence into a short (spends video credits)',
+      params: ['keyframeIds', 'motion', 'model', 'aspectRatio', 'totalDurationS', 'brandKitId'],
+      handler: async (p: { keyframeIds?: string[]; motion?: any; model?: string; aspectRatio?: string; totalDurationS?: number; brandKitId?: string } = {}) => {
+        const brandKitId = p.brandKitId || getState().composerBrandKitId || 'default';
+        const ids = (p.keyframeIds && p.keyframeIds.length) ? p.keyframeIds : getState().videoKeyframes.map((k) => k.id);
+        if (ids.length < 2) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Gap-fill needs ≥2 numbered keyframes.' }); return; }
+        const r = await gapFillVideo(brandKitId, ids, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, totalDurationS: p.totalDurationS });
+        refreshVideoLibrary();
         return r;
       },
     },
