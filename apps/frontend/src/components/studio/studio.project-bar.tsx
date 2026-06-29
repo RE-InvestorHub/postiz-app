@@ -13,6 +13,7 @@ import {
   listCampaigns, createCampaign, listAds, createAd, Campaign, Ad,
 } from '@gitroom/frontend/components/studio/studio.project-client';
 import { listBrands, createBrand, Brand } from '@gitroom/frontend/components/studio/studio.brand-client';
+import { StudioCreditsBadge } from '@gitroom/frontend/components/studio/studio.credits-badge';
 
 type NameTarget = 'brand' | 'campaign' | 'ad';
 
@@ -119,6 +120,9 @@ export const StudioProjectBar: FC = () => {
         title={state.activeCampaignId ? 'New ad' : 'Pick a campaign first'} aria-label="New ad" className={addCls}>＋</button>
 
       {error && <span className="text-[12px] text-red-400">{error}</span>}
+
+      {/* Live generation-credit balances (Higgsfield + Hedra), pushed to the right. */}
+      <StudioCreditsBadge />
 
       {/* Naming popup — opened by any ＋ button */}
       {naming && typeof document !== 'undefined' && createPortal(
