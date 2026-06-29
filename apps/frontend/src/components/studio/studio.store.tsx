@@ -22,6 +22,7 @@ import {
   UploadedAsset,
   CloneRecord,
   AvatarOnboardingState,
+  VideoKeyframe,
   emptyConsentDraft,
   STUDIO_SLOT_COUNT,
 } from '@gitroom/frontend/components/studio/studio.types';
@@ -46,6 +47,11 @@ export type StudioAction =
   | { type: 'SET_COMPOSER_BRANDKIT'; brandKitId: string }
   | { type: 'SET_COMPOSER_TEMPLATE'; templateId: string }
   | { type: 'SET_SELECTED_IMAGE'; id: string | null }
+  | { type: 'ADD_VIDEO_KEYFRAMES'; keyframes: VideoKeyframe[] }
+  | { type: 'REMOVE_VIDEO_KEYFRAME'; id: string }
+  | { type: 'REORDER_VIDEO_KEYFRAMES'; ids: string[] }
+  | { type: 'SET_VIDEO_KEYFRAMES'; keyframes: VideoKeyframe[] }
+  | { type: 'CLEAR_VIDEO_KEYFRAMES' }
   | { type: 'OPEN_FLOATING_AGENT'; seed?: string; kind?: string; brandKitId?: string; slot?: string }
   | { type: 'CLOSE_FLOATING_AGENT' }
   | { type: 'RESET' };
@@ -71,6 +77,7 @@ export const initialStudioState: StudioState = {
   composerBrandKitId: 'default',
   composerTemplateId: '',
   selectedImageId: null,
+  videoKeyframes: [],
   floatingAgent: null,
 };
 
@@ -134,6 +141,26 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       return { ...state, composerTemplateId: action.templateId };
     case 'SET_SELECTED_IMAGE':
       return { ...state, selectedImageId: action.id };
+    case 'ADD_VIDEO_KEYFRAMES': {
+      // Append, de-duped by id, preserving existing order then new arrivals.
+      const have = new Set(state.videoKeyframes.map((k) => k.id));
+      const fresh = action.keyframes.filter((k) => !have.has(k.id));
+      return fresh.length ? { ...state, videoKeyframes: [...state.videoKeyframes, ...fresh] } : state;
+    }
+    case 'REMOVE_VIDEO_KEYFRAME':
+      return { ...state, videoKeyframes: state.videoKeyframes.filter((k) => k.id !== action.id) };
+    case 'REORDER_VIDEO_KEYFRAMES': {
+      const byId = new Map(state.videoKeyframes.map((k) => [k.id, k]));
+      const next = action.ids.map((id) => byId.get(id)).filter(Boolean) as VideoKeyframe[];
+      // Keep any not named in `ids` (defensive) appended in original order.
+      const named = new Set(action.ids);
+      for (const k of state.videoKeyframes) if (!named.has(k.id)) next.push(k);
+      return { ...state, videoKeyframes: next };
+    }
+    case 'SET_VIDEO_KEYFRAMES':
+      return { ...state, videoKeyframes: action.keyframes };
+    case 'CLEAR_VIDEO_KEYFRAMES':
+      return { ...state, videoKeyframes: [] };
     case 'OPEN_FLOATING_AGENT':
       return { ...state, floatingAgent: { seed: action.seed, kind: action.kind, brandKitId: action.brandKitId, slot: action.slot } };
     case 'CLOSE_FLOATING_AGENT':

@@ -146,6 +146,8 @@ export function requiresApproval(toolName: string): boolean {
     'data.setField',
     'data.removeField',
     'data.selectRecord',
+    // Images→Video bridge — curation (mark keyframes), no spend.
+    'video.sendToVideo',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

@@ -14,6 +14,7 @@ import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
+import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { CanvasSoulButton } from '@gitroom/frontend/components/studio/studio.soul-control';
 import { captureComponent, COMPONENT_KINDS } from '@gitroom/frontend/components/studio/studio.director-client';
@@ -207,6 +208,22 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
     } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
   };
 
+  // Images→Video bridge: stage the checked images as keyframes (persist via the brain so they
+  // land in the Video Library), drop them into the keyframe tray, and jump to the Video tab.
+  const doSendToVideo = async () => {
+    if (!checked.size) return;
+    setBulkBusy(true); setError(null);
+    try {
+      const picked = images.filter((i) => checked.has(i.id));
+      const ids = picked.map((i) => i.id);
+      await addKeyframes(ids);
+      dispatch({ type: 'ADD_VIDEO_KEYFRAMES', keyframes: picked.map((i) => ({ id: i.id, url: i.url, label: i.prompt || undefined })) });
+      exitSelect();
+      dispatch({ type: 'SET_TAB', tab: 'video' });
+      toaster.show(`Sent ${ids.length} keyframe${ids.length === 1 ? '' : 's'} to the Video tab.`, 'success');
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
+  };
+
   const card = 'rounded-[8px] border border-newBorder bg-newBgColor p-[16px]';
   const selectCls = 'h-[36px] px-[10px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText';
 
@@ -252,6 +269,9 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
               <button type="button" onClick={selectAll} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">All</button>
               <button type="button" onClick={() => setChecked(new Set())} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">None</button>
               <button type="button" onClick={exitSelect} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">Done</button>
+              <button type="button" disabled={!checked.size || bulkBusy} onClick={doSendToVideo}
+                title="Send the selected images to the Video tab as keyframes"
+                className="px-[8px] h-[24px] rounded-[5px] border border-ai/40 text-ai font-[600] disabled:opacity-40 hover:bg-ai/10">▦ Send to Video ({checked.size})</button>
               {confirmBulk ? (
                 <>
                   <button type="button" disabled={!checked.size || bulkBusy} onClick={doBulkDelete} className="px-[8px] h-[24px] rounded-[5px] bg-[#ff7eb6] text-[#3a0d23] font-[700] disabled:opacity-50">{bulkBusy ? '…' : `Delete ${checked.size}`}</button>

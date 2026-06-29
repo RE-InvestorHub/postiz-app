@@ -22,6 +22,9 @@ import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.av
 import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
+import { StudioVideoLibraryPanel } from '@gitroom/frontend/components/studio/studio.video-library-panel';
+import { StudioKeyframeTray } from '@gitroom/frontend/components/studio/studio.keyframe-tray';
+import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
 import { SoulTrainingWatcher } from '@gitroom/frontend/components/studio/studio.soul-watcher';
 import { StudioAssetsPanel } from '@gitroom/frontend/components/studio/studio.assets-panel';
@@ -226,6 +229,48 @@ const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({
   );
 };
 
+// Video tab — restructured into a media-bin: brand-scoped Library (top), Scene Director (keyframe
+// stills), the keyframe tray (staging), then ONE generation surface with a mode switch
+// (Brief → short · Single clip · Character previs). Consolidates the former three stacked windows.
+const VideoTabContent: FC<{ caps: Record<string, Capability> }> = ({ caps }) => {
+  const { state } = useStudio();
+  const brandKitId = state.composerBrandKitId || 'default';
+  const [mode, setMode] = useState<'brief' | 'clip' | 'previs'>('brief');
+  const MODES: { key: typeof mode; label: string; hint: string }[] = [
+    { key: 'brief', label: 'Brief → short', hint: 'Compose a short from a brief (the Ad seeds it)' },
+    { key: 'clip', label: 'Single clip', hint: 'Generate one clip from a prompt' },
+    { key: 'previs', label: 'Character previs', hint: 'Generate → capture → restage a character' },
+  ];
+  return (
+    <div className="flex flex-col gap-[18px]">
+      {/* Library — the brand's clips/shorts + keyframe stills (media-aware canvas). */}
+      <StudioVideoLibraryPanel />
+
+      {/* Scene Director — direct a keyframe still; it lands in the library + can be staged below. */}
+      <SectionDivider label="direct a keyframe" />
+      <StudioSceneDirector brandKitId={brandKitId} />
+
+      {/* Keyframe tray — staging area for the next generation (Images→Video bridge drops here). */}
+      <StudioKeyframeTray />
+
+      {/* Generate — one surface, mode-switched (consolidates the former 3 stacked generators). */}
+      <SectionDivider label="generate" />
+      <div className="flex flex-wrap gap-[8px]">
+        {MODES.map((m) => (
+          <button key={m.key} type="button" onClick={() => setMode(m.key)} title={m.hint}
+            className={'h-[34px] px-[14px] rounded-[8px] text-[12px] font-[600] border transition-colors '
+              + (mode === m.key ? 'bg-boxFocused text-textItemFocused border-newBorder' : 'border-newBorder text-textItemBlur hover:bg-boxHover')}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {mode === 'brief' && <StudioVideoComposerPanel />}
+      {mode === 'clip' && <GeneratePanel caps={caps} kind="video" />}
+      {mode === 'previs' && <StudioPrevisPanel />}
+    </div>
+  );
+};
+
 const StudioInner: FC = () => {
   const { state, dispatch } = useStudio();
   const [agentOpen, setAgentOpen] = useState(false);
@@ -323,16 +368,7 @@ const StudioInner: FC = () => {
         {state.activeTab === 'images' && (
           <StudioImagesPanel caps={caps} models={modelsForKind('images')} />
         )}
-        {state.activeTab === 'video' && (
-          <div className="flex flex-col gap-[18px]">
-            {/* Video composer — brief → clips → review → assemble (the Storyboard tab folded in here) */}
-            <StudioVideoComposerPanel />
-            <SectionDivider label="or generate a single clip" />
-            <GeneratePanel caps={caps} kind="video" />
-            <SectionDivider label="character previs — capture & restage" />
-            <StudioPrevisPanel />
-          </div>
-        )}
+        {state.activeTab === 'video' && <VideoTabContent caps={caps} />}
         {state.activeTab === 'audio' && (
           <div className="flex flex-col gap-[15px]">
             <StudioAudioPanel />
