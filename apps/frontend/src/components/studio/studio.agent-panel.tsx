@@ -411,7 +411,10 @@ export const StudioAgentPanel: FC<{
         finalizeLastAssistant();
         setStreaming(false);
       },
-    }, generation?.brandKitId || state.composerBrandKitId, genKind ? { kind: genKind, ...(generation?.slot ? { slot: generation.slot } : {}) } : null);
+    }, generation?.brandKitId || state.composerBrandKitId, genKind ? { kind: genKind, ...(generation?.slot ? { slot: generation.slot } : {}) } : null,
+      // The general agent gets the currently-selected library image (so it can see/act on it);
+      // generation-interview agents have their own reference flow.
+      genKind ? null : (state.selectedImageId || null));
   }, [
     input,
     streaming,
@@ -420,6 +423,7 @@ export const StudioAgentPanel: FC<{
     handleEvent,
     finalizeLastAssistant,
     state.composerBrandKitId,
+    state.selectedImageId,
     generation?.brandKitId,
     genKind,
   ]);

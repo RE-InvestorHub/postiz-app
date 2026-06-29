@@ -66,6 +66,8 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   const [exportingAll, setExportingAll] = useState(false);
 
   const selected = images.find((i) => i.id === selectedId) || null;
+  // Share the selection with the store so the AI Agent can see/act on the current image.
+  useEffect(() => { dispatch({ type: 'SET_SELECTED_IMAGE', id: selectedId }); }, [selectedId, dispatch]);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
