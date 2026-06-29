@@ -1,6 +1,7 @@
 'use client';
 
 import { FC, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import {
   StudioProvider,
@@ -104,15 +105,44 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
 const VideoTabContent: FC = () => {
   const { state } = useStudio();
   const brandKitId = state.composerBrandKitId || 'default';
+  const videoModels = modelsForKind('video');
+  const [videoModel, setVideoModel] = useState(videoModels[0]?.value ?? 'veo3_1');
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const refreshVideo = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh')); };
   return (
     <div className="flex flex-col gap-[18px]">
-      {/* Scene Director — the Video generation engine (keyframe · clip · gap-fill video). */}
-      {/* context-awareness (Images vs Video) + output selector + Motion section land in T2. */}
-      <StudioSceneDirector brandKitId={brandKitId} />
+      {/* Scene Director — the Video generation engine: keyframe · clip · gap-fill video (context="video").
+          Sits ABOVE the model banner, matching the Images tab. */}
+      <StudioSceneDirector brandKitId={brandKitId} context="video" videoModel={videoModel} />
+
+      {/* Model + Upload banner (mirrors the Images tab's banner). Model lives OUTSIDE the Director;
+          it drives the Director's Clip + gap-fill Video outputs. */}
+      <div className="flex flex-wrap items-center gap-[10px] rounded-[8px] border border-newBorder bg-newBgColor px-[12px] py-[10px]">
+        <select value={videoModel} onChange={(e) => setVideoModel(e.target.value)} title="Video model"
+          className="h-[40px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[13px] text-btnText">
+          {videoModels.map((m) => (<option key={m.value} value={m.value}>{m.label} ({m.credits})</option>))}
+        </select>
+        <span className="text-[11px] text-textItemBlur hidden lg:inline">Video model for the Director&apos;s Clip + Video outputs. Gap-fill needs a start→end model (Kling/Seedance).</span>
+        <button type="button" onClick={() => setUploadOpen(true)}
+          className="ml-auto h-[36px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] hover:opacity-90">⬆ Upload</button>
+      </div>
 
       {/* Library — the brand's clips/shorts + keyframe stills (media-aware canvas). Right-click a
           keyframe to number it; the numbered keyframes (in order) are the sequence for the next render. */}
       <StudioVideoLibraryPanel />
+
+      {/* Upload modal — drop a video into the brand's library (mirrors the Images upload). */}
+      {uploadOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => setUploadOpen(false)}>
+          <div className="w-[560px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[12px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[15px] font-[700] text-btnText flex-1">Upload video to the library</span>
+              <button type="button" onClick={() => setUploadOpen(false)} className="h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText">✕</button>
+            </div>
+            <span className="text-[12px] text-textItemBlur">Drag &amp; drop or browse — MP4 / WEBM / MOV. Added to this brand&apos;s video library.</span>
+            <StudioDropZone accept="video" brandKitId={brandKitId} onUploaded={() => { setUploadOpen(false); refreshVideo(); }} />
+          </div>
+        </div>, document.body)}
     </div>
   );
 };

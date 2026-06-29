@@ -78,6 +78,59 @@ export async function renderDirectorShot(brandKitId: string, spec: Record<string
   throw new Error('Render timed out.');
 }
 
+/** Poll the shared /director/render/status job map until done (clip + gap-fill reuse it). */
+async function pollRenderResult(jobId: string, maxTries = 120): Promise<{ id: string; url: string; [k: string]: unknown }> {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < maxTries; i++) {
+    await sleep(3000);
+    const job = await req<{ status: string; result?: any; error?: string }>(`/director/render/status?jobId=${encodeURIComponent(jobId)}`);
+    if (job.status === 'done') return job.result;
+    if (job.status === 'error') throw new Error(job.error || 'Render failed.');
+  }
+  throw new Error('Render timed out.');
+}
+
+export interface VideoMotion { movement?: string; action?: string; speed?: string }
+
+/**
+ * Scene Director → ONE clip (the "Clip" output). text-to-video from the spec + motion, or
+ * image-to-video when firstFrameUrl is given. SPENDS credits → gated at the call site. ASYNC poll.
+ */
+export async function renderDirectorClip(
+  brandKitId: string,
+  spec: Record<string, unknown>,
+  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string | null } = {}
+): Promise<{ id: string; url: string }> {
+  const { jobId } = await req<{ jobId: string }>('/director/render-clip', {
+    method: 'POST',
+    body: JSON.stringify({
+      spec, brandKitId, motion: opts.motion || {}, model: opts.model || 'veo3_1',
+      aspectRatio: opts.aspectRatio || '9:16', durationS: opts.durationS ?? 6,
+      firstFrameUrl: opts.firstFrameUrl || null,
+    }),
+  });
+  return pollRenderResult(jobId, 160) as Promise<{ id: string; url: string }>;
+}
+
+/**
+ * Scene Director → gap-fill the numbered keyframe sequence into one short (the "Video" output).
+ * Each consecutive pair → a start→end morph segment (Kling/Seedance) → concat. SPENDS → gated.
+ */
+export async function gapFillVideo(
+  brandKitId: string,
+  keyframeIds: string[],
+  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; totalDurationS?: number } = {}
+): Promise<{ id: string; url: string; segments?: number }> {
+  const { jobId } = await req<{ jobId: string }>('/video/gapfill', {
+    method: 'POST',
+    body: JSON.stringify({
+      keyframeIds, brandKitId, motion: opts.motion || {}, model: opts.model || 'kling3_0',
+      aspectRatio: opts.aspectRatio || '9:16', totalDurationS: opts.totalDurationS ?? 15,
+    }),
+  });
+  return pollRenderResult(jobId, 240) as Promise<{ id: string; url: string; segments?: number }>;
+}
+
 export interface SoulStatus {
   anchorId: string;
   soul_id: string | null;
