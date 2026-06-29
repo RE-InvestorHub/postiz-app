@@ -77,3 +77,48 @@ export async function renderDirectorShot(brandKitId: string, spec: Record<string
   }
   throw new Error('Render timed out.');
 }
+
+export interface SoulStatus {
+  anchorId: string;
+  soul_id: string | null;
+  soul_status: 'training' | 'ready' | 'failed' | null;
+  soul_model?: string | null;
+  frames?: number;
+}
+
+/** Read-only Soul status for a character anchor (drives the UI pill). */
+export function getSoulStatus(anchorId: string): Promise<SoulStatus> {
+  return req<SoulStatus>(`/director/soul/status?anchorId=${encodeURIComponent(anchorId)}`);
+}
+
+/** The character anchor a library image was saved into (or null) — for the canvas Capture-Soul button. */
+export function anchorForImage(imageId: string): Promise<{ anchorId: string; name: string; soul_status: string | null } | null> {
+  return req<{ anchor: { anchorId: string; name: string; soul_status: string | null } | null }>(`/director/anchor-for-image?imageId=${encodeURIComponent(imageId)}`).then((r) => r.anchor);
+}
+
+/**
+ * Promote a character anchor to a trained Soul (hard identity lock) — SPENDS credits (reference
+ * sheet + Soul training), so this is approval-gated. NON-BLOCKING: kicks the async job and returns
+ * its jobId immediately; the global SoulTrainingWatcher polls to completion + notifies. (Training
+ * takes ~8–15 min and runs server-side regardless of the client.)
+ */
+export function startSoulTraining(anchorId: string, model: 'soul-2' | 'soul-cinematic' = 'soul-2'): Promise<{ jobId: string; status: string }> {
+  return req<{ jobId: string; status: string }>('/director/soul/train', {
+    method: 'POST',
+    body: JSON.stringify({ anchorId, model }),
+  });
+}
+
+/** Poll a soul-training job once (used by the global watcher). */
+export function pollSoulJob(jobId: string): Promise<{ status: string; result?: { soul_id: string }; error?: string }> {
+  return req(`/director/soul/status?jobId=${encodeURIComponent(jobId)}`);
+}
+
+/**
+ * Remove a character's Soul — clears the Soul link (reverts to reference conditioning) + deletes the
+ * local training frames. NO spend. The Higgsfield-side Soul cannot be deleted via their CLI, so it
+ * remains in the Higgsfield account; the response's `higgsfieldNote` explains this.
+ */
+export function removeSoul(anchorId: string): Promise<{ anchorId: string; removedSoulId: string | null; deletedFrames: number; higgsfieldDeleted: boolean; higgsfieldNote: string | null }> {
+  return req('/director/soul/remove', { method: 'POST', body: JSON.stringify({ anchorId }) });
+}

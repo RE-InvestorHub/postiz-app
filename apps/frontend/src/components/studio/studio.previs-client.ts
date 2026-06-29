@@ -25,6 +25,9 @@ export interface CharacterAnchor {
   identity_clause: string;
   descriptor: string;
   soul_id: string | null;
+  /** Soul training lifecycle: null (not promoted) | 'training' | 'ready' | 'failed'. */
+  soul_status?: 'training' | 'ready' | 'failed' | null;
+  soul_model?: string | null;
   scope: 'project' | 'global';
   tags: string[];
 }

@@ -15,14 +15,13 @@ import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types'
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
+import { CanvasSoulButton } from '@gitroom/frontend/components/studio/studio.soul-control';
 import { captureComponent, COMPONENT_KINDS } from '@gitroom/frontend/components/studio/studio.director-client';
 
 type ModelOpt = { value: string; label: string; credits: string };
 interface StudioImagesPanelProps {
   caps: Record<string, { handler: (args?: any) => unknown }>;
   models: ModelOpt[];
-  aspects: string[];
-  resolutions: string[];
 }
 
 // Subtle checkerboard so transparent PNGs read on the canvas.
@@ -33,7 +32,7 @@ const CHECKER: React.CSSProperties = {
   backgroundPosition: '0 0,0 10px,10px -10px,-10px 0',
 };
 
-export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, aspects, resolutions }) => {
+export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) => {
   const { state, dispatch } = useStudio();
   const toaster = useToaster();
   const brandKitId = state.composerBrandKitId || 'default';
@@ -221,13 +220,8 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
         <select value={state.model} onChange={(e) => caps['studio.selectModel']?.handler({ model: e.target.value })} className={selectCls} title="Image model">
           {models.map((m) => (<option key={m.value} value={m.value}>{m.label} ({m.credits})</option>))}
         </select>
-        <select value={state.aspectRatio} onChange={(e) => caps['studio.setAspectRatio']?.handler({ aspectRatio: e.target.value })} className={selectCls} title="Size / aspect ratio">
-          {aspects.map((a) => (<option key={a} value={a}>{a}</option>))}
-        </select>
-        <select value={state.resolution} onChange={(e) => caps['studio.setResolution']?.handler({ resolution: e.target.value })} className={selectCls} title="Resolution">
-          {resolutions.map((r) => (<option key={r} value={r}>{r.toUpperCase()}</option>))}
-        </select>
-        <span className="text-[11px] text-textItemBlur hidden lg:inline">Generate from the AI Agent — these settings apply.</span>
+        {/* Aspect ratio + resolution now live in the Scene Director (single home for both). */}
+        <span className="text-[11px] text-textItemBlur hidden lg:inline">Model the AI Agent generates with. Aspect &amp; resolution are set in the Scene Director.</span>
         <button type="button" onClick={() => setUploadOpen(true)}
           className="ml-auto h-[36px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] hover:opacity-90">⬆ Upload</button>
       </div>
@@ -340,6 +334,8 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
                 <button type="button" onClick={() => { setCaptureName(''); setCaptureOpen(true); }}
                   title="Save this image as a reusable Scene Director component (character / scene / lighting / …)"
                   className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10">★ Save as component</button>
+                {/* Capture Soul — dimmed until this image is saved as a Character; then it trains a Soul. */}
+                <CanvasSoulButton imageId={selected.id} />
                 {selected.spec && (
                   <button type="button" onClick={onTweak}
                     title="Reopen the Scene Director with this shot's spec to tweak + re-render a variant"

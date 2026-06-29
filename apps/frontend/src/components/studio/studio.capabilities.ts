@@ -40,6 +40,7 @@ import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel,
 import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit, deriveLogoSlot, LogoSlot } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
+import { startSoulTraining, removeSoul } from '@gitroom/frontend/components/studio/studio.director-client';
 
 /** Fire the library-refresh event so the Images canvas re-fetches (picks up a new variant). */
 function refreshImageLibrary(): void {
@@ -841,6 +842,37 @@ export function buildStudioCapabilities(
       label: 'Apply a guarded ImageMagick chain to a library image (free — new variant)',
       params: ['ops', 'sourceId'],
       handler: async () => { refreshImageLibrary(); },
+    },
+    {
+      // Promote a character anchor to a trained Soul (hard identity lock). SPENDS credits
+      // (reference sheet + Soul training) → GATED (deliberately NOT in AUTO_APPROVE). Async; the
+      // transport polls to completion. Refreshes the library so the new Soul frames appear.
+      id: 'director.trainSoul',
+      namespace: 'director',
+      label: 'Promote a character to a trained Soul ID (spends credits — identity lock)',
+      params: ['anchorId', 'model'],
+      handler: async (p: { anchorId?: string; model?: 'soul-2' | 'soul-cinematic' } = {}) => {
+        if (!p.anchorId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need a character anchorId to train a Soul.' }); return; }
+        // Non-blocking: kick the async job; the global SoulTrainingWatcher notifies on completion.
+        const r = await startSoulTraining(p.anchorId, p.model === 'soul-cinematic' ? 'soul-cinematic' : 'soul-2');
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:soul-training-started', { detail: { anchorId: p.anchorId } }));
+        return r;
+      },
+    },
+    {
+      // Remove a character's Soul — clears the link + deletes local training frames. NO spend →
+      // auto-approved (a structured-data cleanup, with a UI confirm). The Higgsfield-side Soul can't
+      // be deleted via their CLI; the result's higgsfieldNote tells the user it remains there.
+      id: 'director.removeSoul',
+      namespace: 'director',
+      label: 'Remove a character\'s Soul (clears the link + training frames — no spend)',
+      params: ['anchorId'],
+      handler: async (p: { anchorId?: string } = {}) => {
+        if (!p.anchorId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need a character anchorId to remove its Soul.' }); return; }
+        const r = await removeSoul(p.anchorId);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:soul-refresh'));
+        return r;
+      },
     },
   ];
 

@@ -8,22 +8,32 @@
 
 import { FC, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
+import { STUDIO_RESOLUTIONS } from '@gitroom/frontend/components/studio/studio.types';
 import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate } from '@gitroom/frontend/components/studio/studio.director-client';
+import { SoulControl } from '@gitroom/frontend/components/studio/studio.soul-control';
 
-const ASPECTS = [
-  { id: '4:5', label: 'Feed 4:5' }, { id: '1:1', label: 'Square 1:1' },
-  { id: '9:16', label: 'Story/Reels 9:16' }, { id: '16:9', label: 'Wide 16:9' },
-];
+// Aspect ratios Higgsfield's Soul model (text2image_soul_v2) accepts — when a saved character is
+// selected the render may run on the Soul, so we restrict to these (4:5 is the notable exclusion).
+const SOUL_ASPECTS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'];
+const ASPECT_LABELS: Record<string, string> = {
+  '4:5': 'Feed 4:5', '1:1': 'Square 1:1', '9:16': 'Story/Reels 9:16', '16:9': 'Wide 16:9',
+  '3:4': 'Portrait 3:4', '4:3': 'Landscape 4:3', '2:3': 'Tall 2:3', '3:2': 'Wide 3:2',
+};
+const BASE_ASPECT_IDS = ['4:5', '1:1', '9:16', '16:9'];
+// With a character selected, also offer the Soul portrait/landscape ratios.
+const CHAR_ASPECT_IDS = ['4:5', '1:1', '9:16', '16:9', '3:4', '4:3', '2:3', '3:2'];
 
 export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) => {
-  const { dispatch } = useStudio();
+  const { state, dispatch } = useStudio();
   const [open, setOpen] = useState(false);
   const [dims, setDims] = useState<DirectorDimension[]>([]);
   const [sel, setSel] = useState<Record<string, string>>({}); // dimId -> 'auto' | 'p:<id>' | 'c:<id>'
   const [locked, setLocked] = useState<Record<string, boolean>>({}); // dimId -> locked (agent must not change)
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
-  const [aspect, setAspect] = useState('4:5');
   const [templates, setTemplates] = useState<DirectorTemplate[]>([]);
+  // Aspect + resolution are STORE-backed (the single home for both — moved out of the bottom bar).
+  const aspect = state.aspectRatio;
+  const setAspect = (a: string) => dispatch({ type: 'SET_ASPECT_RATIO', aspectRatio: a });
 
   const loadTemplates = () => listDirectorTemplates(brandKitId).then(setTemplates).catch(() => {});
   useEffect(() => { if (open) loadTemplates(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open, brandKitId]);
@@ -52,6 +62,16 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
 
   const chosenCount = Object.values(sel).filter((v) => v && v !== 'auto').length;
 
+  // When a saved CHARACTER is selected the render may run on the Higgsfield Soul, which only accepts
+  // SOUL_ASPECTS — so we dim the rest (4:5) and snap the current pick to a supported ratio.
+  const charDim = dims.find((d) => d.component === 'character');
+  const charSelected = !!(charDim && sel[charDim.id]?.startsWith('c:'));
+  const aspectIds = charSelected ? CHAR_ASPECT_IDS : BASE_ASPECT_IDS;
+  useEffect(() => {
+    if (charSelected && !SOUL_ASPECTS.includes(aspect)) setAspect('3:4');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [charSelected]);
+
   const onDevelop = () => {
     const lines: string[] = [];
     for (const d of dims) {
@@ -71,7 +91,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
     const seed =
       `I'm directing an ad shot. Here are my picks — develop the rest, anything not listed is your call:\n` +
       `${lines.length ? lines.join('\n') : '- (all on Auto — propose a strong concept)'}\n` +
-      `Render mode: ${renderMode}. Aspect ratio: ${aspect}. When you're confident, the Create button will render it.`;
+      `Render mode: ${renderMode}. Aspect ratio: ${aspect}. Resolution: ${state.resolution}. When you're confident, the Create button will render it.`;
     dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'shot', brandKitId, seed });
   };
 
@@ -87,28 +107,70 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
 
       {open && (
         <div className="px-[14px] pb-[14px] flex flex-col gap-[12px]">
-          <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
-            {dims.map((d) => (
-              <label key={d.id} className="flex flex-col gap-[3px]">
-                <span className="flex items-center gap-[4px]">
-                  <span className="text-[11px] font-[600] text-btnText flex-1" title={d.hint}>{d.label}</span>
-                  {sel[d.id] && sel[d.id] !== 'auto' && (
-                    <button type="button" onClick={(e) => { e.preventDefault(); setLocked((l) => ({ ...l, [d.id]: !l[d.id] })); }}
-                      title={locked[d.id] ? 'Locked — the agent keeps this exactly' : 'Lock this choice (agent won\'t change it)'}
-                      className={'text-[11px] leading-none ' + (locked[d.id] ? 'opacity-100' : 'opacity-40 hover:opacity-80')}>📌</button>
-                  )}
-                </span>
-                <select className={selectCls} value={sel[d.id] || 'auto'} onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
-                  <option value="auto">Auto — let AI decide</option>
-                  {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
-                  {d.components.length > 0 && (
-                    <optgroup label="Saved (reusable)">
-                      {d.components.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
-                    </optgroup>
-                  )}
-                </select>
-              </label>
-            ))}
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-[10px]">
+            {dims.flatMap((d) => {
+              const lockBtn = (active: boolean) => active && (
+                <button type="button" onClick={(e) => { e.preventDefault(); setLocked((l) => ({ ...l, [d.id]: !l[d.id] })); }}
+                  title={locked[d.id] ? 'Locked — the agent keeps this exactly' : 'Lock this choice (agent won\'t change it)'}
+                  className={'text-[11px] leading-none ' + (locked[d.id] ? 'opacity-100' : 'opacity-40 hover:opacity-80')}>📌</button>
+              );
+              // The Subject/Character dimension splits into TWO dropdowns: a Subject (presets) and a
+              // separate Character (the user's SAVED characters) — the latter only when any exist.
+              // Both write the same sel[d.id] (mutually exclusive: a saved character IS the subject).
+              if (d.component === 'character') {
+                const isChar = sel[d.id]?.startsWith('c:');
+                const cells = [
+                  <label key={`${d.id}-subject`} className="flex flex-col gap-[3px]">
+                    <span className="flex items-center gap-[4px]">
+                      <span className="text-[11px] font-[600] text-btnText flex-1" title="Who/what the hero is — a subject type, or pick a saved character →">Subject</span>
+                      {!isChar && lockBtn(!!sel[d.id] && sel[d.id] !== 'auto')}
+                    </span>
+                    <select className={selectCls} value={isChar ? 'auto' : (sel[d.id] || 'auto')}
+                      onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
+                      <option value="auto">{isChar ? 'Using saved character →' : 'Auto — let AI decide'}</option>
+                      {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
+                    </select>
+                  </label>,
+                ];
+                if (d.components.length > 0) {
+                  cells.push(
+                    <label key={`${d.id}-character`} className="flex flex-col gap-[3px]">
+                      <span className="flex items-center gap-[4px]">
+                        <span className="text-[11px] font-[600] text-btnText flex-1" title="Reuse one of your saved characters (locks identity; train a Soul for an exact match)">Character</span>
+                        {isChar && (
+                          <SoulControl anchorId={sel[d.id].slice(2)} name={d.components.find((c) => c.id === sel[d.id].slice(2))?.name} />
+                        )}
+                        {isChar && lockBtn(true)}
+                      </span>
+                      <select className={selectCls} value={isChar ? sel[d.id] : ''}
+                        onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value || 'auto' }))}>
+                        <option value="">— No saved character —</option>
+                        {d.components.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
+                      </select>
+                    </label>
+                  );
+                }
+                return cells;
+              }
+              // Every other dimension: one dropdown (presets + any saved reusable components).
+              return [
+                <label key={d.id} className="flex flex-col gap-[3px]">
+                  <span className="flex items-center gap-[4px]">
+                    <span className="text-[11px] font-[600] text-btnText flex-1" title={d.hint}>{d.label}</span>
+                    {lockBtn(!!sel[d.id] && sel[d.id] !== 'auto')}
+                  </span>
+                  <select className={selectCls} value={sel[d.id] || 'auto'} onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
+                    <option value="auto">Auto — let AI decide</option>
+                    {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
+                    {d.components.length > 0 && (
+                      <optgroup label="Saved (reusable)">
+                        {d.components.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                </label>,
+              ];
+            })}
           </div>
 
           <div className="flex flex-wrap items-center gap-[10px]">
@@ -120,8 +182,16 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
                   className={'h-[32px] px-[12px] text-[12px] font-[600] capitalize ' + (renderMode === m ? 'bg-btnPrimary text-btnText' : 'text-textItemBlur hover:text-btnText')}>{m}</button>
               ))}
             </span>
-            <select value={aspect} onChange={(e) => setAspect(e.target.value)} className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Aspect ratio">
-              {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+            <select value={aspect} onChange={(e) => setAspect(e.target.value)} className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText"
+              title={charSelected ? 'Aspect ratio — limited to what the character Soul supports' : 'Aspect ratio'}>
+              {aspectIds.map((id) => {
+                const blocked = charSelected && !SOUL_ASPECTS.includes(id);
+                return <option key={id} value={id} disabled={blocked}>{ASPECT_LABELS[id]}{blocked ? ' — not on Soul' : ''}</option>;
+              })}
+            </select>
+            <select value={state.resolution} onChange={(e) => dispatch({ type: 'SET_RESOLUTION', resolution: e.target.value as typeof state.resolution })}
+              className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Resolution">
+              {STUDIO_RESOLUTIONS.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
             </select>
             {/* Templates — load a saved selection set, or save the current one. */}
             {templates.length > 0 && (

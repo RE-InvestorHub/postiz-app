@@ -23,6 +23,7 @@ import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.ava
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
+import { SoulTrainingWatcher } from '@gitroom/frontend/components/studio/studio.soul-watcher';
 import { StudioAssetsPanel } from '@gitroom/frontend/components/studio/studio.assets-panel';
 import { StudioBrandPanel } from '@gitroom/frontend/components/studio/studio.brand-panel';
 import { StudioComposerHub } from '@gitroom/frontend/components/studio/studio.composer-hub';
@@ -299,6 +300,8 @@ const StudioInner: FC = () => {
 
         {/* Active Campaign + Ad context, shared across every tab. */}
         <StudioProjectBar />
+        {/* Watches long Soul trainings and notifies on completion from any tab (renders nothing). */}
+        <SoulTrainingWatcher />
 
         <div className="flex flex-wrap gap-[8px] border-b border-newBorder pb-[12px]">
           {TABS.map((item) => (
@@ -318,7 +321,7 @@ const StudioInner: FC = () => {
         </div>
 
         {state.activeTab === 'images' && (
-          <StudioImagesPanel caps={caps} models={modelsForKind('images')} aspects={STUDIO_ASPECT_RATIOS} resolutions={STUDIO_RESOLUTIONS} />
+          <StudioImagesPanel caps={caps} models={modelsForKind('images')} />
         )}
         {state.activeTab === 'video' && (
           <div className="flex flex-col gap-[18px]">
