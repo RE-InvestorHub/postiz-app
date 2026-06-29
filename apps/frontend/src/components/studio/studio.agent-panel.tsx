@@ -209,13 +209,24 @@ export const StudioAgentPanel: FC<{
   const [brief, setBrief] = useState<Record<string, unknown> | null>(null);
   const briefReady = brief !== null;
 
-  // Scroll anchor
+  // Scroll anchor + the scrollable message list (we scroll the LIST directly, never the page).
   const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Stick-to-bottom: true while the user is at/near the bottom. Flipped ONLY by real user scrolls
+  // (not by content growth), so fast streaming can't knock it loose. The user scrolling up to read
+  // sets it false (we stop yanking); scrolling back to the bottom re-arms it.
+  const stick = useRef(true);
+  const onListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  }, []);
 
-  // Auto-scroll on new messages
+  // Keep the latest message in view as the conversation grows / streams — scroll the list
+  // container itself (never scrollIntoView, which can scroll the whole page).
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = listRef.current;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   // ---------------------------------------------------------------------------
@@ -533,7 +544,10 @@ export const StudioAgentPanel: FC<{
   return (
     <div className={floating
       ? 'w-full h-full bg-newBgColor flex flex-col'
-      : 'w-[320px] shrink-0 bg-newBgColor border-l border-[var(--new-table-border)] flex flex-col h-full'}>
+      // Sidebar: bound to the viewport + sticky so it stays in view and the message list scrolls
+      // INSIDE it as the conversation grows (instead of stretching the page). self-start keeps the
+      // flex row from stretching it to content height.
+      : 'w-[320px] shrink-0 self-start sticky top-[16px] h-[calc(100vh-32px)] max-h-[calc(100vh-32px)] bg-newBgColor border-l border-[var(--new-table-border)] flex flex-col'}>
       {/* Header — hidden in floating mode (the floating window provides its own title bar) */}
       {!floating && (
         <div className="flex items-center justify-between px-[16px] py-[12px] border-b border-[var(--new-table-border)]">
@@ -559,8 +573,8 @@ export const StudioAgentPanel: FC<{
         </div>
       )}
 
-      {/* Message list */}
-      <div className="flex-1 overflow-y-auto p-[16px] flex flex-col gap-[12px]">
+      {/* Message list — min-h-0 lets this flex child actually scroll instead of growing the panel. */}
+      <div ref={listRef} onScroll={onListScroll} className="flex-1 min-h-0 overflow-y-auto p-[16px] flex flex-col gap-[12px]">
         {messages.length === 0 && (
           <div className="flex flex-col gap-[14px]">
             <p className="text-[12px] text-[var(--new-table-text)] leading-[1.5]">
