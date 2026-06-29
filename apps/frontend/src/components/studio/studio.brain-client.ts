@@ -21,6 +21,10 @@ export interface BrainToolCallEvent {
   type: 'tool_call';
   name: string;
   input: Record<string, unknown>;
+  /** For in-brain-executed tools (image_edit/image_magick): the new variant the brain produced. */
+  result?: { id: string; url: string; op: string } | null;
+  /** Error string if the in-brain execution failed (e.g. a rejected magick op). */
+  error?: string;
 }
 
 export interface BrainBriefCompleteEvent {
@@ -136,6 +140,8 @@ export function streamToBrain(
               type: 'tool_call',
               name: String(parsed.name ?? ''),
               input: (parsed.input as Record<string, unknown>) ?? {},
+              result: (parsed.result as { id: string; url: string; op: string } | null) ?? null,
+              error: parsed.error ? String(parsed.error) : undefined,
             });
             break;
           case 'brief_complete':

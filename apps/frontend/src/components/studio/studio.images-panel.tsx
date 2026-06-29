@@ -291,6 +291,10 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
                     {img.channelShort && (
                       <span className="absolute bottom-[3px] left-[3px] right-[3px] truncate rounded-[4px] bg-ai/85 text-white text-[9px] font-[700] leading-none px-[4px] py-[3px] text-center">{img.channelShort}</span>
                     )}
+                    {/* Edit-lineage chip — flags an agent/graphics edit + which op produced it. */}
+                    {!img.channelShort && img.editOp && (
+                      <span className="absolute bottom-[3px] left-[3px] right-[3px] truncate rounded-[4px] bg-btnPrimary/85 text-white text-[9px] font-[700] leading-none px-[4px] py-[3px] text-center">{img.editOp.replace(/_/g, ' ')}</span>
+                    )}
                     {selectMode && (
                       <span className={'absolute top-[3px] left-[3px] h-[18px] w-[18px] rounded-[4px] border flex items-center justify-center text-[11px] leading-none ' + (isChecked ? 'bg-[#ff7eb6] border-[#ff7eb6] text-[#3a0d23]' : 'bg-black/45 border-white/50 text-transparent')}>✓</span>
                     )}

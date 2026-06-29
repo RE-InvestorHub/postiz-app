@@ -188,7 +188,7 @@ export const StudioAgentPanel: FC<{
   /** Generation-interview mode: the agent interviews for this kind; Create runs its generator. */
   generation?: { kind?: string; brandKitId?: string; slot?: string };
 }> = ({ caps, onClose, onCreate, floating, initialInput, generation }) => {
-  const { state } = useStudio();
+  const { state, dispatch } = useStudio();
   const toaster = useToaster();
   // Chat state
   const [messages, setMessages] = useState<InternalMessage[]>([]);
@@ -349,6 +349,17 @@ export const StudioAgentPanel: FC<{
           // confidence meter + Create gate. Don't render it as a tool-call card.
           if (event.name === 'generation_plan') {
             setGenPlan((event.input as { confidence?: number }) || null);
+          } else if (event.name === 'image_edit' || event.name === 'image_magick') {
+            // Graphics edit: the brain already ran the op + recorded the new variant. Show a
+            // lineage chip, refresh the library, and SELECT the new variant so the user's next
+            // message continues from the edited result (and the agent sees it next turn).
+            if (event.result?.id) {
+              dispatch({ type: 'SET_SELECTED_IMAGE', id: event.result.id });
+              if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
+              appendMessage({ id: makeId(), role: 'tool_call', toolName: event.name, toolInput: event.input, toolStatus: 'applied' });
+            } else {
+              appendMessage({ id: makeId(), role: 'system', text: event.error ? `Edit rejected: ${event.error}` : 'Edit did not produce a variant.' });
+            }
           } else {
             handleToolCallEvent(event.name, event.input);
           }
@@ -387,6 +398,7 @@ export const StudioAgentPanel: FC<{
       finalizeLastAssistant,
       handleToolCallEvent,
       appendMessage,
+      dispatch,
       total,
     ]
   );

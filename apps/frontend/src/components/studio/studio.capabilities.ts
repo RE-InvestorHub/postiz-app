@@ -41,6 +41,11 @@ import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extrac
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
 
+/** Fire the library-refresh event so the Images canvas re-fetches (picks up a new variant). */
+function refreshImageLibrary(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
+}
+
 export interface Capability {
   /** namespaced id, e.g. "studio.setPrompt" */
   id: string;
@@ -816,6 +821,26 @@ export function buildStudioCapabilities(
         if (!p.id || !p.channel) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need an image id + channel to reshape.' }); return; }
         return reshapeImage(p.id, p.channel, p.fit === 'pad' ? 'pad' : 'crop');
       },
+    },
+    {
+      // Graphics-engineer typed edit. The brain ALREADY ran the op in its agent loop (so it could
+      // see the result and iterate) and the new variant is recorded; this capability just refreshes
+      // the library so the new variant appears on the canvas. Free → auto-approved. (The direct
+      // lever is editImage() in studio.image-client — used by manual UI, not re-run here.)
+      id: 'image.edit',
+      namespace: 'image',
+      label: 'Apply a graphics edit to a library image (free — new variant)',
+      params: ['op', 'params', 'sourceId'],
+      handler: async () => { refreshImageLibrary(); },
+    },
+    {
+      // Guarded general ImageMagick edit — same execution model as image.edit (brain-run, here we
+      // only refresh). Free → auto-approved; the sandbox (allowlist + policy) is enforced in the brain.
+      id: 'image.magick',
+      namespace: 'image',
+      label: 'Apply a guarded ImageMagick chain to a library image (free — new variant)',
+      params: ['ops', 'sourceId'],
+      handler: async () => { refreshImageLibrary(); },
     },
   ];
 
