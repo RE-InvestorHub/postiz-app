@@ -34,7 +34,7 @@ const CHECKER: React.CSSProperties = {
 };
 
 export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, aspects, resolutions }) => {
-  const { state } = useStudio();
+  const { state, dispatch } = useStudio();
   const toaster = useToaster();
   const brandKitId = state.composerBrandKitId || 'default';
   const brandName = brandKitId === 'default' ? 'Re:InvestorHub (default)' : 'this brand';
