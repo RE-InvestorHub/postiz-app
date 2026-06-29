@@ -41,13 +41,24 @@ export function captureComponent(imageId: string, kind: string, name: string, br
 }
 
 /**
- * Render a shot via the layered-comp pipeline (the Create gate — spends credits). The agent's
- * spec carries the dimension fields + renderMode/aspectRatio/anchorId; this maps them to the endpoint.
+ * Render a shot via the layered-comp pipeline (the Create gate — spends credits). ASYNC: the
+ * render runs in the background (a layered shot is ~80-90s, past the proxy timeout), so we start
+ * it (→ jobId) and POLL until done. The agent's spec carries the dimension fields +
+ * renderMode/aspectRatio/anchorId; this maps them to the endpoint.
  */
-export function renderDirectorShot(brandKitId: string, spec: Record<string, unknown>): Promise<{ id: string; url: string; mode: string; layers: unknown }> {
+export async function renderDirectorShot(brandKitId: string, spec: Record<string, unknown>): Promise<{ id: string; url: string; mode: string; layers: unknown }> {
   const { renderMode, aspectRatio, anchorId, brandKitId: _b, ...dims } = spec as any;
-  return req('/director/render', {
+  const { jobId } = await req<{ jobId: string }>('/director/render', {
     method: 'POST',
     body: JSON.stringify({ spec: dims, brandKitId, mode: renderMode === 'single' ? 'single' : 'layered', aspectRatio: aspectRatio || '4:5', anchorId: anchorId || null }),
   });
+  // Poll for completion (each request is fast; the render proceeds server-side).
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < 120; i++) { // up to ~6 min
+    await sleep(3000);
+    const job = await req<{ status: string; result?: any; error?: string }>(`/director/render/status?jobId=${encodeURIComponent(jobId)}`);
+    if (job.status === 'done') return job.result;
+    if (job.status === 'error') throw new Error(job.error || 'Render failed.');
+  }
+  throw new Error('Render timed out.');
 }

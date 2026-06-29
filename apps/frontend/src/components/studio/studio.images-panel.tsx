@@ -55,6 +55,8 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   const [captureKind, setCaptureKind] = useState('character');
   const [captureName, setCaptureName] = useState('');
   const [capturing, setCapturing] = useState(false);
+  // A generation (Scene Director / agent) is in flight → show a spinner placeholder.
+  const [generating, setGenerating] = useState(false);
   // Channel reshape (canvas).
   const [channels, setChannels] = useState<ChannelPreset[]>([]);
   const [reshapeChannel, setReshapeChannel] = useState('');
@@ -81,8 +83,17 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   // Scene Director / agent renders fire this event when a new shot lands in the library.
   useEffect(() => {
     const onRefresh = () => void load();
-    if (typeof window !== 'undefined') window.addEventListener('reinvestorhub:images-refresh', onRefresh);
-    return () => { if (typeof window !== 'undefined') window.removeEventListener('reinvestorhub:images-refresh', onRefresh); };
+    const onGenerating = (e: Event) => setGenerating(!!(e as CustomEvent).detail?.active);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('reinvestorhub:images-refresh', onRefresh);
+      window.addEventListener('reinvestorhub:images-generating', onGenerating as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('reinvestorhub:images-refresh', onRefresh);
+        window.removeEventListener('reinvestorhub:images-generating', onGenerating as EventListener);
+      }
+    };
   }, [load]);
 
   // Keep the selected model valid for the Images tab.
@@ -203,10 +214,27 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
             </div>
           )}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
-          {!loading && images.length === 0 ? (
+          {generating && (
+            <span className="flex items-center gap-[6px] text-[11px] font-[600] text-ai">
+              Rendering your shot
+              <span className="inline-flex gap-[3px]">
+                {[0, 150, 300].map((d) => <span key={d} className="h-[5px] w-[5px] rounded-full bg-ai animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+              </span>
+            </span>
+          )}
+          {!loading && images.length === 0 && !generating ? (
             <div className="text-[12px] text-textItemBlur py-[14px]">No images yet. Generate with the AI Agent or ⬆ Upload your own.</div>
           ) : (
             <div className="grid grid-cols-2 gap-[8px] overflow-y-auto max-h-[60vh] pr-[2px]">
+              {/* Generating placeholder — a pulsing tile with bouncing dots while a shot renders. */}
+              {generating && (
+                <span className="aspect-square rounded-[6px] border border-ai/40 bg-ai/5 flex flex-col items-center justify-center gap-[6px] animate-pulse">
+                  <span className="inline-flex gap-[4px]">
+                    {[0, 150, 300].map((d) => <span key={d} className="h-[7px] w-[7px] rounded-full bg-ai animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+                  </span>
+                  <span className="text-[9px] text-ai/80 font-[600]">Rendering…</span>
+                </span>
+              )}
               {images.map((img) => {
                 const isChecked = checked.has(img.id);
                 const ring = selectMode
