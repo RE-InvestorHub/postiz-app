@@ -45,6 +45,7 @@ export type StudioAction =
   | { type: 'SET_ACTIVE_AD'; adId: string | null }
   | { type: 'SET_COMPOSER_BRANDKIT'; brandKitId: string }
   | { type: 'SET_COMPOSER_TEMPLATE'; templateId: string }
+  | { type: 'SET_SELECTED_IMAGE'; id: string | null }
   | { type: 'OPEN_FLOATING_AGENT'; seed?: string; kind?: string; brandKitId?: string; slot?: string }
   | { type: 'CLOSE_FLOATING_AGENT' }
   | { type: 'RESET' };
@@ -69,6 +70,7 @@ export const initialStudioState: StudioState = {
   activeAdId: null,
   composerBrandKitId: 'default',
   composerTemplateId: '',
+  selectedImageId: null,
   floatingAgent: null,
 };
 
@@ -130,6 +132,8 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       return { ...state, composerBrandKitId: action.brandKitId };
     case 'SET_COMPOSER_TEMPLATE':
       return { ...state, composerTemplateId: action.templateId };
+    case 'SET_SELECTED_IMAGE':
+      return { ...state, selectedImageId: action.id };
     case 'OPEN_FLOATING_AGENT':
       return { ...state, floatingAgent: { seed: action.seed, kind: action.kind, brandKitId: action.brandKitId, slot: action.slot } };
     case 'CLOSE_FLOATING_AGENT':
