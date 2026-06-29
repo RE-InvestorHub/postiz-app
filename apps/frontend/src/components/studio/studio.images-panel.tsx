@@ -6,7 +6,7 @@
 // settings (used by the AI Agent) + an Upload button. Generation lives in the AI Agent for
 // now. Postiz tokens only.
 
-import { FC, useCallback, useEffect, useState } from 'react';
+import { FC, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
@@ -68,6 +68,14 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   const selected = images.find((i) => i.id === selectedId) || null;
   // Share the selection with the store so the AI Agent can see/act on the current image.
   useEffect(() => { dispatch({ type: 'SET_SELECTED_IMAGE', id: selectedId }); }, [selectedId, dispatch]);
+  // After an agent edit, the new variant id should become the canvas selection. We carry it on a
+  // ref set by the refresh event (below) and apply it once that variant lands in the library —
+  // local `selectedId` stays the single source of truth (no store->local effect ping-pong).
+  const pendingSelectRef = useRef<string | null>(null);
+  useEffect(() => {
+    const want = pendingSelectRef.current;
+    if (want && images.some((i) => i.id === want)) { pendingSelectRef.current = null; setSelectedId(want); }
+  }, [images]);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -86,7 +94,12 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [genCount]);
   // Scene Director / agent renders fire this event when a new shot lands in the library.
   useEffect(() => {
-    const onRefresh = () => void load();
+    const onRefresh = (e: Event) => {
+      // An agent edit passes the new variant id → select it once it lands (see pendingSelectRef effect).
+      const id = (e as CustomEvent).detail?.selectImageId;
+      if (id) pendingSelectRef.current = String(id);
+      void load();
+    };
     const onGenerating = (e: Event) => setGenerating(!!(e as CustomEvent).detail?.active);
     if (typeof window !== 'undefined') {
       window.addEventListener('reinvestorhub:images-refresh', onRefresh);
