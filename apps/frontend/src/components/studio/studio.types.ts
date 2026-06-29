@@ -1,6 +1,8 @@
 // Shared types for the Studio control surface.
 // The store, the action/capability layer, and the UI all speak these.
 
+import type { TimelineEDL } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
+
 export type StudioTab = 'images' | 'video' | 'audio' | 'editor' | 'avatars' | 'project' | 'composer' | 'brand';
 
 // ---------------------------------------------------------------------------
@@ -166,6 +168,8 @@ export interface StudioState {
   /** Video tab: ordered keyframes staged for the next video generation (the Images→Video bridge +
    *  Scene Director on Video drop here; the keyframe tray + Library's Keyframes view read this). */
   videoKeyframes: VideoKeyframe[];
+  /** Video Editor tab: the multi-track NLE edit (the serializable, agent-drivable timeline document). */
+  timeline: TimelineEDL;
   /** Draggable floating agent chat window: null = closed, else open. In generation-interview
    *  mode it carries the kind + brand + target slot so Create can run that kind's generator. */
   floatingAgent: { seed?: string; kind?: string; brandKitId?: string; slot?: string } | null;

@@ -15,7 +15,7 @@ import { FloatingWindow } from '@gitroom/frontend/components/studio/studio.float
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 import { StudioImagesPanel } from '@gitroom/frontend/components/studio/studio.images-panel';
-import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
+import { StudioVideoEditorNLE } from '@gitroom/frontend/components/studio/studio.video-editor-nle';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioVideoLibraryPanel } from '@gitroom/frontend/components/studio/studio.video-library-panel';
@@ -260,9 +260,7 @@ const StudioInner: FC = () => {
             <StudioDropZone accept="audio" />
           </div>
         )}
-        {state.activeTab === 'editor' && (
-          <RemotionEditorPanel />
-        )}
+        {state.activeTab === 'editor' && <StudioVideoEditorNLE />}
         {state.activeTab === 'avatars' && <StudioAvatarPanel />}
         {state.activeTab === 'brand' && <StudioBrandPanel />}
         {state.activeTab === 'project' && <StudioAssetsPanel />}
