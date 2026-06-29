@@ -9,6 +9,7 @@
 import { FC, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate } from '@gitroom/frontend/components/studio/studio.director-client';
+import { SoulControl } from '@gitroom/frontend/components/studio/studio.soul-control';
 
 const ASPECTS = [
   { id: '4:5', label: 'Feed 4:5' }, { id: '1:1', label: 'Square 1:1' },
@@ -92,6 +93,10 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
               <label key={d.id} className="flex flex-col gap-[3px]">
                 <span className="flex items-center gap-[4px]">
                   <span className="text-[11px] font-[600] text-btnText flex-1" title={d.hint}>{d.label}</span>
+                  {/* For a SAVED character, offer Soul ID promotion (identity lock across campaigns). */}
+                  {d.component === 'character' && sel[d.id]?.startsWith('c:') && (
+                    <SoulControl anchorId={sel[d.id].slice(2)} name={d.components.find((c) => c.id === sel[d.id].slice(2))?.name} />
+                  )}
                   {sel[d.id] && sel[d.id] !== 'auto' && (
                     <button type="button" onClick={(e) => { e.preventDefault(); setLocked((l) => ({ ...l, [d.id]: !l[d.id] })); }}
                       title={locked[d.id] ? 'Locked — the agent keeps this exactly' : 'Lock this choice (agent won\'t change it)'}
