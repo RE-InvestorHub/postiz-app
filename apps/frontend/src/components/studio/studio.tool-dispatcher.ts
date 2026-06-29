@@ -123,6 +123,11 @@ export function requiresApproval(toolName: string): boolean {
     'brand.deriveSlot',
     // image.reshape resizes a library image to a channel size (ImageMagick) — no spend.
     'image.reshape',
+    // image.edit (typed op) + image.magick (guarded chain) are FREE local raster edits — the
+    // brain runs them sandboxed and records a new variant; the capability only refreshes. No spend.
+    // (Generative, credit-spending edits are a separate, gated flow — deliberately NOT here.)
+    'image.edit',
+    'image.magick',
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',

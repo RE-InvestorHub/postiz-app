@@ -22,6 +22,8 @@ export interface BrandImage {
   channelShort?: string | null;
   fit?: string | null;
   sourceId?: string | null;
+  /** Graphics-edit lineage: the op that produced this variant (e.g. "duotone", "magick"). */
+  editOp?: string | null;
 }
 
 export interface ChannelPreset {
@@ -60,4 +62,35 @@ export function listChannelPresets(): Promise<ChannelPreset[]> {
 /** Reshape an image to a channel's exact size (non-destructive — returns a NEW variant). */
 export function reshapeImage(id: string, channel: string, fit: 'crop' | 'pad'): Promise<BrandImage> {
   return req<BrandImage>('/images/reshape', { method: 'POST', body: JSON.stringify({ id, channel, fit }) });
+}
+
+/** The result of a graphics edit — a new library variant. */
+export interface ImageEditResult {
+  id: string; url: string; path: string; op: string; sourceId: string; brandKitId: string;
+}
+
+/** The graphics-engineer op catalog (typed ops + their params) for discovery. */
+export interface ImageOpsCatalog {
+  ops: Record<string, { group: string; help: string; params: Record<string, string> }>;
+  magick: { help: string };
+}
+
+/** The graphics-engineer op catalog (typed ops + their params) for discovery. */
+export function listImageOps(): Promise<ImageOpsCatalog> {
+  return req<ImageOpsCatalog>('/images/ops');
+}
+
+/**
+ * Apply a typed graphics edit to a library image — FREE, non-destructive (new variant).
+ * NOTE: when the AGENT edits, the brain already runs the op in its tool loop (so it can see the
+ * result and iterate); the agent capability only refreshes the library. This transport is the
+ * direct/manual lever — the same one a future inline editor UI would call.
+ */
+export function editImage(sourceId: string, op: string, params: Record<string, unknown> = {}): Promise<ImageEditResult> {
+  return req<ImageEditResult>('/images/edit', { method: 'POST', body: JSON.stringify({ sourceId, op, params }) });
+}
+
+/** Apply a guarded general ImageMagick chain to a library image — FREE, non-destructive. */
+export function magickImage(sourceId: string, ops: string[]): Promise<ImageEditResult> {
+  return req<ImageEditResult>('/images/magick', { method: 'POST', body: JSON.stringify({ sourceId, ops }) });
 }
