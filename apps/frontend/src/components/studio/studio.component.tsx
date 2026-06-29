@@ -321,7 +321,7 @@ const StudioInner: FC = () => {
         </div>
 
         {state.activeTab === 'images' && (
-          <StudioImagesPanel caps={caps} models={modelsForKind('images')} aspects={STUDIO_ASPECT_RATIOS} resolutions={STUDIO_RESOLUTIONS} />
+          <StudioImagesPanel caps={caps} models={modelsForKind('images')} />
         )}
         {state.activeTab === 'video' && (
           <div className="flex flex-col gap-[18px]">
