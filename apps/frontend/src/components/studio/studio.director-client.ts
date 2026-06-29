@@ -91,6 +91,11 @@ export function getSoulStatus(anchorId: string): Promise<SoulStatus> {
   return req<SoulStatus>(`/director/soul/status?anchorId=${encodeURIComponent(anchorId)}`);
 }
 
+/** The character anchor a library image was saved into (or null) — for the canvas Capture-Soul button. */
+export function anchorForImage(imageId: string): Promise<{ anchorId: string; name: string; soul_status: string | null } | null> {
+  return req<{ anchor: { anchorId: string; name: string; soul_status: string | null } | null }>(`/director/anchor-for-image?imageId=${encodeURIComponent(imageId)}`).then((r) => r.anchor);
+}
+
 /**
  * Promote a character anchor to a trained Soul (hard identity lock) — SPENDS credits (reference
  * sheet + Soul training), so this is approval-gated. NON-BLOCKING: kicks the async job and returns

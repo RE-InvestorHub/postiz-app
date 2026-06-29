@@ -15,6 +15,7 @@ import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types'
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
+import { CanvasSoulButton } from '@gitroom/frontend/components/studio/studio.soul-control';
 import { captureComponent, COMPONENT_KINDS } from '@gitroom/frontend/components/studio/studio.director-client';
 
 type ModelOpt = { value: string; label: string; credits: string };
@@ -340,6 +341,8 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
                 <button type="button" onClick={() => { setCaptureName(''); setCaptureOpen(true); }}
                   title="Save this image as a reusable Scene Director component (character / scene / lighting / …)"
                   className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10">★ Save as component</button>
+                {/* Capture Soul — dimmed until this image is saved as a Character; then it trains a Soul. */}
+                <CanvasSoulButton imageId={selected.id} />
                 {selected.spec && (
                   <button type="button" onClick={onTweak}
                     title="Reopen the Scene Director with this shot's spec to tweak + re-render a variant"

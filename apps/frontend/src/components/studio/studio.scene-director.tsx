@@ -88,32 +88,70 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
 
       {open && (
         <div className="px-[14px] pb-[14px] flex flex-col gap-[12px]">
-          <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
-            {dims.map((d) => (
-              <label key={d.id} className="flex flex-col gap-[3px]">
-                <span className="flex items-center gap-[4px]">
-                  <span className="text-[11px] font-[600] text-btnText flex-1" title={d.hint}>{d.label}</span>
-                  {/* For a SAVED character, offer Soul ID promotion (identity lock across campaigns). */}
-                  {d.component === 'character' && sel[d.id]?.startsWith('c:') && (
-                    <SoulControl anchorId={sel[d.id].slice(2)} name={d.components.find((c) => c.id === sel[d.id].slice(2))?.name} />
-                  )}
-                  {sel[d.id] && sel[d.id] !== 'auto' && (
-                    <button type="button" onClick={(e) => { e.preventDefault(); setLocked((l) => ({ ...l, [d.id]: !l[d.id] })); }}
-                      title={locked[d.id] ? 'Locked — the agent keeps this exactly' : 'Lock this choice (agent won\'t change it)'}
-                      className={'text-[11px] leading-none ' + (locked[d.id] ? 'opacity-100' : 'opacity-40 hover:opacity-80')}>📌</button>
-                  )}
-                </span>
-                <select className={selectCls} value={sel[d.id] || 'auto'} onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
-                  <option value="auto">Auto — let AI decide</option>
-                  {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
-                  {d.components.length > 0 && (
-                    <optgroup label="Saved (reusable)">
-                      {d.components.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
-                    </optgroup>
-                  )}
-                </select>
-              </label>
-            ))}
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-[10px]">
+            {dims.flatMap((d) => {
+              const lockBtn = (active: boolean) => active && (
+                <button type="button" onClick={(e) => { e.preventDefault(); setLocked((l) => ({ ...l, [d.id]: !l[d.id] })); }}
+                  title={locked[d.id] ? 'Locked — the agent keeps this exactly' : 'Lock this choice (agent won\'t change it)'}
+                  className={'text-[11px] leading-none ' + (locked[d.id] ? 'opacity-100' : 'opacity-40 hover:opacity-80')}>📌</button>
+              );
+              // The Subject/Character dimension splits into TWO dropdowns: a Subject (presets) and a
+              // separate Character (the user's SAVED characters) — the latter only when any exist.
+              // Both write the same sel[d.id] (mutually exclusive: a saved character IS the subject).
+              if (d.component === 'character') {
+                const isChar = sel[d.id]?.startsWith('c:');
+                const cells = [
+                  <label key={`${d.id}-subject`} className="flex flex-col gap-[3px]">
+                    <span className="flex items-center gap-[4px]">
+                      <span className="text-[11px] font-[600] text-btnText flex-1" title="Who/what the hero is — a subject type, or pick a saved character →">Subject</span>
+                      {!isChar && lockBtn(!!sel[d.id] && sel[d.id] !== 'auto')}
+                    </span>
+                    <select className={selectCls} value={isChar ? 'auto' : (sel[d.id] || 'auto')}
+                      onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
+                      <option value="auto">{isChar ? 'Using saved character →' : 'Auto — let AI decide'}</option>
+                      {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
+                    </select>
+                  </label>,
+                ];
+                if (d.components.length > 0) {
+                  cells.push(
+                    <label key={`${d.id}-character`} className="flex flex-col gap-[3px]">
+                      <span className="flex items-center gap-[4px]">
+                        <span className="text-[11px] font-[600] text-btnText flex-1" title="Reuse one of your saved characters (locks identity; train a Soul for an exact match)">Character</span>
+                        {isChar && (
+                          <SoulControl anchorId={sel[d.id].slice(2)} name={d.components.find((c) => c.id === sel[d.id].slice(2))?.name} />
+                        )}
+                        {isChar && lockBtn(true)}
+                      </span>
+                      <select className={selectCls} value={isChar ? sel[d.id] : ''}
+                        onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value || 'auto' }))}>
+                        <option value="">— No saved character —</option>
+                        {d.components.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
+                      </select>
+                    </label>
+                  );
+                }
+                return cells;
+              }
+              // Every other dimension: one dropdown (presets + any saved reusable components).
+              return [
+                <label key={d.id} className="flex flex-col gap-[3px]">
+                  <span className="flex items-center gap-[4px]">
+                    <span className="text-[11px] font-[600] text-btnText flex-1" title={d.hint}>{d.label}</span>
+                    {lockBtn(!!sel[d.id] && sel[d.id] !== 'auto')}
+                  </span>
+                  <select className={selectCls} value={sel[d.id] || 'auto'} onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
+                    <option value="auto">Auto — let AI decide</option>
+                    {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
+                    {d.components.length > 0 && (
+                      <optgroup label="Saved (reusable)">
+                        {d.components.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
+                </label>,
+              ];
+            })}
           </div>
 
           <div className="flex flex-wrap items-center gap-[10px]">

@@ -11,13 +11,13 @@
 
 import { FC, useCallback, useEffect, useState } from 'react';
 import { useToaster } from '@gitroom/react/toaster/toaster';
-import { getSoulStatus, startSoulTraining, removeSoul, SoulStatus } from '@gitroom/frontend/components/studio/studio.director-client';
+import { getSoulStatus, startSoulTraining, removeSoul, anchorForImage, SoulStatus } from '@gitroom/frontend/components/studio/studio.director-client';
 import { getCredits } from '@gitroom/frontend/components/studio/studio.account-client';
 
 // Rough estimate shown in the confirm: 8-frame reference sheet (~16 cr) + Soul training (~25 cr).
 const EST_CREDITS = 41;
 
-export const SoulControl: FC<{ anchorId: string; name?: string }> = ({ anchorId, name }) => {
+export const SoulControl: FC<{ anchorId: string; name?: string; variant?: 'inline' | 'button' }> = ({ anchorId, name, variant = 'inline' }) => {
   const toaster = useToaster();
   const [status, setStatus] = useState<SoulStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -99,23 +99,67 @@ export const SoulControl: FC<{ anchorId: string; name?: string }> = ({ anchorId,
   }, [anchorId, name, busy, toaster]);
 
   const st = status?.soul_status;
+  const btn = variant === 'button';
+  // Button variant matches the canvas action row (h-36); inline is the tiny Scene Director pill.
+  const promoteCls = btn
+    ? 'h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10 inline-flex items-center gap-[4px]'
+    : 'inline-flex items-center gap-[3px] text-[10px] font-[600] text-ai opacity-80 hover:opacity-100 leading-none';
+  const sz = btn ? 'text-[12px]' : 'text-[10px]';
 
   if (st === 'ready') {
     return (
-      <span className="inline-flex items-center gap-[4px] leading-none">
-        <span className="text-[10px] font-[700] text-ai" title="Identity-locked: shots of this character use the trained Soul">🔒 Soul</span>
+      <span className={'inline-flex items-center gap-[4px] leading-none ' + (btn ? 'h-[36px] px-[12px] rounded-[8px] border border-ai/40' : '')}>
+        <span className={'font-[700] text-ai ' + sz} title="Identity-locked: shots of this character use the trained Soul">🔒 Soul</span>
         <button type="button" onClick={(e) => { e.preventDefault(); void remove(); }} disabled={busy}
           title="Remove this Soul (clears the link + training frames; the Higgsfield Soul stays in your account)"
-          className="text-[10px] text-textItemBlur hover:text-red-400 leading-none">✕</button>
+          className={'text-textItemBlur hover:text-red-400 leading-none ' + sz}>✕</button>
       </span>
     );
   }
   if (busy || st === 'training') {
-    return <span className="inline-flex items-center gap-[3px] text-[10px] text-textItemBlur leading-none" title="Training the Soul (~8–15 min) — you'll be notified when it's ready"><span className="animate-spin">↻</span> training…</span>;
+    return <span className={'inline-flex items-center gap-[3px] text-textItemBlur leading-none ' + sz + (btn ? ' h-[36px] px-[12px] rounded-[8px] border border-newBorder' : '')} title="Training the Soul (~8–15 min) — you'll be notified when it's ready"><span className="animate-spin">↻</span> training…</span>;
   }
   return (
     <button type="button" onClick={(e) => { e.preventDefault(); void promote(); }}
       title={`Promote to a trained Soul ID (~${EST_CREDITS} credits) — locks this character's identity across campaigns`}
-      className="inline-flex items-center gap-[3px] text-[10px] font-[600] text-ai opacity-80 hover:opacity-100 leading-none">⭐ Soul</button>
+      className={promoteCls}>⭐ {btn ? 'Capture Soul' : 'Soul'}</button>
   );
+};
+
+/**
+ * Canvas Capture-Soul button — sits next to "Save as component". DIMMED with an instructional
+ * tooltip until the selected image has been saved as a Character; then it becomes the live
+ * SoulControl (button variant) for that character.
+ */
+export const CanvasSoulButton: FC<{ imageId: string }> = ({ imageId }) => {
+  const [anchor, setAnchor] = useState<{ anchorId: string; name: string } | null>(null);
+
+  const resolve = useCallback(async () => {
+    try {
+      const a = await anchorForImage(imageId);
+      setAnchor(a?.anchorId ? { anchorId: a.anchorId, name: a.name } : null);
+    } catch { setAnchor(null); }
+  }, [imageId]);
+
+  useEffect(() => { void resolve(); }, [resolve]);
+  // Re-resolve when a component is saved (director-refresh) or a soul changes (soul-refresh).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const on = () => void resolve();
+    window.addEventListener('reinvestorhub:director-refresh', on);
+    window.addEventListener('reinvestorhub:soul-refresh', on);
+    return () => {
+      window.removeEventListener('reinvestorhub:director-refresh', on);
+      window.removeEventListener('reinvestorhub:soul-refresh', on);
+    };
+  }, [resolve]);
+
+  if (!anchor) {
+    return (
+      <button type="button" disabled
+        title="Lock this person's identity across campaigns. First click ★ Save as component → choose Character → give it a name. Then this button trains a reusable Soul of that character."
+        className="h-[36px] px-[14px] rounded-[8px] border border-newBorder text-textItemBlur text-[12px] font-[600] opacity-50 cursor-not-allowed inline-flex items-center gap-[4px]">⭐ Capture Soul</button>
+    );
+  }
+  return <SoulControl anchorId={anchor.anchorId} name={anchor.name} variant="button" />;
 };
