@@ -1,15 +1,12 @@
 'use client';
 
-import { FC, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FC, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 import clsx from 'clsx';
 import {
   StudioProvider,
   useStudio,
 } from '@gitroom/frontend/components/studio/studio.store';
-import {
-  buildStudioCapabilities,
-  Capability,
-} from '@gitroom/frontend/components/studio/studio.capabilities';
+import { buildStudioCapabilities } from '@gitroom/frontend/components/studio/studio.capabilities';
 import { generateAsset } from '@gitroom/frontend/components/studio/studio.generate';
 import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.storyboard-client';
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
@@ -19,9 +16,7 @@ import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.a
 import { StudioImagesPanel } from '@gitroom/frontend/components/studio/studio.images-panel';
 import { RemotionEditorPanel } from '@gitroom/frontend/components/studio/studio.remotion-editor';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
-import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.avatar-cast';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
-import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioVideoLibraryPanel } from '@gitroom/frontend/components/studio/studio.video-library-panel';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
@@ -29,13 +24,9 @@ import { SoulTrainingWatcher } from '@gitroom/frontend/components/studio/studio.
 import { StudioAssetsPanel } from '@gitroom/frontend/components/studio/studio.assets-panel';
 import { StudioBrandPanel } from '@gitroom/frontend/components/studio/studio.brand-panel';
 import { StudioComposerHub } from '@gitroom/frontend/components/studio/studio.composer-hub';
-import { StudioVideoComposerPanel } from '@gitroom/frontend/components/studio/studio.video-composer-panel';
-import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import {
   StudioTab,
   modelsForKind,
-  STUDIO_ASPECT_RATIOS,
-  STUDIO_RESOLUTIONS,
 } from '@gitroom/frontend/components/studio/studio.types';
 
 /**
@@ -77,22 +68,9 @@ const IconAvatar: FC = () => (
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
-// Labeled section divider — reused across stacked tab sections (e.g. the Video tab).
-const SectionDivider: FC<{ label: string }> = ({ label }) => (
-  <div className="flex items-center gap-[10px]">
-    <div className="flex-1 h-px bg-newBorder" />
-    <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">{label}</span>
-    <div className="flex-1 h-px bg-newBorder" />
-  </div>
-);
 const IconProject: FC = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
     <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-  </svg>
-);
-const IconSpark: FC = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 2l1.9 5.7a2 2 0 0 0 1.3 1.3L21 11l-5.8 2a2 2 0 0 0-1.3 1.3L12 20l-1.9-5.7A2 2 0 0 0 8.8 13L3 11l5.8-2a2 2 0 0 0 1.3-1.3L12 2z" />
   </svg>
 );
 const IconComposer: FC = () => (
@@ -120,149 +98,21 @@ const TABS: { key: StudioTab; label: string; icon: ReactNode }[] = [
   { key: 'composer', label: 'Composer', icon: <IconComposer /> },
 ];
 
-const selectCls =
-  'h-[40px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[13px] text-btnText';
-
-// The real generation control block (Images / Video), wired to `studio.*` caps.
-const GeneratePanel: FC<{ caps: Record<string, Capability>; kind: string }> = ({ caps, kind }) => {
-  const { state } = useStudio();
-  const generating = state.status === 'generating';
-  const tabResults = state.results.filter((r) => r.tab === state.activeTab);
-  // "Add to ad" — link a generated asset to the active Ad (project-agnostic ref).
-  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
-  const addToAd = async (id: string) => {
-    if (!state.activeAdId) return;
-    try {
-      await addObject({ adId: state.activeAdId, type: kind === 'video' ? 'clip' : 'image', id });
-      setAddedIds((s) => new Set(s).add(id));
-    } catch { /* surfaced elsewhere; keep the grid resilient */ }
-  };
-  // Image models on the Images tab, video models (Veo/Seedance/Kling/…) on Video.
-  const models = modelsForKind(kind);
-
-  // Keep the selected model valid for this tab — when you switch tabs, snap to the
-  // tab's first model if the current one belongs to the other kind.
-  useEffect(() => {
-    if (!models.some((m) => m.value === state.model)) {
-      caps['studio.selectModel'].handler({ model: models[0].value });
-    }
-  }, [kind, state.model, caps, models]);
-
-  return (
-    <div className="flex flex-col gap-[15px]">
-      <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[16px] flex flex-col gap-[12px]">
-        <div className="flex items-center gap-[8px]">
-          <span className="w-[28px] h-[28px] rounded-[8px] bg-ai/15 text-ai flex items-center justify-center"><IconSpark /></span>
-          <span className="text-[14px] font-[600] text-btnText">Generate {kind} with AI</span>
-        </div>
-        <textarea
-          value={state.prompt}
-          onChange={(e) => caps['studio.setPrompt'].handler({ prompt: e.target.value })}
-          placeholder={`Describe the ${kind} you want…`}
-          rows={3}
-          className="w-full p-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur resize-y"
-        />
-        <div className="flex flex-wrap gap-[10px] items-center">
-          <select value={state.model} onChange={(e) => caps['studio.selectModel'].handler({ model: e.target.value })} className={selectCls}>
-            {models.map((m) => (<option key={m.value} value={m.value}>{m.label} ({m.credits})</option>))}
-          </select>
-          <select value={state.aspectRatio} onChange={(e) => caps['studio.setAspectRatio'].handler({ aspectRatio: e.target.value })} className={selectCls}>
-            {STUDIO_ASPECT_RATIOS.map((a) => (<option key={a} value={a}>{a}</option>))}
-          </select>
-          <select value={state.resolution} onChange={(e) => caps['studio.setResolution'].handler({ resolution: e.target.value })} className={selectCls}>
-            {STUDIO_RESOLUTIONS.map((r) => (<option key={r} value={r}>{r.toUpperCase()}</option>))}
-          </select>
-          <button
-            type="button"
-            disabled={generating}
-            onClick={() => caps['studio.generate'].handler()}
-            className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white font-[600] disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
-          >
-            {generating ? 'Generating…' : 'Generate'}
-          </button>
-        </div>
-        {state.status === 'error' && state.error && (
-          <div className="text-[12px] text-red-400">{state.error}</div>
-        )}
-      </div>
-
-      {/* Casting: drive a registered avatar into a video (Video tab only). */}
-      {kind === 'video' && <StudioAvatarCast />}
-
-      {tabResults.length > 0 && (
-        <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
-          {tabResults.map((r) => (
-            <div key={r.id} className="rounded-[8px] overflow-hidden border border-newBorder flex flex-col">
-              <a href={r.url} target="_blank" rel="noreferrer" className="block">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={r.url} alt={r.prompt.slice(0, 60)} className="w-full h-auto" />
-              </a>
-              <button
-                type="button"
-                disabled={!state.activeAdId || addedIds.has(r.id)}
-                onClick={() => addToAd(r.id)}
-                className="h-[30px] text-[12px] font-[600] text-btnText bg-btnPrimary disabled:opacity-50"
-                title={state.activeAdId ? 'Add this asset to the active ad' : 'Select a campaign + ad first'}
-              >
-                {addedIds.has(r.id) ? 'Added ✓' : '+ Add to ad'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Assets already on the active Ad, cascaded into this tab by type. */}
-      <StudioAdAssetShelf objectType={kind === 'video' ? 'clip' : 'image'} />
-
-      {/* Divider between AI generation results and the user-upload zone */}
-      <div className="flex items-center gap-[10px]">
-        <div className="flex-1 h-px bg-newBorder" />
-        <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">
-          or upload your own
-        </span>
-        <div className="flex-1 h-px bg-newBorder" />
-      </div>
-
-      <StudioDropZone accept={kind === 'video' ? 'video' : 'image'} />
-    </div>
-  );
-};
-
-// Video tab — restructured into a media-bin: brand-scoped Library (top), Scene Director (keyframe
-// stills), the keyframe tray (staging), then ONE generation surface with a mode switch
-// (Brief → short · Single clip · Character previs). Consolidates the former three stacked windows.
-const VideoTabContent: FC<{ caps: Record<string, Capability> }> = ({ caps }) => {
+// Video tab — the Scene Director is the generation ENGINE (above the Library/canvas, matching the
+// Images tab). The former three stacked generators (Brief→short · Single clip · Character previs)
+// were removed; the Director now drives keyframe / clip / video generation. (Plan 2.)
+const VideoTabContent: FC = () => {
   const { state } = useStudio();
   const brandKitId = state.composerBrandKitId || 'default';
-  const [mode, setMode] = useState<'brief' | 'clip' | 'previs'>('brief');
-  const MODES: { key: typeof mode; label: string; hint: string }[] = [
-    { key: 'brief', label: 'Brief → short', hint: 'Compose a short from a brief (the Ad seeds it)' },
-    { key: 'clip', label: 'Single clip', hint: 'Generate one clip from a prompt' },
-    { key: 'previs', label: 'Character previs', hint: 'Generate → capture → restage a character' },
-  ];
   return (
     <div className="flex flex-col gap-[18px]">
-      {/* Scene Director — tops the tab (above the Library/canvas), matching the Images tab. */}
+      {/* Scene Director — the Video generation engine (keyframe · clip · gap-fill video). */}
+      {/* context-awareness (Images vs Video) + output selector + Motion section land in T2. */}
       <StudioSceneDirector brandKitId={brandKitId} />
 
       {/* Library — the brand's clips/shorts + keyframe stills (media-aware canvas). Right-click a
           keyframe to number it; the numbered keyframes (in order) are the sequence for the next render. */}
       <StudioVideoLibraryPanel />
-
-      {/* Generate — one surface, mode-switched (consolidates the former 3 stacked generators). */}
-      <SectionDivider label="generate" />
-      <div className="flex flex-wrap gap-[8px]">
-        {MODES.map((m) => (
-          <button key={m.key} type="button" onClick={() => setMode(m.key)} title={m.hint}
-            className={'h-[34px] px-[14px] rounded-[8px] text-[12px] font-[600] border transition-colors '
-              + (mode === m.key ? 'bg-boxFocused text-textItemFocused border-newBorder' : 'border-newBorder text-textItemBlur hover:bg-boxHover')}>
-            {m.label}
-          </button>
-        ))}
-      </div>
-      {mode === 'brief' && <StudioVideoComposerPanel />}
-      {mode === 'clip' && <GeneratePanel caps={caps} kind="video" />}
-      {mode === 'previs' && <StudioPrevisPanel />}
     </div>
   );
 };
@@ -364,7 +214,7 @@ const StudioInner: FC = () => {
         {state.activeTab === 'images' && (
           <StudioImagesPanel caps={caps} models={modelsForKind('images')} />
         )}
-        {state.activeTab === 'video' && <VideoTabContent caps={caps} />}
+        {state.activeTab === 'video' && <VideoTabContent />}
         {state.activeTab === 'audio' && (
           <div className="flex flex-col gap-[15px]">
             <StudioAudioPanel />
