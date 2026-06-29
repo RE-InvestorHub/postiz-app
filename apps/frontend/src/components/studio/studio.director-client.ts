@@ -93,20 +93,27 @@ export function getSoulStatus(anchorId: string): Promise<SoulStatus> {
 
 /**
  * Promote a character anchor to a trained Soul (hard identity lock) — SPENDS credits (reference
- * sheet + Soul training), so this is approval-gated. ASYNC: sheet → training → ready takes minutes;
- * start it (→ jobId) and poll. Returns the trained Soul result when ready.
+ * sheet + Soul training), so this is approval-gated. NON-BLOCKING: kicks the async job and returns
+ * its jobId immediately; the global SoulTrainingWatcher polls to completion + notifies. (Training
+ * takes ~8–15 min and runs server-side regardless of the client.)
  */
-export async function trainSoul(anchorId: string, model: 'soul-2' | 'soul-cinematic' = 'soul-2'): Promise<{ anchorId: string; soul_id: string; soul_status: string; soul_model: string }> {
-  const { jobId } = await req<{ jobId: string }>('/director/soul/train', {
+export function startSoulTraining(anchorId: string, model: 'soul-2' | 'soul-cinematic' = 'soul-2'): Promise<{ jobId: string; status: string }> {
+  return req<{ jobId: string; status: string }>('/director/soul/train', {
     method: 'POST',
     body: JSON.stringify({ anchorId, model }),
   });
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  for (let i = 0; i < 300; i++) { // up to ~25 min (training is slow)
-    await sleep(5000);
-    const job = await req<{ status: string; result?: any; error?: string }>(`/director/soul/status?jobId=${encodeURIComponent(jobId)}`);
-    if (job.status === 'done') return job.result;
-    if (job.status === 'error') throw new Error(job.error || 'Soul training failed.');
-  }
-  throw new Error('Soul training timed out.');
+}
+
+/** Poll a soul-training job once (used by the global watcher). */
+export function pollSoulJob(jobId: string): Promise<{ status: string; result?: { soul_id: string }; error?: string }> {
+  return req(`/director/soul/status?jobId=${encodeURIComponent(jobId)}`);
+}
+
+/**
+ * Remove a character's Soul — clears the Soul link (reverts to reference conditioning) + deletes the
+ * local training frames. NO spend. The Higgsfield-side Soul cannot be deleted via their CLI, so it
+ * remains in the Higgsfield account; the response's `higgsfieldNote` explains this.
+ */
+export function removeSoul(anchorId: string): Promise<{ anchorId: string; removedSoulId: string | null; deletedFrames: number; higgsfieldDeleted: boolean; higgsfieldNote: string | null }> {
+  return req('/director/soul/remove', { method: 'POST', body: JSON.stringify({ anchorId }) });
 }
