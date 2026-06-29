@@ -29,11 +29,11 @@ export const StudioKeyframeTray: FC = () => {
   return (
     <div className="rounded-[8px] border border-ai/40 bg-ai/5 p-[12px] flex flex-col gap-[10px]">
       <div className="flex items-center gap-[8px]">
-        <span className="text-[13px] font-[700] text-ai">▦ Keyframes</span>
+        <span className="text-[13px] font-[700] text-ai">▦ Keyframe sequence</span>
         <span className="text-[11px] text-textItemBlur flex-1">
           {frames.length
-            ? `${frames.length} staged — drag to set order. The gap-fill generator fills the motion between them.`
-            : 'Send images here from the Images tab (Select → Send to Video), the Library, or Scene Director below.'}
+            ? `${frames.length} staged for the next render — drag to set order. The gap-fill generator fills the motion between them.`
+            : 'The ordered frames for your next video. Add them from the Library’s Keyframes, the Images tab (Select → Send to Video), or Scene Director.'}
         </span>
         {frames.length > 0 && (
           <button type="button" onClick={() => dispatch({ type: 'CLEAR_VIDEO_KEYFRAMES' })}

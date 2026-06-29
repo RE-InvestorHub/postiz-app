@@ -243,14 +243,13 @@ const VideoTabContent: FC<{ caps: Record<string, Capability> }> = ({ caps }) => 
   ];
   return (
     <div className="flex flex-col gap-[18px]">
+      {/* Scene Director — tops the tab (above the Library/canvas), matching the Images tab. */}
+      <StudioSceneDirector brandKitId={brandKitId} />
+
       {/* Library — the brand's clips/shorts + keyframe stills (media-aware canvas). */}
       <StudioVideoLibraryPanel />
 
-      {/* Scene Director — direct a keyframe still; it lands in the library + can be staged below. */}
-      <SectionDivider label="direct a keyframe" />
-      <StudioSceneDirector brandKitId={brandKitId} />
-
-      {/* Keyframe tray — staging area for the next generation (Images→Video bridge drops here). */}
+      {/* Keyframe sequence — the ordered staging strip for the next generation. */}
       <StudioKeyframeTray />
 
       {/* Generate — one surface, mode-switched (consolidates the former 3 stacked generators). */}
