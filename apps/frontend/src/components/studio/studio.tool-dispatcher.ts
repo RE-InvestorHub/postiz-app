@@ -132,6 +132,7 @@ export function requiresApproval(toolName: string): boolean {
     // (reference sheet + Soul training) → deliberately NOT here; it stays gated (human-confirmed).
     // director.removeSoul clears the Soul link + deletes local training frames — NO spend → auto.
     'director.removeSoul',
+    // NOTE: director.renderShot / renderClip / gapFill all SPEND (image/video credits) → stay gated.
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',

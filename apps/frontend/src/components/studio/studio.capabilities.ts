@@ -40,7 +40,7 @@ import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel,
 import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit, deriveLogoSlot, LogoSlot } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
-import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo } from '@gitroom/frontend/components/studio/studio.director-client';
+import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, renderDirectorShot } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
@@ -893,6 +893,26 @@ export function buildStudioCapabilities(
         const brandKitId = p.brandKitId || getState().composerBrandKitId || 'default';
         const r = await renderDirectorClip(brandKitId, p.spec || {}, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, durationS: p.durationS, firstFrameUrl: p.firstFrameUrl });
         refreshVideoLibrary();
+        return r;
+      },
+    },
+    {
+      // Scene Director → one-shot render a STILL from a spec (the human "⚡ Generate" on the Images
+      // Director). spec may carry `style` (photoreal/cartoon/3D/anime/…) + a free-text `description`.
+      // SPENDS image credits → gated (omitted from AUTO_APPROVE). Lands in the brand image library.
+      id: 'director.renderShot',
+      namespace: 'director',
+      label: 'One-shot render a still from a Scene Director spec (spends image credits)',
+      params: ['spec', 'mode', 'aspectRatio', 'anchorId', 'brandKitId'],
+      handler: async (p: { spec?: Record<string, unknown>; mode?: string; aspectRatio?: string; anchorId?: string; brandKitId?: string } = {}) => {
+        const brandKitId = p.brandKitId || getState().composerBrandKitId || 'default';
+        const r = await renderDirectorShot(brandKitId, {
+          ...(p.spec || {}),
+          renderMode: p.mode === 'single' ? 'single' : 'layered',
+          aspectRatio: p.aspectRatio || '4:5',
+          anchorId: p.anchorId || null,
+        });
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh', { detail: { selectImageId: r.id } }));
         return r;
       },
     },
