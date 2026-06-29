@@ -8,7 +8,7 @@
 
 import { FC, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
-import { listDirectorDimensions, DirectorDimension } from '@gitroom/frontend/components/studio/studio.director-client';
+import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate } from '@gitroom/frontend/components/studio/studio.director-client';
 
 const ASPECTS = [
   { id: '4:5', label: 'Feed 4:5' }, { id: '1:1', label: 'Square 1:1' },
@@ -23,6 +23,23 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
   const [locked, setLocked] = useState<Record<string, boolean>>({}); // dimId -> locked (agent must not change)
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
   const [aspect, setAspect] = useState('4:5');
+  const [templates, setTemplates] = useState<DirectorTemplate[]>([]);
+
+  const loadTemplates = () => listDirectorTemplates(brandKitId).then(setTemplates).catch(() => {});
+  useEffect(() => { if (open) loadTemplates(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open, brandKitId]);
+
+  const applyTemplate = (id: string) => {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    setSel(t.selection || {}); setLocked({});
+    setRenderMode(t.renderMode === 'single' ? 'single' : 'layered'); setAspect(t.aspect || '4:5');
+  };
+  const onSaveTemplate = async () => {
+    const name = typeof window !== 'undefined' ? window.prompt('Name this shot template:') : '';
+    if (!name?.trim()) return;
+    try { await saveDirectorTemplate({ name: name.trim(), selection: sel, renderMode, aspect, brandKitId }); await loadTemplates(); }
+    catch { /* surfaced via no-op */ }
+  };
 
   const reload = () => { if (open) listDirectorDimensions(brandKitId).then(setDims).catch(() => {}); };
   useEffect(reload, [open, brandKitId]);
@@ -106,6 +123,16 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
             <select value={aspect} onChange={(e) => setAspect(e.target.value)} className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Aspect ratio">
               {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
             </select>
+            {/* Templates — load a saved selection set, or save the current one. */}
+            {templates.length > 0 && (
+              <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ''; }}
+                title="Load a saved template" className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">
+                <option value="">Templates…</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+            <button type="button" onClick={onSaveTemplate} title="Save the current picks as a reusable template"
+              className="h-[32px] px-[10px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">Save template</button>
             <button type="button" onClick={onDevelop} className="ml-auto h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90">
               ✨ Develop with AI
             </button>
