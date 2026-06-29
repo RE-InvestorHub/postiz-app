@@ -153,6 +153,13 @@ export const StudioVideoEditorNLE: FC = () => {
 
   const newTimeline = () => { dispatch({ type: 'SET_TIMELINE', timeline: emptyEDL({ fps }) }); setSelectedClipId(null); setRenderUrl(null); };
 
+  // Append a text overlay to the text track at the playhead (default 2s).
+  const addText = useCallback(() => {
+    const tTrack = edl.tracks.find((t) => t.kind === 'text') || edl.tracks[edl.tracks.length - 1];
+    const at = Math.round((timelineState.current?.getTime?.() ?? 0) * fps);
+    dispatch({ type: 'TL_ADD_CLIP', trackId: tTrack.id, clip: { kind: 'text', id: `tx_${Math.random().toString(36).slice(2, 7)}`, from: at, durationInFrames: 2 * fps, text: 'New text' } });
+  }, [edl, fps, dispatch]);
+
   // Player scale — fit the composition into the canvas box.
   const playerStyle = useMemo(() => ({ width: '100%', height: '100%' }), []);
 
@@ -163,6 +170,7 @@ export const StudioVideoEditorNLE: FC = () => {
         <span className="text-[14px] font-[700] text-btnText">🎬 Video Editor</span>
         <span className="text-[11px] text-textItemBlur">{edl.tracks.reduce((n, t) => n + t.clips.length, 0)} clips · {(durationInFrames / fps).toFixed(1)}s</span>
         <button type="button" onClick={splitAtCursor} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover">✂ Split</button>
+        <button type="button" onClick={addText} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover">+ Text</button>
         <button type="button" onClick={newTimeline} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">New</button>
         <span className="ml-auto" />
         <label className="flex items-center gap-[6px] text-[12px] text-textItemBlur">Format
@@ -222,6 +230,11 @@ export const StudioVideoEditorNLE: FC = () => {
           ) : (
             <>
               <span className="text-[11px] text-textItemBlur truncate">{selected.clip.kind} · {selected.clip.id}</span>
+              {selected.clip.kind === 'text' && (
+                <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Text</span>
+                  <input value={(selected.clip as { text?: string }).text ?? ''} onChange={(e) => patchSelected({ text: e.target.value } as Partial<Clip>)}
+                    className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
+              )}
               {(selected.clip.kind === 'video' || selected.clip.kind === 'audio') && (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Volume {Math.round(((selected.clip as VideoClip).volume ?? 1) * 100)}%</span>
                   <input type="range" min={0} max={1} step={0.05} value={(selected.clip as VideoClip).volume ?? 1} onChange={(e) => patchSelected({ volume: Number(e.target.value) } as Partial<Clip>)} /></label>
