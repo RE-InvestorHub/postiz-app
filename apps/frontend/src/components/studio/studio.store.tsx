@@ -26,6 +26,9 @@ import {
   emptyConsentDraft,
   STUDIO_SLOT_COUNT,
 } from '@gitroom/frontend/components/studio/studio.types';
+import type { TimelineEDL, Clip, Track } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
+import { emptyEDL } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
+import * as tl from '@gitroom/frontend/components/studio/timeline/timeline.reducer';
 
 export type StudioAction =
   | { type: 'SET_TAB'; tab: StudioTab }
@@ -52,6 +55,15 @@ export type StudioAction =
   | { type: 'REORDER_VIDEO_KEYFRAMES'; ids: string[] }
   | { type: 'SET_VIDEO_KEYFRAMES'; keyframes: VideoKeyframe[] }
   | { type: 'CLEAR_VIDEO_KEYFRAMES' }
+  // Video Editor — the timeline EDL (single source of truth for the NLE + the agent).
+  | { type: 'SET_TIMELINE'; timeline: TimelineEDL }
+  | { type: 'TL_ADD_CLIP'; trackId: string; clip: Clip }
+  | { type: 'TL_APPEND_CLIP'; trackId: string; clip: Clip }
+  | { type: 'TL_REMOVE_CLIP'; trackId: string; clipId: string }
+  | { type: 'TL_PATCH_CLIP'; trackId: string; clipId: string; patch: Partial<Clip> }
+  | { type: 'TL_SPLIT_CLIP'; trackId: string; clipId: string; atFrame: number }
+  | { type: 'TL_ADD_TRACK'; track: Track }
+  | { type: 'TL_SET_GLOBAL'; patch: Partial<Pick<TimelineEDL, 'fps' | 'format' | 'width' | 'height'>> }
   | { type: 'OPEN_FLOATING_AGENT'; seed?: string; kind?: string; brandKitId?: string; slot?: string }
   | { type: 'CLOSE_FLOATING_AGENT' }
   | { type: 'RESET' };
@@ -78,6 +90,7 @@ export const initialStudioState: StudioState = {
   composerTemplateId: '',
   selectedImageId: null,
   videoKeyframes: [],
+  timeline: emptyEDL(),
   floatingAgent: null,
 };
 
@@ -161,6 +174,22 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
       return { ...state, videoKeyframes: action.keyframes };
     case 'CLEAR_VIDEO_KEYFRAMES':
       return { ...state, videoKeyframes: [] };
+    case 'SET_TIMELINE':
+      return { ...state, timeline: action.timeline };
+    case 'TL_ADD_CLIP':
+      return { ...state, timeline: tl.addClip(state.timeline, action.trackId, action.clip) };
+    case 'TL_APPEND_CLIP':
+      return { ...state, timeline: tl.appendClip(state.timeline, action.trackId, action.clip) };
+    case 'TL_REMOVE_CLIP':
+      return { ...state, timeline: tl.removeClip(state.timeline, action.trackId, action.clipId) };
+    case 'TL_PATCH_CLIP':
+      return { ...state, timeline: tl.patchClip(state.timeline, action.trackId, action.clipId, action.patch) };
+    case 'TL_SPLIT_CLIP':
+      return { ...state, timeline: tl.splitClip(state.timeline, action.trackId, action.clipId, action.atFrame) };
+    case 'TL_ADD_TRACK':
+      return { ...state, timeline: tl.addTrack(state.timeline, action.track) };
+    case 'TL_SET_GLOBAL':
+      return { ...state, timeline: tl.setGlobal(state.timeline, action.patch) };
     case 'OPEN_FLOATING_AGENT':
       return { ...state, floatingAgent: { seed: action.seed, kind: action.kind, brandKitId: action.brandKitId, slot: action.slot } };
     case 'CLOSE_FLOATING_AGENT':

@@ -42,6 +42,8 @@ import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pip
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
 import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
+import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
+import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 
 /** Fire the library-refresh event so the Images canvas re-fetches (picks up a new variant). */
 function refreshImageLibrary(): void {
@@ -906,6 +908,59 @@ export function buildStudioCapabilities(
         if (ids.length < 2) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Gap-fill needs ≥2 numbered keyframes.' }); return; }
         const r = await gapFillVideo(brandKitId, ids, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, totalDurationS: p.totalDurationS });
         refreshVideoLibrary();
+        return r;
+      },
+    },
+    {
+      // Video Editor (NLE) — the timeline is a serializable, agent-drivable EDL. These edits mutate
+      // the SAME document the human widget does (the architectural tenet). Curation → auto-approved.
+      id: 'editor.setTimeline',
+      namespace: 'editor',
+      label: 'Replace the whole Video Editor timeline (EDL)',
+      params: ['timeline'],
+      handler: (p: { timeline?: TimelineEDL } = {}) => { if (p.timeline) dispatch({ type: 'SET_TIMELINE', timeline: p.timeline }); },
+    },
+    {
+      id: 'editor.addClip',
+      namespace: 'editor',
+      label: 'Append a clip to a Video Editor track',
+      params: ['trackId', 'clip'],
+      handler: (p: { trackId?: string; clip?: Clip } = {}) => {
+        const trackId = p.trackId || getState().timeline.tracks.find((t) => t.kind === (p.clip?.kind === 'audio' ? 'audio' : p.clip?.kind === 'text' || p.clip?.kind === 'captions' ? 'text' : 'video'))?.id || getState().timeline.tracks[0]?.id;
+        if (trackId && p.clip) dispatch({ type: 'TL_APPEND_CLIP', trackId, clip: p.clip });
+      },
+    },
+    {
+      id: 'editor.removeClip',
+      namespace: 'editor',
+      label: 'Remove a clip from the Video Editor timeline',
+      params: ['trackId', 'clipId'],
+      handler: (p: { trackId?: string; clipId?: string } = {}) => { if (p.trackId && p.clipId) dispatch({ type: 'TL_REMOVE_CLIP', trackId: p.trackId, clipId: p.clipId }); },
+    },
+    {
+      id: 'editor.splitClip',
+      namespace: 'editor',
+      label: 'Split a clip at a timeline frame',
+      params: ['trackId', 'clipId', 'atFrame'],
+      handler: (p: { trackId?: string; clipId?: string; atFrame?: number } = {}) => { if (p.trackId && p.clipId && typeof p.atFrame === 'number') dispatch({ type: 'TL_SPLIT_CLIP', trackId: p.trackId, clipId: p.clipId, atFrame: p.atFrame }); },
+    },
+    {
+      id: 'editor.patchClip',
+      namespace: 'editor',
+      label: 'Edit a clip\'s props (trim/volume/transform/transition)',
+      params: ['trackId', 'clipId', 'patch'],
+      handler: (p: { trackId?: string; clipId?: string; patch?: Partial<Clip> } = {}) => { if (p.trackId && p.clipId && p.patch) dispatch({ type: 'TL_PATCH_CLIP', trackId: p.trackId, clipId: p.clipId, patch: p.patch }); },
+    },
+    {
+      // Render the timeline → MP4 via the (free, local) Remotion render service. A render → GATED.
+      id: 'editor.render',
+      namespace: 'editor',
+      label: 'Render the Video Editor timeline to an MP4',
+      params: ['format'],
+      handler: async (p: { format?: string } = {}) => {
+        const edl = getState().timeline;
+        const r = await enqueueRender({ compositionId: 'Timeline', format: p.format || edl.format || 'reels', props: { tracks: edl.tracks, fps: edl.fps } as never });
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh'));
         return r;
       },
     },
