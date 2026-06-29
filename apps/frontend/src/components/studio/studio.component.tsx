@@ -23,7 +23,6 @@ import { StudioAvatarCast } from '@gitroom/frontend/components/studio/studio.ava
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioPrevisPanel } from '@gitroom/frontend/components/studio/studio.previs-panel';
 import { StudioVideoLibraryPanel } from '@gitroom/frontend/components/studio/studio.video-library-panel';
-import { StudioKeyframeTray } from '@gitroom/frontend/components/studio/studio.keyframe-tray';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
 import { SoulTrainingWatcher } from '@gitroom/frontend/components/studio/studio.soul-watcher';
@@ -246,11 +245,9 @@ const VideoTabContent: FC<{ caps: Record<string, Capability> }> = ({ caps }) => 
       {/* Scene Director — tops the tab (above the Library/canvas), matching the Images tab. */}
       <StudioSceneDirector brandKitId={brandKitId} />
 
-      {/* Library — the brand's clips/shorts + keyframe stills (media-aware canvas). */}
+      {/* Library — the brand's clips/shorts + keyframe stills (media-aware canvas). Right-click a
+          keyframe to number it; the numbered keyframes (in order) are the sequence for the next render. */}
       <StudioVideoLibraryPanel />
-
-      {/* Keyframe sequence — the ordered staging strip for the next generation. */}
-      <StudioKeyframeTray />
 
       {/* Generate — one surface, mode-switched (consolidates the former 3 stacked generators). */}
       <SectionDivider label="generate" />

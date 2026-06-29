@@ -208,19 +208,18 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
     } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
   };
 
-  // Images→Video bridge: stage the checked images as keyframes (persist via the brain so they
-  // land in the Video Library), drop them into the keyframe tray, and jump to the Video tab.
+  // Images→Video bridge: mark the checked images as keyframes (persist via the brain so they land
+  // in the Video Library's Keyframes pool), then jump to the Video tab. The user numbers them there
+  // (right-click a keyframe → set its sequence position).
   const doSendToVideo = async () => {
     if (!checked.size) return;
     setBulkBusy(true); setError(null);
     try {
-      const picked = images.filter((i) => checked.has(i.id));
-      const ids = picked.map((i) => i.id);
+      const ids = images.filter((i) => checked.has(i.id)).map((i) => i.id);
       await addKeyframes(ids);
-      dispatch({ type: 'ADD_VIDEO_KEYFRAMES', keyframes: picked.map((i) => ({ id: i.id, url: i.url, label: i.prompt || undefined })) });
       exitSelect();
       dispatch({ type: 'SET_TAB', tab: 'video' });
-      toaster.show(`Sent ${ids.length} keyframe${ids.length === 1 ? '' : 's'} to the Video tab.`, 'success');
+      toaster.show(`Sent ${ids.length} keyframe${ids.length === 1 ? '' : 's'} to the Video tab — right-click them to set the sequence.`, 'success');
     } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
   };
 

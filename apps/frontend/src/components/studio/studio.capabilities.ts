@@ -887,12 +887,11 @@ export function buildStudioCapabilities(
       id: 'video.sendToVideo',
       namespace: 'video',
       label: 'Send images to the Video tab as keyframes',
-      params: ['imageIds', 'keyframes'],
-      handler: async (p: { imageIds?: string[]; keyframes?: { id: string; url: string; label?: string }[] } = {}) => {
-        const ids = (p.imageIds && p.imageIds.length) ? p.imageIds : (p.keyframes || []).map((k) => k.id);
+      params: ['imageIds'],
+      handler: async (p: { imageIds?: string[] } = {}) => {
+        const ids = p.imageIds || [];
         if (!ids.length) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need imageIds to send to the Video tab.' }); return; }
         await addKeyframes(ids);
-        if (p.keyframes?.length) dispatch({ type: 'ADD_VIDEO_KEYFRAMES', keyframes: p.keyframes });
         dispatch({ type: 'SET_TAB', tab: 'video' });
         refreshVideoLibrary();
       },

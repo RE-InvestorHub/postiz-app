@@ -6,6 +6,7 @@
 // from the pipeline; keyframes are images marked via the Images→Video bridge. Postiz tokens only.
 
 import { FC, useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
@@ -38,12 +39,28 @@ export const StudioVideoLibraryPanel: FC = () => {
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  // Right-click numbering: the ordered sequence lives in the store (state.videoKeyframes); a
+  // keyframe's position = its index+1. Right-click a keyframe tile → set/clear its position.
+  const [ctx, setCtx] = useState<{ item: BrandKeyframe; x: number; y: number } | null>(null);
+  const seq = state.videoKeyframes;
+  const posOf = (id: string) => { const i = seq.findIndex((k) => k.id === id); return i < 0 ? null : i + 1; };
+  const setPosition = (item: BrandKeyframe, n: number) => {
+    const without = seq.filter((k) => k.id !== item.id);
+    const at = Math.max(1, Math.min(n, without.length + 1));
+    const next = [
+      ...without.slice(0, at - 1),
+      { id: item.id, url: item.url, label: item.prompt || undefined },
+      ...without.slice(at - 1),
+    ];
+    dispatch({ type: 'SET_VIDEO_KEYFRAMES', keyframes: next });
+  };
+  const removeFromSeq = (id: string) => dispatch({ type: 'REMOVE_VIDEO_KEYFRAME', id });
+
   const items: LibItem[] = [
     ...(filter === 'keyframes' ? [] : clips),
     ...(filter === 'clips' ? [] : keyframes),
   ];
   const selected = items.find((i) => i.id === selectedId) || null;
-  const trayIds = new Set(state.videoKeyframes.map((k) => k.id));
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -68,11 +85,6 @@ export const StudioVideoLibraryPanel: FC = () => {
     if (!state.activeAdId || !selected || selected.kind !== 'clip') return;
     try { await addObject({ adId: state.activeAdId, type: 'clip', id: selected.id }); setAdded((s) => new Set(s).add(selected.id)); }
     catch { /* keep resilient */ }
-  };
-
-  const addKeyframeToTray = (k: BrandKeyframe) => {
-    dispatch({ type: 'ADD_VIDEO_KEYFRAMES', keyframes: [{ id: k.id, url: k.url, label: k.prompt || undefined }] });
-    toaster.show('Added to the keyframe tray.', 'success');
   };
 
   const doDelete = async () => {
@@ -159,8 +171,11 @@ export const StudioVideoLibraryPanel: FC = () => {
               const ring = selectMode
                 ? (isChecked ? 'border-[#ff7eb6] ring-1 ring-[#ff7eb6]' : 'border-newBorder hover:border-btnText/40')
                 : (it.id === selectedId ? 'border-ai ring-1 ring-ai' : 'border-newBorder hover:border-btnText/40');
+              const pos = it.kind === 'keyframe' ? posOf(it.id) : null;
               return (
                 <button key={it.id} type="button" onClick={() => (selectMode ? toggleCheck(it.id) : setSelectedId(it.id))}
+                  onContextMenu={it.kind === 'keyframe' && !selectMode ? (e) => { e.preventDefault(); setCtx({ item: it as BrandKeyframe, x: e.clientX, y: e.clientY }); } : undefined}
+                  title={it.kind === 'keyframe' && !selectMode ? 'Right-click to set its position in the sequence' : undefined}
                   className={'relative aspect-square rounded-[6px] overflow-hidden border bg-black ' + ring}>
                   {it.kind === 'clip' ? (
                     // Muted inline preview — the thumbnail for a clip tile.
@@ -169,6 +184,10 @@ export const StudioVideoLibraryPanel: FC = () => {
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={it.url} alt={it.prompt || it.id} className="w-full h-full object-cover" />
+                  )}
+                  {/* Sequence position badge — the keyframe's place in the next render's order. */}
+                  {pos != null && (
+                    <span className="absolute top-[3px] left-[3px] h-[20px] min-w-[20px] px-[4px] rounded-full bg-ai text-white text-[11px] font-[800] leading-[20px] text-center shadow">{pos}</span>
                   )}
                   {/* Type chip — clip vs keyframe, instantly identifiable. */}
                   <span className={'absolute bottom-[3px] left-[3px] right-[3px] truncate rounded-[4px] text-white text-[9px] font-[700] leading-none px-[4px] py-[3px] text-center '
@@ -208,11 +227,17 @@ export const StudioVideoLibraryPanel: FC = () => {
                   className="h-[36px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] disabled:opacity-50">
                   {added.has(selected.id) ? 'Added ✓' : '+ Add to ad'}
                 </button>
+              ) : posOf(selected.id) != null ? (
+                <span className="h-[36px] px-[14px] rounded-[8px] bg-ai/15 text-ai text-[12px] font-[700] flex items-center gap-[6px]"
+                  title="Right-click the tile in the library to change its position">
+                  <span className="h-[18px] min-w-[18px] px-[3px] rounded-full bg-ai text-white text-[10px] font-[800] leading-[18px] text-center">{posOf(selected.id)}</span>
+                  in sequence
+                </span>
               ) : (
-                <button type="button" disabled={trayIds.has(selected.id)} onClick={() => addKeyframeToTray(selected as BrandKeyframe)}
-                  title="Stage this keyframe in the tray for the next video generation"
-                  className="h-[36px] px-[14px] rounded-[8px] bg-ai text-white text-[12px] font-[600] disabled:opacity-50">
-                  {trayIds.has(selected.id) ? 'In tray ✓' : '▦ Use as keyframe'}
+                <button type="button" onClick={() => setPosition(selected as BrandKeyframe, seq.length + 1)}
+                  title="Add this keyframe to the end of the sequence (or right-click the tile to set an exact position)"
+                  className="h-[36px] px-[14px] rounded-[8px] bg-ai text-white text-[12px] font-[600]">
+                  ▦ Add to sequence
                 </button>
               )}
               <a href={selected.url} target="_blank" rel="noreferrer" className="h-[36px] px-[14px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur flex items-center hover:text-btnText">Open ↗</a>
@@ -242,6 +267,30 @@ export const StudioVideoLibraryPanel: FC = () => {
           </>
         )}
       </div>
+
+      {/* Right-click numbering popover — set/clear a keyframe's position in the sequence. */}
+      {ctx && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000]" onClick={() => setCtx(null)} onContextMenu={(e) => { e.preventDefault(); setCtx(null); }}>
+          <div className="absolute w-[210px] rounded-[10px] border border-newBorder bg-newBgColor p-[10px] flex flex-col gap-[8px] shadow-xl"
+            style={{ left: Math.min(ctx.x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 222), top: Math.min(ctx.y, (typeof window !== 'undefined' ? window.innerHeight : 9999) - 160) }}
+            onClick={(e) => e.stopPropagation()}>
+            <span className="text-[12px] font-[700] text-btnText">Sequence position</span>
+            <span className="text-[10px] text-textItemBlur leading-[1.3] line-clamp-1">{ctx.item.prompt || ctx.item.id}</span>
+            <div className="flex flex-wrap gap-[5px]">
+              {Array.from({ length: seq.filter((k) => k.id !== ctx.item.id).length + 1 }, (_, i) => i + 1).map((n) => {
+                const current = posOf(ctx.item.id) === n;
+                return (
+                  <button key={n} type="button" onClick={() => { setPosition(ctx.item, n); setCtx(null); }}
+                    className={'h-[28px] w-[28px] rounded-[6px] text-[12px] font-[700] border ' + (current ? 'bg-ai text-white border-ai' : 'border-newBorder text-btnText hover:bg-boxHover')}>{n}</button>
+                );
+              })}
+            </div>
+            {posOf(ctx.item.id) != null && (
+              <button type="button" onClick={() => { removeFromSeq(ctx.item.id); setCtx(null); }}
+                className="h-[28px] rounded-[6px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[11px] font-[600] hover:bg-[#ff7eb6]/10">Remove from sequence</button>
+            )}
+          </div>
+        </div>, document.body)}
     </div>
   );
 };
