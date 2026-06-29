@@ -40,6 +40,7 @@ import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel,
 import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit, deriveLogoSlot, LogoSlot } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
+import { trainSoul } from '@gitroom/frontend/components/studio/studio.director-client';
 
 /** Fire the library-refresh event so the Images canvas re-fetches (picks up a new variant). */
 function refreshImageLibrary(): void {
@@ -841,6 +842,21 @@ export function buildStudioCapabilities(
       label: 'Apply a guarded ImageMagick chain to a library image (free — new variant)',
       params: ['ops', 'sourceId'],
       handler: async () => { refreshImageLibrary(); },
+    },
+    {
+      // Promote a character anchor to a trained Soul (hard identity lock). SPENDS credits
+      // (reference sheet + Soul training) → GATED (deliberately NOT in AUTO_APPROVE). Async; the
+      // transport polls to completion. Refreshes the library so the new Soul frames appear.
+      id: 'director.trainSoul',
+      namespace: 'director',
+      label: 'Promote a character to a trained Soul ID (spends credits — identity lock)',
+      params: ['anchorId', 'model'],
+      handler: async (p: { anchorId?: string; model?: 'soul-2' | 'soul-cinematic' } = {}) => {
+        if (!p.anchorId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need a character anchorId to train a Soul.' }); return; }
+        const r = await trainSoul(p.anchorId, p.model === 'soul-cinematic' ? 'soul-cinematic' : 'soul-2');
+        refreshImageLibrary();
+        return r;
+      },
     },
   ];
 

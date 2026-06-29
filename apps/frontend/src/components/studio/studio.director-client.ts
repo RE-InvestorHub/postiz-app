@@ -77,3 +77,36 @@ export async function renderDirectorShot(brandKitId: string, spec: Record<string
   }
   throw new Error('Render timed out.');
 }
+
+export interface SoulStatus {
+  anchorId: string;
+  soul_id: string | null;
+  soul_status: 'training' | 'ready' | 'failed' | null;
+  soul_model?: string | null;
+  frames?: number;
+}
+
+/** Read-only Soul status for a character anchor (drives the UI pill). */
+export function getSoulStatus(anchorId: string): Promise<SoulStatus> {
+  return req<SoulStatus>(`/director/soul/status?anchorId=${encodeURIComponent(anchorId)}`);
+}
+
+/**
+ * Promote a character anchor to a trained Soul (hard identity lock) — SPENDS credits (reference
+ * sheet + Soul training), so this is approval-gated. ASYNC: sheet → training → ready takes minutes;
+ * start it (→ jobId) and poll. Returns the trained Soul result when ready.
+ */
+export async function trainSoul(anchorId: string, model: 'soul-2' | 'soul-cinematic' = 'soul-2'): Promise<{ anchorId: string; soul_id: string; soul_status: string; soul_model: string }> {
+  const { jobId } = await req<{ jobId: string }>('/director/soul/train', {
+    method: 'POST',
+    body: JSON.stringify({ anchorId, model }),
+  });
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < 300; i++) { // up to ~25 min (training is slow)
+    await sleep(5000);
+    const job = await req<{ status: string; result?: any; error?: string }>(`/director/soul/status?jobId=${encodeURIComponent(jobId)}`);
+    if (job.status === 'done') return job.result;
+    if (job.status === 'error') throw new Error(job.error || 'Soul training failed.');
+  }
+  throw new Error('Soul training timed out.');
+}

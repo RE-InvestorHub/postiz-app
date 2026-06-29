@@ -128,6 +128,8 @@ export function requiresApproval(toolName: string): boolean {
     // (Generative, credit-spending edits are a separate, gated flow — deliberately NOT here.)
     'image.edit',
     'image.magick',
+    // NOTE: director.trainSoul (promote a character to a trained Soul ID) SPENDS credits
+    // (reference sheet + Soul training) → deliberately NOT here; it stays gated (human-confirmed).
     // Video cost/plan PREVIEW — read-only, no spend (the actual run stays gated).
     'compose.estimateVideo',
     'compose.planVideo',
