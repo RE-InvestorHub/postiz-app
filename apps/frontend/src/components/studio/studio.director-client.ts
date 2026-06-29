@@ -28,14 +28,52 @@ export function listDirectorDimensions(brandKitId: string): Promise<DirectorDime
   return req<{ dimensions: DirectorDimension[] }>(`/director/dimensions?brandKitId=${encodeURIComponent(brandKitId)}`).then((r) => r.dimensions || []);
 }
 
+export interface DirectorTemplate {
+  id: string; name: string; selection: Record<string, string>;
+  renderMode: string; aspect: string; brandKitId: string | null; created_at: string;
+}
+/** List saved shot templates (selection sets) for a brand. */
+export function listDirectorTemplates(brandKitId: string): Promise<DirectorTemplate[]> {
+  return req<{ templates: DirectorTemplate[] }>(`/director/templates?brandKitId=${encodeURIComponent(brandKitId)}`).then((r) => r.templates || []);
+}
+export function saveDirectorTemplate(payload: { name: string; selection: Record<string, string>; renderMode: string; aspect: string; brandKitId: string }): Promise<DirectorTemplate> {
+  return req('/director/templates', { method: 'POST', body: JSON.stringify(payload) });
+}
+export function deleteDirectorTemplate(id: string): Promise<{ ok: boolean }> {
+  return req('/director/templates/delete', { method: 'POST', body: JSON.stringify({ id }) });
+}
+
+/** Component kinds a library image can be captured as (character = previs anchor; rest = lookrefs). */
+export const COMPONENT_KINDS: { id: string; label: string }[] = [
+  { id: 'character', label: 'Character' }, { id: 'environment', label: 'Scene / Background' },
+  { id: 'lighting', label: 'Lighting' }, { id: 'style', label: 'Style' },
+  { id: 'palette', label: 'Palette' }, { id: 'lens', label: 'Lens / Look' },
+];
+
+/** Capture a library image as a reusable, named, brand-scoped Director component. */
+export function captureComponent(imageId: string, kind: string, name: string, brandKitId: string): Promise<{ type: string; id: string; name: string }> {
+  return req('/director/capture-component', { method: 'POST', body: JSON.stringify({ imageId, kind, name, brandKitId }) });
+}
+
 /**
- * Render a shot via the layered-comp pipeline (the Create gate — spends credits). The agent's
- * spec carries the dimension fields + renderMode/aspectRatio/anchorId; this maps them to the endpoint.
+ * Render a shot via the layered-comp pipeline (the Create gate — spends credits). ASYNC: the
+ * render runs in the background (a layered shot is ~80-90s, past the proxy timeout), so we start
+ * it (→ jobId) and POLL until done. The agent's spec carries the dimension fields +
+ * renderMode/aspectRatio/anchorId; this maps them to the endpoint.
  */
-export function renderDirectorShot(brandKitId: string, spec: Record<string, unknown>): Promise<{ id: string; url: string; mode: string; layers: unknown }> {
+export async function renderDirectorShot(brandKitId: string, spec: Record<string, unknown>): Promise<{ id: string; url: string; mode: string; layers: unknown }> {
   const { renderMode, aspectRatio, anchorId, brandKitId: _b, ...dims } = spec as any;
-  return req('/director/render', {
+  const { jobId } = await req<{ jobId: string }>('/director/render', {
     method: 'POST',
     body: JSON.stringify({ spec: dims, brandKitId, mode: renderMode === 'single' ? 'single' : 'layered', aspectRatio: aspectRatio || '4:5', anchorId: anchorId || null }),
   });
+  // Poll for completion (each request is fast; the render proceeds server-side).
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < 120; i++) { // up to ~6 min
+    await sleep(3000);
+    const job = await req<{ status: string; result?: any; error?: string }>(`/director/render/status?jobId=${encodeURIComponent(jobId)}`);
+    if (job.status === 'done') return job.result;
+    if (job.status === 'error') throw new Error(job.error || 'Render failed.');
+  }
+  throw new Error('Render timed out.');
 }

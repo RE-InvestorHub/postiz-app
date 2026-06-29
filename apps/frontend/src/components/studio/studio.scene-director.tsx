@@ -8,7 +8,7 @@
 
 import { FC, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
-import { listDirectorDimensions, DirectorDimension } from '@gitroom/frontend/components/studio/studio.director-client';
+import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate } from '@gitroom/frontend/components/studio/studio.director-client';
 
 const ASPECTS = [
   { id: '4:5', label: 'Feed 4:5' }, { id: '1:1', label: 'Square 1:1' },
@@ -20,10 +20,35 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
   const [open, setOpen] = useState(false);
   const [dims, setDims] = useState<DirectorDimension[]>([]);
   const [sel, setSel] = useState<Record<string, string>>({}); // dimId -> 'auto' | 'p:<id>' | 'c:<id>'
+  const [locked, setLocked] = useState<Record<string, boolean>>({}); // dimId -> locked (agent must not change)
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
   const [aspect, setAspect] = useState('4:5');
+  const [templates, setTemplates] = useState<DirectorTemplate[]>([]);
 
-  useEffect(() => { if (open) listDirectorDimensions(brandKitId).then(setDims).catch(() => {}); }, [open, brandKitId]);
+  const loadTemplates = () => listDirectorTemplates(brandKitId).then(setTemplates).catch(() => {});
+  useEffect(() => { if (open) loadTemplates(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [open, brandKitId]);
+
+  const applyTemplate = (id: string) => {
+    const t = templates.find((x) => x.id === id);
+    if (!t) return;
+    setSel(t.selection || {}); setLocked({});
+    setRenderMode(t.renderMode === 'single' ? 'single' : 'layered'); setAspect(t.aspect || '4:5');
+  };
+  const onSaveTemplate = async () => {
+    const name = typeof window !== 'undefined' ? window.prompt('Name this shot template:') : '';
+    if (!name?.trim()) return;
+    try { await saveDirectorTemplate({ name: name.trim(), selection: sel, renderMode, aspect, brandKitId }); await loadTemplates(); }
+    catch { /* surfaced via no-op */ }
+  };
+
+  const reload = () => { if (open) listDirectorDimensions(brandKitId).then(setDims).catch(() => {}); };
+  useEffect(reload, [open, brandKitId]);
+  // A new component captured elsewhere (the canvas "Save as component") → refresh the dropdowns.
+  useEffect(() => {
+    const onRefresh = () => listDirectorDimensions(brandKitId).then(setDims).catch(() => {});
+    if (typeof window !== 'undefined') window.addEventListener('reinvestorhub:director-refresh', onRefresh);
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('reinvestorhub:director-refresh', onRefresh); };
+  }, [brandKitId]);
 
   const chosenCount = Object.values(sel).filter((v) => v && v !== 'auto').length;
 
@@ -32,14 +57,15 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
     for (const d of dims) {
       const v = sel[d.id];
       if (!v || v === 'auto') continue;
+      const lk = locked[d.id] ? ' [LOCKED — keep exactly, do not change]' : '';
       if (v.startsWith('p:')) {
         const p = d.presets.find((x) => x.id === v.slice(2));
-        if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})`);
+        if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})${lk}`);
       } else if (v.startsWith('c:')) {
         const c = d.components.find((x) => x.id === v.slice(2));
-        if (c) lines.push(d.component === 'character'
+        if (c) lines.push((d.component === 'character'
           ? `- ${d.label}: reuse saved character "${c.name}" (anchorId: ${c.id})`
-          : `- ${d.label}: reuse saved "${c.name}"`);
+          : `- ${d.label}: reuse saved "${c.name}"`) + lk);
       }
     }
     const seed =
@@ -64,7 +90,14 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
           <div className="grid grid-cols-2 minCustom:grid-cols-3 gap-[10px]">
             {dims.map((d) => (
               <label key={d.id} className="flex flex-col gap-[3px]">
-                <span className="text-[11px] font-[600] text-btnText" title={d.hint}>{d.label}</span>
+                <span className="flex items-center gap-[4px]">
+                  <span className="text-[11px] font-[600] text-btnText flex-1" title={d.hint}>{d.label}</span>
+                  {sel[d.id] && sel[d.id] !== 'auto' && (
+                    <button type="button" onClick={(e) => { e.preventDefault(); setLocked((l) => ({ ...l, [d.id]: !l[d.id] })); }}
+                      title={locked[d.id] ? 'Locked — the agent keeps this exactly' : 'Lock this choice (agent won\'t change it)'}
+                      className={'text-[11px] leading-none ' + (locked[d.id] ? 'opacity-100' : 'opacity-40 hover:opacity-80')}>📌</button>
+                  )}
+                </span>
                 <select className={selectCls} value={sel[d.id] || 'auto'} onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value }))}>
                   <option value="auto">Auto — let AI decide</option>
                   {d.presets.map((p) => <option key={p.id} value={`p:${p.id}`}>{p.label}</option>)}
@@ -90,6 +123,16 @@ export const StudioSceneDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
             <select value={aspect} onChange={(e) => setAspect(e.target.value)} className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Aspect ratio">
               {ASPECTS.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
             </select>
+            {/* Templates — load a saved selection set, or save the current one. */}
+            {templates.length > 0 && (
+              <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ''; }}
+                title="Load a saved template" className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">
+                <option value="">Templates…</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+            <button type="button" onClick={onSaveTemplate} title="Save the current picks as a reusable template"
+              className="h-[32px] px-[10px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">Save template</button>
             <button type="button" onClick={onDevelop} className="ml-auto h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90">
               ✨ Develop with AI
             </button>

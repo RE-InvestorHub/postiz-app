@@ -15,6 +15,7 @@ import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types'
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
+import { captureComponent, COMPONENT_KINDS } from '@gitroom/frontend/components/studio/studio.director-client';
 
 type ModelOpt = { value: string; label: string; credits: string };
 interface StudioImagesPanelProps {
@@ -33,7 +34,7 @@ const CHECKER: React.CSSProperties = {
 };
 
 export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, aspects, resolutions }) => {
-  const { state } = useStudio();
+  const { state, dispatch } = useStudio();
   const toaster = useToaster();
   const brandKitId = state.composerBrandKitId || 'default';
   const brandName = brandKitId === 'default' ? 'Re:InvestorHub (default)' : 'this brand';
@@ -49,11 +50,20 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Capture as reusable Director component.
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureKind, setCaptureKind] = useState('character');
+  const [captureName, setCaptureName] = useState('');
+  const [capturing, setCapturing] = useState(false);
+  // A generation (Scene Director / agent) is in flight → show a spinner placeholder.
+  const [generating, setGenerating] = useState(false);
   // Channel reshape (canvas).
   const [channels, setChannels] = useState<ChannelPreset[]>([]);
   const [reshapeChannel, setReshapeChannel] = useState('');
   const [reshapeFit, setReshapeFit] = useState<'crop' | 'pad'>('crop');
   const [reshaping, setReshaping] = useState(false);
+  const [channelFilter, setChannelFilter] = useState('all'); // library filter by channel (B3)
+  const [exportingAll, setExportingAll] = useState(false);
 
   const selected = images.find((i) => i.id === selectedId) || null;
 
@@ -75,8 +85,17 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
   // Scene Director / agent renders fire this event when a new shot lands in the library.
   useEffect(() => {
     const onRefresh = () => void load();
-    if (typeof window !== 'undefined') window.addEventListener('reinvestorhub:images-refresh', onRefresh);
-    return () => { if (typeof window !== 'undefined') window.removeEventListener('reinvestorhub:images-refresh', onRefresh); };
+    const onGenerating = (e: Event) => setGenerating(!!(e as CustomEvent).detail?.active);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('reinvestorhub:images-refresh', onRefresh);
+      window.addEventListener('reinvestorhub:images-generating', onGenerating as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('reinvestorhub:images-refresh', onRefresh);
+        window.removeEventListener('reinvestorhub:images-generating', onGenerating as EventListener);
+      }
+    };
   }, [load]);
 
   // Keep the selected model valid for the Images tab.
@@ -99,6 +118,46 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
       toaster.show(`Reshaped to ${variant.channelLabel} (${variant.w}×${variant.h}). Original kept.`, 'success');
     } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setReshaping(false); }
   };
+
+  const onCaptureComponent = async () => {
+    if (!selected || !captureName.trim() || capturing) return;
+    setCapturing(true); setError(null);
+    try {
+      const c = await captureComponent(selected.id, captureKind, captureName.trim(), brandKitId);
+      setCaptureOpen(false); setCaptureName('');
+      // Let the Scene Director refresh its dropdowns so the new component is reusable now.
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:director-refresh'));
+      toaster.show(`Saved "${c.name}" as a reusable ${c.type} — pick it in the Scene Director.`, 'success');
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setCapturing(false); }
+  };
+
+  // A4 — Tweak: reopen the agent seeded with this shot's stored spec to adjust + re-render a variant.
+  const onTweak = () => {
+    if (!selected?.spec) return;
+    const s = selected.spec as Record<string, string>;
+    const summary = Object.entries(s)
+      .filter(([k, v]) => v && !['renderMode', 'aspectRatio', 'brandKitId', 'anchorId'].includes(k))
+      .map(([k, v]) => `- ${k}: ${v}`).join('\n');
+    const seed = `Let's tweak this existing ad shot. Its current spec:\n${summary}\nRender mode: ${selected.renderMode || 'layered'}. ` +
+      `Tell me what to change — keep everything else exactly — then re-render it as a new variant.`;
+    dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'shot', brandKitId, seed });
+  };
+
+  // B2 — Export all social channels: reshape the selected image to a full set (non-destructive).
+  const onExportAll = async () => {
+    if (!selected || exportingAll) return;
+    setExportingAll(true); setError(null);
+    try {
+      const social = channels.filter((c) => ['ig-square', 'ig-portrait', 'ig-story', 'reels', 'fb-ad', 'yt-thumb', 'x-header'].includes(c.id));
+      for (const c of social) { await reshapeImage(selected.id, c.id, reshapeFit); }
+      await load();
+      toaster.show(`Exported ${social.length} channel sizes (${reshapeFit}). Original kept.`, 'success');
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setExportingAll(false); }
+  };
+
+  // B3 — library channel filter.
+  const channelsInLib = Array.from(new Set(images.map((i) => i.channel).filter(Boolean))) as string[];
+  const visibleImages = channelFilter === 'all' ? images : images.filter((i) => i.channel === channelFilter);
 
   const onUploaded = (_a: UploadedAsset) => { void load(); };
   const addToAd = async () => {
@@ -161,13 +220,23 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
       <div className="flex flex-col md:flex-row gap-[14px]">
         {/* Left sidebar — the brand's image library */}
         <div className={card + ' md:w-[260px] shrink-0 flex flex-col gap-[10px]'}>
-          <div className="flex items-center gap-[8px]">
+          <div className="flex items-center gap-[8px] flex-wrap">
             <span className="text-[14px] font-[600] text-btnText flex-1">Image library</span>
-            <span className="text-[11px] text-textItemBlur">{loading ? '…' : images.length}</span>
+            <span className="text-[11px] text-textItemBlur">{loading ? '…' : visibleImages.length}</span>
             {images.length > 0 && !selectMode && (
               <button type="button" onClick={() => setSelectMode(true)} className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">Select</button>
             )}
           </div>
+          {channelsInLib.length > 0 && (
+            <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} title="Filter by channel"
+              className="h-[30px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText">
+              <option value="all">All images</option>
+              {channelsInLib.map((ch) => {
+                const lbl = images.find((i) => i.channel === ch)?.channelLabel || ch;
+                return <option key={ch} value={ch}>{lbl}</option>;
+              })}
+            </select>
+          )}
           {selectMode && (
             <div className="flex items-center gap-[6px] flex-wrap text-[11px]">
               <span className="text-textItemBlur">{checked.size} selected</span>
@@ -185,11 +254,28 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
             </div>
           )}
           {error && <span className="text-[12px] text-red-400">{error}</span>}
-          {!loading && images.length === 0 ? (
+          {generating && (
+            <span className="flex items-center gap-[6px] text-[11px] font-[600] text-ai">
+              Rendering your shot
+              <span className="inline-flex gap-[3px]">
+                {[0, 150, 300].map((d) => <span key={d} className="h-[5px] w-[5px] rounded-full bg-ai animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+              </span>
+            </span>
+          )}
+          {!loading && images.length === 0 && !generating ? (
             <div className="text-[12px] text-textItemBlur py-[14px]">No images yet. Generate with the AI Agent or ⬆ Upload your own.</div>
           ) : (
             <div className="grid grid-cols-2 gap-[8px] overflow-y-auto max-h-[60vh] pr-[2px]">
-              {images.map((img) => {
+              {/* Generating placeholder — a pulsing tile with bouncing dots while a shot renders. */}
+              {generating && (
+                <span className="aspect-square rounded-[6px] border border-ai/40 bg-ai/5 flex flex-col items-center justify-center gap-[6px] animate-pulse">
+                  <span className="inline-flex gap-[4px]">
+                    {[0, 150, 300].map((d) => <span key={d} className="h-[7px] w-[7px] rounded-full bg-ai animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+                  </span>
+                  <span className="text-[9px] text-ai/80 font-[600]">Rendering…</span>
+                </span>
+              )}
+              {visibleImages.map((img) => {
                 const isChecked = checked.has(img.id);
                 const ring = selectMode
                   ? (isChecked ? 'border-[#ff7eb6] ring-1 ring-[#ff7eb6]' : 'border-newBorder hover:border-btnText/40')
@@ -232,6 +318,14 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
                   className="h-[36px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] disabled:opacity-50">
                   {added.has(selected.id) ? 'Added ✓' : '+ Add to ad'}
                 </button>
+                <button type="button" onClick={() => { setCaptureName(''); setCaptureOpen(true); }}
+                  title="Save this image as a reusable Scene Director component (character / scene / lighting / …)"
+                  className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10">★ Save as component</button>
+                {selected.spec && (
+                  <button type="button" onClick={onTweak}
+                    title="Reopen the Scene Director with this shot's spec to tweak + re-render a variant"
+                    className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10">✎ Tweak</button>
+                )}
                 <a href={selected.url} target="_blank" rel="noreferrer" className="h-[36px] px-[14px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur flex items-center hover:text-btnText">Open ↗</a>
                 <span className="ml-auto" />
                 {confirmDel ? (
@@ -260,9 +354,25 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
                       className={'h-[34px] px-[12px] text-[12px] font-[600] capitalize ' + (reshapeFit === f ? 'bg-btnPrimary text-btnText' : 'text-textItemBlur hover:text-btnText')}>{f}</button>
                   ))}
                 </span>
+                {/* B1 — crop/pad preview of the selected image in the target channel aspect. */}
+                {(() => {
+                  const ch = channels.find((c) => c.id === reshapeChannel);
+                  if (!ch) return null;
+                  return (
+                    <span className="h-[40px] rounded-[6px] border border-newBorder overflow-hidden bg-newBgColor flex items-center justify-center" style={{ width: `${Math.round(40 * (ch.w / ch.h))}px`, minWidth: '18px' }} title={`Preview · ${ch.w}×${ch.h}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={selected.url} alt="preview" className={'w-full h-full ' + (reshapeFit === 'pad' ? 'object-contain' : 'object-cover')} />
+                    </span>
+                  );
+                })()}
                 <button type="button" onClick={onReshape} disabled={reshaping || !reshapeChannel}
                   className="h-[34px] px-[14px] rounded-[8px] bg-ai text-white text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">
                   {reshaping ? 'Reshaping…' : `Reshape to ${channels.find((c) => c.id === reshapeChannel)?.short ?? 'channel'}`}
+                </button>
+                <button type="button" onClick={onExportAll} disabled={exportingAll || reshaping}
+                  title="Reshape to all social channel sizes at once"
+                  className="h-[34px] px-[12px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover disabled:opacity-50">
+                  {exportingAll ? 'Exporting…' : 'Export all'}
                 </button>
                 <span className="text-[10px] text-textItemBlur">New variant — original kept.</span>
               </div>
@@ -270,6 +380,11 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
               {/* Metadata */}
               <div className="text-[11px] text-textItemBlur flex flex-col gap-[3px]">
                 {selected.channelLabel && <span className="text-[12px] font-[700] text-ai">{selected.channelLabel} · {selected.w}×{selected.h}{selected.fit ? ` · ${selected.fit}` : ''}</span>}
+                {selected.spec && (() => {
+                  const s = selected.spec as Record<string, string>;
+                  const used = ['subject', 'environment', 'lighting', 'style'].map((k) => s[k]).filter(Boolean).map((v) => String(v).split(',')[0].slice(0, 28));
+                  return <span className="text-[12px] font-[600] text-ai">✨ Scene Director · {selected.renderMode || 'layered'}{used.length ? ` · ${used.join(' · ')}` : ''}</span>;
+                })()}
                 {selected.prompt && <span className="text-btnText/80 line-clamp-2"><b className="text-textItemBlur font-[600]">Prompt:</b> {selected.prompt}</span>}
                 <span className="flex flex-wrap gap-x-[14px] gap-y-[2px]">
                   {selected.model && <span>Model: {selected.model}</span>}
@@ -282,6 +397,34 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models, as
           )}
         </div>
       </div>
+
+      {/* Save-as-component modal */}
+      {captureOpen && selected && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => !capturing && setCaptureOpen(false)}>
+          <div className="w-[420px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[18px] flex flex-col gap-[12px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[14px] font-[700] text-btnText">Save as a reusable component</span>
+            <span className="text-[12px] text-textItemBlur">Reuse this across shots (and video keyframes) — a character holds its identity when restaged.</span>
+            <label className="flex flex-col gap-[3px]">
+              <span className="text-[11px] font-[600] text-textItemBlur">Type</span>
+              <select value={captureKind} onChange={(e) => setCaptureKind(e.target.value)} className="h-[36px] px-[10px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText">
+                {COMPONENT_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-[3px]">
+              <span className="text-[11px] font-[600] text-textItemBlur">Name</span>
+              <input value={captureName} autoFocus onChange={(e) => setCaptureName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void onCaptureComponent(); } if (e.key === 'Escape') setCaptureOpen(false); }}
+                placeholder="e.g. Sarah, Downtown loft, Golden key light"
+                className="h-[38px] px-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur" />
+            </label>
+            {error && <span className="text-[12px] text-red-400">{error}</span>}
+            <div className="flex items-center justify-end gap-[8px]">
+              <button type="button" onClick={() => setCaptureOpen(false)} className="h-[34px] px-[14px] rounded-[8px] border border-newBorder text-textItemBlur text-[12px] hover:text-btnText">Cancel</button>
+              <button type="button" onClick={() => void onCaptureComponent()} disabled={capturing || !captureName.trim()}
+                className="h-[34px] px-[16px] rounded-[8px] bg-ai text-white text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">{capturing ? 'Saving…' : 'Save component'}</button>
+            </div>
+          </div>
+        </div>, document.body)}
 
       {/* Upload modal */}
       {uploadOpen && typeof document !== 'undefined' && createPortal(
