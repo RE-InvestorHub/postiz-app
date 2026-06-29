@@ -41,10 +41,16 @@ import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extrac
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
 import { startSoulTraining, removeSoul } from '@gitroom/frontend/components/studio/studio.director-client';
+import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 
 /** Fire the library-refresh event so the Images canvas re-fetches (picks up a new variant). */
 function refreshImageLibrary(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
+}
+
+/** Fire the Video-library refresh event so the Video tab re-fetches its clips + keyframes. */
+function refreshVideoLibrary(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh'));
 }
 
 export interface Capability {
@@ -872,6 +878,22 @@ export function buildStudioCapabilities(
         const r = await removeSoul(p.anchorId);
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:soul-refresh'));
         return r;
+      },
+    },
+    {
+      // Images→Video bridge: stage library images as video keyframes. Marks them on the brain (so
+      // they appear in the Video Library's Keyframes view), drops them into the keyframe tray, and
+      // switches to the Video tab. Curation, NO spend → auto-approved.
+      id: 'video.sendToVideo',
+      namespace: 'video',
+      label: 'Send images to the Video tab as keyframes',
+      params: ['imageIds'],
+      handler: async (p: { imageIds?: string[] } = {}) => {
+        const ids = p.imageIds || [];
+        if (!ids.length) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need imageIds to send to the Video tab.' }); return; }
+        await addKeyframes(ids);
+        dispatch({ type: 'SET_TAB', tab: 'video' });
+        refreshVideoLibrary();
       },
     },
   ];

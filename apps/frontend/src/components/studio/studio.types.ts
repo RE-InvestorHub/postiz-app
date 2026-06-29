@@ -121,6 +121,17 @@ export interface StudioResult {
   createdAt: number;
 }
 
+/** A keyframe staged on the Video tab — an image ref (from the Images→Video bridge, the Library,
+ *  or Scene Director on Video) that will seed video generation. Ordered in the tray. */
+export interface VideoKeyframe {
+  /** Source image manifest id (brain). */
+  id: string;
+  /** Publicly reachable still URL. */
+  url: string;
+  /** Optional short label (prompt fragment / name) for the tray tile. */
+  label?: string;
+}
+
 export interface StudioState {
   activeTab: StudioTab;
   prompt: string;
@@ -152,6 +163,9 @@ export interface StudioState {
   composerTemplateId: string;
   /** Images tab: the library image the user has selected (so the AI Agent can see/act on it). */
   selectedImageId: string | null;
+  /** Video tab: ordered keyframes staged for the next video generation (the Images→Video bridge +
+   *  Scene Director on Video drop here; the keyframe tray + Library's Keyframes view read this). */
+  videoKeyframes: VideoKeyframe[];
   /** Draggable floating agent chat window: null = closed, else open. In generation-interview
    *  mode it carries the kind + brand + target slot so Create can run that kind's generator. */
   floatingAgent: { seed?: string; kind?: string; brandKitId?: string; slot?: string } | null;
