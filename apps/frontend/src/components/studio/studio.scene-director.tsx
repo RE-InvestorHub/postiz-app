@@ -6,7 +6,7 @@
 // Each component-backed dimension also offers the brand's SAVED reusable components
 // (characters / scenes / lighting / …). Postiz tokens only.
 
-import { FC, useEffect, useState } from 'react';
+import { FC, useEffect, useRef, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { STUDIO_RESOLUTIONS } from '@gitroom/frontend/components/studio/studio.types';
 import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate, renderDirectorShot, renderDirectorClip, gapFillVideo, getVideoCost, getVideoModelInfo, VideoModelInfo } from '@gitroom/frontend/components/studio/studio.director-client';
@@ -56,6 +56,11 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   const [totalDurationS, setTotalDurationS] = useState(15);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  // Progress bar on the Generate button: a time-based eased estimate for clips/stills (Higgsfield
+  // reports no %), overridden by REAL segment progress for gap-fill video. genStage = optional label.
+  const [genProgress, setGenProgress] = useState(0);
+  const [genStage, setGenStage] = useState('');
+  const realProg = useRef(false); // when true (gap-fill segments or completion), the time-based ramp pauses
   // Free-text "describe it" box — a one-shot prompt woven into the spec (both Images + Video).
   const [description, setDescription] = useState('');
   // Video model metadata (allowed durations + gap-fill capability) + the live cost readout.
@@ -135,6 +140,18 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideo, open, output, videoModel, aspect, durationS, totalDurationS, seqIds.length]);
+
+  // Generate-button progress: while generating, ease toward ~92% (Higgsfield gives no real % for a
+  // single clip/still); gap-fill overrides with real segment progress (realProg pauses the ramp).
+  useEffect(() => {
+    if (!generating) { setGenProgress(0); setGenStage(''); realProg.current = false; return; }
+    setGenProgress((p) => (p > 0 ? p : 0.06));
+    const id = setInterval(() => {
+      if (realProg.current) return;
+      setGenProgress((p) => Math.min(0.92, p + (0.92 - p) * 0.07));
+    }, 600);
+    return () => clearInterval(id);
+  }, [generating]);
 
   const onDevelop = () => {
     const lines: string[] = [];
@@ -223,8 +240,16 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
         await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS });
       } else {
         const { spec } = buildSpec();
-        await gapFillVideo(brandKitId, seqIds, { motion, model: videoModel, aspectRatio: aspect, totalDurationS, style: spec.style });
+        // Gap-fill reports REAL per-segment progress → drive the bar from it (pause the time ramp).
+        realProg.current = true;
+        await gapFillVideo(brandKitId, seqIds, { motion, model: videoModel, aspectRatio: aspect, totalDurationS, style: spec.style,
+          onProgress: (job) => {
+            const s = job?.segments;
+            if (s?.total) { setGenProgress(Math.min(0.97, s.done / s.total)); setGenStage(`segment ${Math.min(s.done + 1, s.total)}/${s.total}`); }
+          } });
       }
+      realProg.current = true; setGenProgress(1); setGenStage('done'); // flash 100% before the button resets
+      await new Promise((r) => setTimeout(r, 450));
       fireVideoRefresh();
     } catch (e) { setGenError((e as Error)?.message ?? String(e)); }
     finally { setGenerating(false); }
@@ -241,6 +266,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     try {
       const { spec, anchorId } = buildSpec();
       const r = await renderDirectorShot(brandKitId, { ...spec, renderMode, aspectRatio: aspect, anchorId });
+      realProg.current = true; setGenProgress(1); // flash 100% on completion
+      await new Promise((res) => setTimeout(res, 350));
       fireImagesRefresh(r.id);
     } catch (e) { setGenError((e as Error)?.message ?? String(e)); }
     finally { setGenerating(false); fireImagesGenerating(false); }
@@ -395,8 +422,9 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 </button>
                 <button type="button" disabled={generating} onClick={onGenerate}
                   title="One-off render from your current settings (output toggle + duration + picks + free text)"
-                  className="h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
-                  {generating ? 'Generating…' : '⚡ Generate ($)'}
+                  className="relative overflow-hidden min-w-[150px] h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
+                  {generating && <span aria-hidden className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-500 ease-out" style={{ width: `${Math.round(genProgress * 100)}%` }} />}
+                  <span className="relative">{generating ? `Generating…${genStage ? ' ' + genStage : ''}` : '⚡ Generate ($)'}</span>
                 </button>
               </span>
             ) : (
@@ -408,8 +436,9 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 </button>
                 <button type="button" disabled={generating} onClick={onGenerateImage}
                   title="One-shot render from your picks + free text — straight to the image library (uses image credits)"
-                  className="h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
-                  {generating ? 'Generating…' : '⚡ Generate ($)'}
+                  className="relative overflow-hidden min-w-[150px] h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
+                  {generating && <span aria-hidden className="absolute inset-y-0 left-0 bg-white/25 transition-[width] duration-500 ease-out" style={{ width: `${Math.round(genProgress * 100)}%` }} />}
+                  <span className="relative">{generating ? 'Generating…' : '⚡ Generate ($)'}</span>
                 </button>
               </span>
             )}
