@@ -20,6 +20,14 @@ const IconWave: FC = () => (
   </svg>
 );
 
+// Indeterminate spinner for opaque waits (URL fetch, one-shot generate) — no fake %.
+const Spinner: FC = () => (
+  <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+  </svg>
+);
+
 const FORMAT_LABELS: Record<ScriptFormat, string> = {
   reel: 'Instagram Reel', tiktok_ad: 'TikTok ad', short_film: 'Short film', explainer: 'Explainer', testimonial: 'Testimonial',
 };
@@ -197,8 +205,9 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
         {/* Primary AI actions (bottom-right): Generate one-shot + Draft interview */}
         <div className="ml-auto flex items-center gap-[10px]">
           <button type="button" onClick={generate} disabled={generating}
-            className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white text-[13px] font-[600] hover:opacity-90 disabled:opacity-50"
+            className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white text-[13px] font-[600] hover:opacity-90 disabled:opacity-50 inline-flex items-center justify-center gap-[6px]"
             title="Write the whole script from the topic + the options above">
+            {generating && <Spinner />}
             {generating ? 'Generating…' : '⚡ Generate'}
           </button>
           <button type="button" onClick={draftWithAI}
@@ -255,7 +264,8 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
             {error && <div className="text-[12px] text-red-400 leading-[1.4]">{error}</div>}
             <div className="flex items-center gap-[10px]">
               <button type="button" onClick={fromUrl} disabled={fetching || !url.trim()}
-                className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white text-[13px] font-[600] hover:opacity-90 disabled:opacity-50">
+                className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white text-[13px] font-[600] hover:opacity-90 disabled:opacity-50 inline-flex items-center justify-center gap-[6px]">
+                {fetching && <Spinner />}
                 {fetching ? 'Fetching…' : 'Fetch & draft'}
               </button>
               <span className="text-[11px] text-textItemBlur">Login-walled posts may return little; public pages, ads &amp; videos work best.</span>
