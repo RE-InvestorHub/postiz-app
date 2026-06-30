@@ -10,7 +10,6 @@ import { FC, useEffect, useRef, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { STUDIO_RESOLUTIONS } from '@gitroom/frontend/components/studio/studio.types';
 import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate, renderDirectorShot, renderDirectorClip, gapFillVideo, getVideoCost, getVideoModelInfo, VideoModelInfo } from '@gitroom/frontend/components/studio/studio.director-client';
-import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 import { SoulControl } from '@gitroom/frontend/components/studio/studio.soul-control';
 
 // Camera-move / speed presets for the video "Motion & video" section (Video context only).
@@ -48,7 +47,9 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
   const [templates, setTemplates] = useState<DirectorTemplate[]>([]);
   // Video context (the engine): output kind + the Motion & video section + a direct gated generate.
-  const [output, setOutput] = useState<DirectorOutput>('keyframe');
+  // Keyframe (still) generation lives on the IMAGES tab — render there (full image-model + layered/
+  // single), then mark it ▦ keyframe. The Video Director only does motion: Clip and gap-fill Video.
+  const [output, setOutput] = useState<DirectorOutput>('clip');
   const [movement, setMovement] = useState('slow push-in');
   const [action, setAction] = useState('');
   const [speed, setSpeed] = useState('slow');
@@ -103,11 +104,14 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   // SOUL_ASPECTS — so we dim the rest (4:5) and snap the current pick to a supported ratio.
   const charDim = dims.find((d) => d.component === 'character');
   const charSelected = !!(charDim && sel[charDim.id]?.startsWith('c:'));
-  const aspectIds = charSelected ? CHAR_ASPECT_IDS : BASE_ASPECT_IDS;
+  // A Soul is an IMAGE-gen identity lock (text2image_soul_v2) — video models can't use it. So the
+  // Soul control + the Soul-only aspect restriction apply on the Images tab only, never on Video.
+  const charSoul = charSelected && !isVideo;
+  const aspectIds = charSoul ? CHAR_ASPECT_IDS : BASE_ASPECT_IDS;
   useEffect(() => {
-    if (charSelected && !SOUL_ASPECTS.includes(aspect)) setAspect('3:4');
+    if (charSoul && !SOUL_ASPECTS.includes(aspect)) setAspect('3:4');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [charSelected]);
+  }, [charSoul]);
 
   // Video: load the selected model's allowed durations + gap-fill capability; snap the current
   // duration into the model's valid set so the user can't pick a value Higgsfield will reject.
@@ -231,11 +235,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     }
     setGenerating(true);
     try {
-      if (output === 'keyframe') {
-        const { spec, anchorId } = buildSpec();
-        const r = await renderDirectorShot(brandKitId, { ...spec, renderMode, aspectRatio: aspect, anchorId });
-        await addKeyframes([r.id]); // mark the new still as a keyframe so it lands in the Video Library
-      } else if (output === 'clip') {
+      if (output === 'clip') {
         const { spec } = buildSpec();
         await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS });
       } else {
@@ -315,7 +315,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                     <label key={`${d.id}-character`} className="flex flex-col gap-[3px]">
                       <span className="flex items-center gap-[4px]">
                         <span className="text-[11px] font-[600] text-btnText flex-1" title="Reuse one of your saved characters (locks identity; train a Soul for an exact match)">Character</span>
-                        {isChar && (
+                        {/* Soul training is an IMAGE-gen identity lock — Images tab only (video can't use a Soul). */}
+                        {isChar && !isVideo && (
                           <SoulControl anchorId={sel[d.id].slice(2)} name={d.components.find((c) => c.id === sel[d.id].slice(2))?.name} />
                         )}
                         {isChar && lockBtn(true)}
@@ -368,34 +369,44 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
               <>
                 <span className="text-[11px] font-[700] text-ai">Output</span>
                 <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
-                  {([['keyframe', '▦ Keyframe'], ['clip', '▶ Clip'], ['video', '🎬 Video']] as [DirectorOutput, string][]).map(([o, lbl]) => (
+                  {/* Video Director = motion only. Keyframe STILLS are made on the Images tab, then
+                      marked ▦ keyframe — so the toggle is Clip vs gap-fill Video, not Keyframe. */}
+                  {([['clip', '▶ Clip'], ['video', '🎬 Video']] as [DirectorOutput, string][]).map(([o, lbl]) => (
                     <button key={o} type="button" onClick={() => setOutput(o)}
-                      title={o === 'keyframe' ? 'Compose a still → adds it to the keyframe pool' : o === 'clip' ? 'Generate one motion clip' : 'Gap-fill the numbered keyframe sequence into a short'}
+                      title={o === 'clip' ? 'Generate one motion clip' : 'Gap-fill the numbered keyframe sequence into a short'}
                       className={'h-[32px] px-[12px] text-[12px] font-[600] ' + (output === o ? 'bg-ai text-white' : 'text-textItemBlur hover:text-btnText')}>{lbl}</button>
                   ))}
                 </span>
                 <span className="w-px h-[20px] bg-newBorder" />
               </>
             )}
-            <span className="text-[11px] font-[600] text-textItemBlur">Render</span>
-            <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
-              {(['layered', 'single'] as const).map((m) => (
-                <button key={m} type="button" onClick={() => setRenderMode(m)}
-                  title={m === 'layered' ? 'Object-by-object composite + AI harmonize (default)' : 'One coherent render'}
-                  className={'h-[32px] px-[12px] text-[12px] font-[600] capitalize ' + (renderMode === m ? 'bg-btnPrimary text-btnText' : 'text-textItemBlur hover:text-btnText')}>{m}</button>
-              ))}
-            </span>
+            {/* Render mode (layered vs single) only governs STILL composition → Images tab only. */}
+            {!isVideo && (
+              <>
+                <span className="text-[11px] font-[600] text-textItemBlur">Render</span>
+                <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
+                  {(['layered', 'single'] as const).map((m) => (
+                    <button key={m} type="button" onClick={() => setRenderMode(m)}
+                      title={m === 'layered' ? 'Object-by-object composite + AI harmonize (default)' : 'One coherent render'}
+                      className={'h-[32px] px-[12px] text-[12px] font-[600] capitalize ' + (renderMode === m ? 'bg-btnPrimary text-btnText' : 'text-textItemBlur hover:text-btnText')}>{m}</button>
+                  ))}
+                </span>
+              </>
+            )}
             <select value={aspect} onChange={(e) => setAspect(e.target.value)} className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText"
-              title={charSelected ? 'Aspect ratio — limited to what the character Soul supports' : 'Aspect ratio'}>
+              title={charSoul ? 'Aspect ratio — limited to what the character Soul supports' : 'Aspect ratio'}>
               {aspectIds.map((id) => {
-                const blocked = charSelected && !SOUL_ASPECTS.includes(id);
+                const blocked = charSoul && !SOUL_ASPECTS.includes(id);
                 return <option key={id} value={id} disabled={blocked}>{ASPECT_LABELS[id]}{blocked ? ' — not on Soul' : ''}</option>;
               })}
             </select>
-            <select value={state.resolution} onChange={(e) => dispatch({ type: 'SET_RESOLUTION', resolution: e.target.value as typeof state.resolution })}
-              className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Resolution">
-              {STUDIO_RESOLUTIONS.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
-            </select>
+            {/* Resolution (1k/2k/4k) only affects IMAGE generation — video sizes by aspect ratio. Images-only. */}
+            {!isVideo && (
+              <select value={state.resolution} onChange={(e) => dispatch({ type: 'SET_RESOLUTION', resolution: e.target.value as typeof state.resolution })}
+                className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Resolution">
+                {STUDIO_RESOLUTIONS.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
+              </select>
+            )}
             {/* Templates — load a saved selection set, or save the current one. */}
             {templates.length > 0 && (
               <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ''; }}
@@ -444,8 +455,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
             )}
           </div>
 
-          {/* Motion & video — Clip/Video only (stills don't move); the video model lives in the banner above. */}
-          {isVideo && output !== 'keyframe' && (
+          {/* Motion & video — the video model lives in the banner above. */}
+          {isVideo && (
             <div className="flex flex-wrap items-end gap-[8px]">
               <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Camera move</span>
                 <select value={movement} onChange={(e) => setMovement(e.target.value)} className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">{CAMERA_MOVES.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>
@@ -483,7 +494,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
 
           <span className="text-[10px] text-textItemBlur">
             {isVideo
-              ? '⚡ Generate = one-off from your current settings (the Output toggle picks keyframe / clip / video). ✨ Generate with AI = an interview that settles the output with you (default a ~3s clip) and guides you to keyframes-first for longer / changing-scene videos. Clip + Video spend video credits.'
+              ? 'The Video Director makes MOTION — ▶ Clip (one shot) or 🎬 Video (gap-fill across your numbered keyframes). Need keyframes? Render stills on the Images tab (your choice of image model + layered/single), mark them ▦ keyframe, then number them here. ⚡ Generate = one-off from your settings; ✨ Generate with AI = an interview (guides you to keyframes-first for longer / changing-scene videos). Clip + Video spend video credits.'
               : 'The agent asks a few questions, then the Create button renders it (uses image credits). Your picks seed the conversation; anything on Auto, it proposes.'}
           </span>
         </div>
