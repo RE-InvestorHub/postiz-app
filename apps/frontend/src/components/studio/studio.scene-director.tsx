@@ -9,7 +9,7 @@
 import { FC, useEffect, useRef, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { STUDIO_RESOLUTIONS } from '@gitroom/frontend/components/studio/studio.types';
-import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate, renderDirectorShot, renderDirectorClip, gapFillVideo, getVideoCost, getVideoModelInfo, VideoModelInfo } from '@gitroom/frontend/components/studio/studio.director-client';
+import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate, renderDirectorShot, renderDirectorClip, getVideoCost, getVideoModelInfo, VideoModelInfo } from '@gitroom/frontend/components/studio/studio.director-client';
 import { SoulControl } from '@gitroom/frontend/components/studio/studio.soul-control';
 
 // Camera-move / speed presets for the video "Motion & video" section (Video context only).
@@ -46,15 +46,13 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   const [locked, setLocked] = useState<Record<string, boolean>>({}); // dimId -> locked (agent must not change)
   const [renderMode, setRenderMode] = useState<'layered' | 'single'>('layered');
   const [templates, setTemplates] = useState<DirectorTemplate[]>([]);
-  // Video context (the engine): output kind + the Motion & video section + a direct gated generate.
-  // Keyframe (still) generation lives on the IMAGES tab — render there (full image-model + layered/
-  // single), then mark it ▦ keyframe. The Video Director only does motion: Clip and gap-fill Video.
-  const [output, setOutput] = useState<DirectorOutput>('clip');
+  // The Video Director makes ONE clip (motion). Stills are made on the Images tab + marked ▦ keyframe;
+  // multi-shot directed videos live in the Generated Storyboard (Video tab → Storyboard).
+  const output: DirectorOutput = 'clip';
   const [movement, setMovement] = useState('slow push-in');
   const [action, setAction] = useState('');
   const [speed, setSpeed] = useState('slow');
   const [durationS, setDurationS] = useState(6);
-  const [totalDurationS, setTotalDurationS] = useState(15);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   // Progress bar on the Generate button: a time-based eased estimate for clips/stills (Higgsfield
@@ -68,7 +66,6 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   const [modelInfo, setModelInfo] = useState<VideoModelInfo | null>(null);
   const [cost, setCost] = useState<{ credits: number | null; detail?: string } | null>(null);
   const [costLoading, setCostLoading] = useState(false); // show "…" while the (uncached, ~1-2s) cost recalculates
-  const seqIds = state.videoKeyframes.map((k) => k.id);
   // Aspect + resolution are STORE-backed (the single home for both — moved out of the bottom bar).
   const aspect = state.aspectRatio;
   const setAspect = (a: string) => dispatch({ type: 'SET_ASPECT_RATIO', aspectRatio: a });
@@ -136,20 +133,17 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     if (!isVideo || !open) { setCost(null); setCostLoading(false); return; }
     let alive = true;
     setCostLoading(true); // immediately signal "recalculating" so a stale number can't look unchanged
-    const segs = Math.max(1, seqIds.length - 1);
     // Debounce — dragging the duration slider (or rapid model switches) shouldn't spawn a CLI per tick.
     const t = setTimeout(() => {
       getVideoCost({
-        output, model: videoModel, aspectRatio: aspect,
-        duration: output === 'video' ? totalDurationS : durationS,
-        segments: output === 'video' ? segs : undefined,
+        output, model: videoModel, aspectRatio: aspect, duration: durationS,
         anchored, // identity-locked clip adds the still's image cost
       }).then((c) => { if (alive) { setCost(c); setCostLoading(false); } })
         .catch(() => { if (alive) { setCost(null); setCostLoading(false); } });
     }, 300);
     return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVideo, open, output, videoModel, aspect, durationS, totalDurationS, seqIds.length, anchored]);
+  }, [isVideo, open, videoModel, aspect, durationS, anchored]);
 
   // Generate-button progress: while generating, ease toward ~92% (Higgsfield gives no real % for a
   // single clip/still); gap-fill overrides with real segment progress (realProg pauses the ramp).
@@ -203,9 +197,9 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
       `I'm directing a VIDEO. My current picks (develop the rest, anything not listed is your call):\n` +
       `${lines.length ? lines.join('\n') : '- (all on Auto — propose a strong concept)'}\n` +
       (description.trim() ? `Free-text brief: ${description.trim()}\n` : '') +
-      `Output: ${output} — you can change this with me (default a ~3s clip). ${motionLine} ` +
-      `Duration: ${output === 'video' ? totalDurationS : durationS}s. Model: ${videoModel}. Aspect: ${aspect}. ` +
-      `For a changing scene / long action / longer video, guide me to compose + number keyframes first, then gap-fill.`;
+      `Output: a single motion clip. ${motionLine} ` +
+      `Duration: ${durationS}s. Model: ${videoModel}. Aspect: ${aspect}. ` +
+      `For a multi-shot / changing-scene video, tell me and I'll guide you to compose + number keyframes, then direct them in the Generated Storyboard.`;
     dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'videoshot', brandKitId, seed });
   };
 
@@ -232,32 +226,17 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
 
   // Video context — direct, GATED generate. Routes by output: keyframe (still → mark keyframe),
   // clip (single motion), or video (gap-fill across the numbered sequence).
+  // The Video Director makes ONE clip. Multi-shot directed videos live in the Generated Storyboard
+  // (Video tab → Storyboard toggle), which owns gap-fill. Anchored = identity-locked (Plan 7).
   const onGenerate = async () => {
     setGenError(null);
     const motion = { movement, action: action.trim(), speed };
-    if (output === 'video' && seqIds.length < 2) {
-      setGenError('Number at least 2 keyframes in the Library (right-click a keyframe → set position) before generating a gap-fill video.');
-      return;
-    }
     setGenerating(true);
     try {
-      if (output === 'clip') {
-        const { spec, anchorId } = buildSpec();
-        // Anchored (a Character is selected) → identity-locked clip: the brain renders a Soul-locked
-        // still then animates it. Surface the two-stage progress label.
-        await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS,
-          anchorId: anchored ? anchorId : null,
-          onProgress: (job) => { if (job.stage) setGenStage(job.stage === 'still' ? 'rendering character…' : 'animating…'); } });
-      } else {
-        const { spec } = buildSpec();
-        // Gap-fill reports REAL per-segment progress → drive the bar from it (pause the time ramp).
-        realProg.current = true;
-        await gapFillVideo(brandKitId, seqIds, { motion, model: videoModel, aspectRatio: aspect, totalDurationS, style: spec.style,
-          onProgress: (job) => {
-            const s = job?.segments;
-            if (s?.total) { setGenProgress(Math.min(0.97, s.done / s.total)); setGenStage(`segment ${Math.min(s.done + 1, s.total)}/${s.total}`); }
-          } });
-      }
+      const { spec, anchorId } = buildSpec();
+      await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS,
+        anchorId: anchored ? anchorId : null,
+        onProgress: (job) => { if (job.stage) setGenStage(job.stage === 'still' ? 'rendering character…' : 'animating…'); } });
       realProg.current = true; setGenProgress(1); setGenStage('done'); // flash 100% before the button resets
       await new Promise((r) => setTimeout(r, 450));
       fireVideoRefresh();
@@ -373,23 +352,9 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
             </label>
           </div>
 
-          {/* Render / Output row — on Video the Output toggle is inline here (with Render/aspect/res). */}
+          {/* Render / aspect / res row. The Video Director makes ONE clip; multi-shot directed videos
+              live in the Generated Storyboard (Video tab → Storyboard). */}
           <div className="flex flex-wrap items-center gap-[10px]">
-            {isVideo && (
-              <>
-                <span className="text-[11px] font-[700] text-ai">Output</span>
-                <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
-                  {/* Video Director = motion only. Keyframe STILLS are made on the Images tab, then
-                      marked ▦ keyframe — so the toggle is Clip vs gap-fill Video, not Keyframe. */}
-                  {([['clip', '▶ Clip'], ['video', '🎬 Video']] as [DirectorOutput, string][]).map(([o, lbl]) => (
-                    <button key={o} type="button" onClick={() => setOutput(o)}
-                      title={o === 'clip' ? 'Generate one motion clip' : 'Gap-fill the numbered keyframe sequence into a short'}
-                      className={'h-[32px] px-[12px] text-[12px] font-[600] ' + (output === o ? 'bg-ai text-white' : 'text-textItemBlur hover:text-btnText')}>{lbl}</button>
-                  ))}
-                </span>
-                <span className="w-px h-[20px] bg-newBorder" />
-              </>
-            )}
             {/* Render mode (layered vs single) only governs STILL composition → Images tab only. */}
             {!isVideo && (
               <>
@@ -474,31 +439,20 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 <input value={action} onChange={(e) => setAction(e.target.value)} placeholder="subject motion (optional)" className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText placeholder:text-textItemBlur w-[170px]" /></label>
               <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Speed</span>
                 <select value={speed} onChange={(e) => setSpeed(e.target.value)} className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">{MOTION_SPEEDS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
-              {output === 'clip' ? (
-                <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Duration {durationS}s</span>
-                  {/* Model-aware: enum models (Veo 4/6/8, Wan 5/10/15, …) get a dropdown; range models a slider. */}
-                  {modelInfo?.durations.type === 'enum' ? (
-                    <select value={durationS} onChange={(e) => setDurationS(Number(e.target.value))}
-                      className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">
-                      {modelInfo.durations.values.map((v) => <option key={v} value={v}>{v}s</option>)}
-                    </select>
-                  ) : (
-                    <input type="range" min={modelInfo?.durations.type === 'range' ? modelInfo.durations.min : 3}
-                      max={modelInfo?.durations.type === 'range' ? modelInfo.durations.max : 10}
-                      step={modelInfo?.durations.type === 'range' ? modelInfo.durations.step : 1}
-                      value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" />
-                  )}</label>
-              ) : (
-                <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Total {totalDurationS}s</span>
-                  <input type="range" min={4} max={30} step={1} value={totalDurationS} onChange={(e) => setTotalDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
-              )}
-              {output === 'video' && modelInfo && !modelInfo.gapFill && (
-                <span className="text-[11px] text-yellow-400 self-center">Gap-fill needs a start→end model — pick Kling / Seedance / Wan in the banner.</span>
-              )}
+              <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Duration {durationS}s</span>
+                {/* Model-aware: enum models (Veo 4/6/8, Wan 5/10/15, …) get a dropdown; range models a slider. */}
+                {modelInfo?.durations.type === 'enum' ? (
+                  <select value={durationS} onChange={(e) => setDurationS(Number(e.target.value))}
+                    className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">
+                    {modelInfo.durations.values.map((v) => <option key={v} value={v}>{v}s</option>)}
+                  </select>
+                ) : (
+                  <input type="range" min={modelInfo?.durations.type === 'range' ? modelInfo.durations.min : 3}
+                    max={modelInfo?.durations.type === 'range' ? modelInfo.durations.max : 10}
+                    step={modelInfo?.durations.type === 'range' ? modelInfo.durations.step : 1}
+                    value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" />
+                )}</label>
             </div>
-          )}
-          {isVideo && output === 'video' && (
-            <span className="text-[11px] text-textItemBlur">{seqIds.length} keyframe{seqIds.length === 1 ? '' : 's'} numbered{seqIds.length < 2 ? ' — number ≥2 (right-click a keyframe in the Library) to gap-fill' : ''}</span>
           )}
           {anchored && (
             <span className="text-[11px] text-ai">🔒 Identity-locked via &quot;{anchorName}&quot; — renders a Soul-locked still of the character in this scene, then animates it (image → video). Two generations.</span>
@@ -507,7 +461,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
 
           <span className="text-[10px] text-textItemBlur">
             {isVideo
-              ? 'The Video Director makes MOTION — ▶ Clip (one shot) or 🎬 Video (gap-fill across your numbered keyframes). Need keyframes? Render stills on the Images tab (your choice of image model + layered/single), mark them ▦ keyframe, then number them here. ⚡ Generate = one-off from your settings; ✨ Generate with AI = an interview (guides you to keyframes-first for longer / changing-scene videos). Clip + Video spend video credits.'
+              ? 'The Video Director makes ONE motion clip. ⚡ Generate = one-off from your settings; ✨ Generate with AI = a guided interview. Pick a saved Character for an identity-locked clip. For a multi-shot, directed video, use the 🎬 Storyboard (the Library/Storyboard toggle below) — it directs each transition across your numbered keyframes. Spends video credits.'
               : 'The agent asks a few questions, then the Create button renders it (uses image credits). Your picks seed the conversation; anything on Auto, it proposes.'}
           </span>
         </div>

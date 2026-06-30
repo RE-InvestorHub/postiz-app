@@ -19,6 +19,7 @@ import { StudioVideoEditorNLE } from '@gitroom/frontend/components/studio/studio
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioVideoLibraryPanel } from '@gitroom/frontend/components/studio/studio.video-library-panel';
+import { StudioStoryboardPanel } from '@gitroom/frontend/components/studio/studio.storyboard-panel';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { StudioProjectBar } from '@gitroom/frontend/components/studio/studio.project-bar';
 import { SoulTrainingWatcher } from '@gitroom/frontend/components/studio/studio.soul-watcher';
@@ -109,6 +110,8 @@ const VideoTabContent: FC = () => {
   // Default to the cheapest model (Kling 3.0 Turbo — first in STUDIO_VIDEO_MODELS), not Veo (priciest).
   const [videoModel, setVideoModel] = useState(videoModels[0]?.value ?? 'kling3_0_turbo');
   const [uploadOpen, setUploadOpen] = useState(false);
+  // Lower section toggles between the media bin (Library) and the Generated Storyboard (Plan 8).
+  const [videoView, setVideoView] = useState<'library' | 'storyboard'>('library');
   const refreshVideo = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh')); };
   return (
     <div className="flex flex-col gap-[18px]">
@@ -128,9 +131,20 @@ const VideoTabContent: FC = () => {
           className="ml-auto h-[36px] px-[14px] rounded-[8px] bg-btnPrimary text-btnText text-[12px] font-[600] hover:opacity-90">⬆ Upload</button>
       </div>
 
+      {/* Lower section: Library (media bin) ⇄ Storyboard (direct the numbered keyframes into a clip). */}
+      <div className="flex items-center gap-[8px]">
+        <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
+          {([['library', '▦ Library'], ['storyboard', '🎬 Storyboard']] as const).map(([v, lbl]) => (
+            <button key={v} type="button" onClick={() => setVideoView(v)}
+              title={v === 'library' ? 'The brand’s clips + keyframe stills' : 'Direct each transition between your numbered keyframes → one clip'}
+              className={'h-[34px] px-[14px] text-[12px] font-[600] ' + (videoView === v ? 'bg-ai text-white' : 'text-textItemBlur hover:text-btnText')}>{lbl}</button>
+          ))}
+        </span>
+      </div>
+
       {/* Library — the brand's clips/shorts + keyframe stills (media-aware canvas). Right-click a
-          keyframe to number it; the numbered keyframes (in order) are the sequence for the next render. */}
-      <StudioVideoLibraryPanel />
+          keyframe to number it; the numbered keyframes (in order) feed the Storyboard. */}
+      {videoView === 'library' ? <StudioVideoLibraryPanel /> : <StudioStoryboardPanel brandKitId={brandKitId} videoModel={videoModel} />}
 
       {/* Upload modal — drop a video into the brand's library (mirrors the Images upload). */}
       {uploadOpen && typeof document !== 'undefined' && createPortal(

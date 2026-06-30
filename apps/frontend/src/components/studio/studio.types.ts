@@ -134,6 +134,18 @@ export interface VideoKeyframe {
   label?: string;
 }
 
+/** Generated Storyboard — per-gap direction for the transition that STARTS at a keyframe (keyed by
+ *  the from-keyframe id, so it follows the frame through reorder). */
+export interface StoryboardGap {
+  /** Free-text "how should this transition go?" */
+  description?: string;
+  /** Camera move for this segment (overrides the global motion). */
+  movement?: string;
+  speed?: string;
+  /** How long this transition lingers (seconds); total video = sum of per-gap durations. */
+  durationS?: number;
+}
+
 export interface StudioState {
   activeTab: StudioTab;
   prompt: string;
@@ -168,6 +180,8 @@ export interface StudioState {
   /** Video tab: ordered keyframes staged for the next video generation (the Images→Video bridge +
    *  Scene Director on Video drop here; the keyframe tray + Library's Keyframes view read this). */
   videoKeyframes: VideoKeyframe[];
+  /** Generated Storyboard: per-gap transition direction, keyed by the from-keyframe id (survives reorder). */
+  storyboardGaps: Record<string, StoryboardGap>;
   /** Video Editor tab: the multi-track NLE edit (the serializable, agent-drivable timeline document). */
   timeline: TimelineEDL;
   /** Draggable floating agent chat window: null = closed, else open. In generation-interview

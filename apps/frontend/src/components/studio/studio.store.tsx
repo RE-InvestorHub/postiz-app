@@ -23,6 +23,7 @@ import {
   CloneRecord,
   AvatarOnboardingState,
   VideoKeyframe,
+  StoryboardGap,
   emptyConsentDraft,
   STUDIO_SLOT_COUNT,
 } from '@gitroom/frontend/components/studio/studio.types';
@@ -55,6 +56,8 @@ export type StudioAction =
   | { type: 'REORDER_VIDEO_KEYFRAMES'; ids: string[] }
   | { type: 'SET_VIDEO_KEYFRAMES'; keyframes: VideoKeyframe[] }
   | { type: 'CLEAR_VIDEO_KEYFRAMES' }
+  // Generated Storyboard — per-gap transition direction, keyed by the from-keyframe id.
+  | { type: 'SET_GAP_FIELD'; fromId: string; field: keyof StoryboardGap; value: string | number }
   // Video Editor — the timeline EDL (single source of truth for the NLE + the agent).
   | { type: 'SET_TIMELINE'; timeline: TimelineEDL }
   | { type: 'TL_ADD_CLIP'; trackId: string; clip: Clip }
@@ -90,6 +93,7 @@ export const initialStudioState: StudioState = {
   composerTemplateId: '',
   selectedImageId: null,
   videoKeyframes: [],
+  storyboardGaps: {},
   timeline: emptyEDL(),
   floatingAgent: null,
 };
@@ -173,7 +177,9 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
     case 'SET_VIDEO_KEYFRAMES':
       return { ...state, videoKeyframes: action.keyframes };
     case 'CLEAR_VIDEO_KEYFRAMES':
-      return { ...state, videoKeyframes: [] };
+      return { ...state, videoKeyframes: [], storyboardGaps: {} };
+    case 'SET_GAP_FIELD':
+      return { ...state, storyboardGaps: { ...state.storyboardGaps, [action.fromId]: { ...state.storyboardGaps[action.fromId], [action.field]: action.value } } };
     case 'SET_TIMELINE':
       return { ...state, timeline: action.timeline };
     case 'TL_ADD_CLIP':
