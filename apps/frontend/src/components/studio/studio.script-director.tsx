@@ -12,7 +12,7 @@ import { FC, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { SCRIPT_FORMATS, SCRIPT_TONES, TONE_LABELS, ScriptFormat, ScriptStructure, ScriptTone, ScriptFrameworks } from '@gitroom/frontend/components/studio/studio.types';
-import { createScript, applyStructure, getFrameworks, fetchUrlForScript } from '@gitroom/frontend/components/studio/studio.script-client';
+import { createScript, applyStructure, getFrameworks, fetchUrlForScript, generateScript } from '@gitroom/frontend/components/studio/studio.script-client';
 
 const IconWave: FC = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -34,6 +34,7 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
   const [targetS, setTargetS] = useState(30);
   const [brief, setBrief] = useState('');
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [frameworks, setFrameworks] = useState<ScriptFrameworks | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -68,6 +69,19 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
     } catch (e) {
       setError((e as Error)?.message ?? String(e));
     } finally { setBusy(false); }
+  };
+
+  // ⚡ Generate — one-shot: write the WHOLE script from the topic + the selected options (format /
+  // structure / tone / length), fill the panel directly. Cannot run without a topic.
+  const generate = async () => {
+    const topic = brief.trim();
+    if (!topic) { setError('Enter a topic in the box above first — Generate needs something to write about.'); return; }
+    setGenerating(true); setError(null);
+    try {
+      const s = await generateScript({ topic, format, structure: structure || undefined, targetDurationS: targetS, tone, brandKitId });
+      dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s });
+    } catch (e) { setError((e as Error)?.message ?? String(e)); }
+    finally { setGenerating(false); }
   };
 
   // ⬆ Upload — the button just opens a dropzone; the CODE decides how to process the file.
@@ -163,11 +177,8 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
 
       {error && <div className="text-[12px] text-red-400 leading-[1.4]">{error}</div>}
 
-      <div className="flex items-center gap-[10px]">
-        <button type="button" onClick={draftWithAI}
-          className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white font-[600] hover:opacity-90 flex items-center gap-[6px]">
-          ✨ Draft with AI
-        </button>
+      <div className="flex flex-wrap items-center gap-[10px]">
+        {/* Intake / alternative inputs (left) */}
         <button type="button" onClick={createBlank} disabled={busy}
           className="h-[40px] px-[16px] rounded-[8px] bg-newBgColorInner border border-newBorder text-btnText text-[13px] font-[600] hover:bg-boxHover disabled:opacity-50">
           {busy ? 'Creating…' : '＋ Blank script'}
@@ -180,7 +191,20 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
           className="h-[40px] px-[16px] rounded-[8px] bg-newBgColorInner border border-newBorder text-btnText text-[13px] font-[600] hover:bg-boxHover">
           🔗 From URL
         </button>
-        <span className="text-[11px] text-textItemBlur hidden lg:inline">Draft = a guided writer interview · Blank = the structure skeleton · Upload = import a script · From URL = script about a page or video.</span>
+
+        {/* Primary AI actions (bottom-right): Generate one-shot + Draft interview */}
+        <div className="ml-auto flex items-center gap-[10px]">
+          <button type="button" onClick={generate} disabled={generating}
+            className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white text-[13px] font-[600] hover:opacity-90 disabled:opacity-50"
+            title="Write the whole script from the topic + the options above">
+            {generating ? 'Generating…' : '⚡ Generate'}
+          </button>
+          <button type="button" onClick={draftWithAI}
+            className="h-[40px] px-[16px] rounded-[8px] border border-ai/50 bg-ai/5 text-ai text-[13px] font-[600] hover:bg-ai/10 flex items-center gap-[6px]"
+            title="Open a guided writer interview">
+            ✨ Draft with AI
+          </button>
+        </div>
       </div>
         </div>
       )}

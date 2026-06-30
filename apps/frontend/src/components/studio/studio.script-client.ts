@@ -12,6 +12,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.types';
 
 export interface CreateScriptInput { name: string; format?: ScriptFormat; structure?: ScriptStructure; targetDurationS?: number; brandKitId?: string; defaultTone?: ScriptTone; }
+export interface GenerateScriptInput { topic: string; format?: ScriptFormat; structure?: ScriptStructure | ''; targetDurationS?: number; tone?: ScriptTone; brandKitId?: string; }
 
 const BRAIN_BASE =
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_BRAIN_URL) ||
@@ -40,6 +41,9 @@ const post = <T>(path: string, body: unknown) => req<T>(path, { method: 'POST', 
 export interface FetchedUrl { ok: boolean; source: 'youtube' | 'web'; url: string; title: string; text: string; note?: string; videoId?: string }
 /** Pull the content behind a URL (YouTube transcript or scraped page) for the agent to script about. */
 export const fetchUrlForScript = (url: string) => post<FetchedUrl>('/scripts/fetch-url', { url });
+
+/** One-shot: write a full script from a topic + the selected options (no interview). Throws if topic is empty. */
+export const generateScript = (input: GenerateScriptInput) => post<ScriptDoc>('/scripts/generate', input);
 
 // --- reads ----------------------------------------------------------------
 export async function listScripts(brandKitId?: string): Promise<ScriptDoc[]> {
