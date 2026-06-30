@@ -112,6 +112,11 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     if (charSoul && !SOUL_ASPECTS.includes(aspect)) setAspect('3:4');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [charSoul]);
+  // Plan 7: on Video, a selected Character makes a CLIP identity-locked — the brain renders a
+  // Soul-locked still of the character in the scene, then image-to-videos it. (Video models can't
+  // consume a Soul directly.) anchorName drives the 🔒 note; `anchored` drives the cost + the request.
+  const anchorName = charSelected && charDim ? (charDim.components.find((c) => c.id === sel[charDim.id]?.slice(2))?.name || '') : '';
+  const anchored = isVideo && output === 'clip' && charSelected;
 
   // Video: load the selected model's allowed durations + gap-fill capability; snap the current
   // duration into the model's valid set so the user can't pick a value Higgsfield will reject.
@@ -138,12 +143,13 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
         output, model: videoModel, aspectRatio: aspect,
         duration: output === 'video' ? totalDurationS : durationS,
         segments: output === 'video' ? segs : undefined,
+        anchored, // identity-locked clip adds the still's image cost
       }).then((c) => { if (alive) { setCost(c); setCostLoading(false); } })
         .catch(() => { if (alive) { setCost(null); setCostLoading(false); } });
     }, 300);
     return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVideo, open, output, videoModel, aspect, durationS, totalDurationS, seqIds.length]);
+  }, [isVideo, open, output, videoModel, aspect, durationS, totalDurationS, seqIds.length, anchored]);
 
   // Generate-button progress: while generating, ease toward ~92% (Higgsfield gives no real % for a
   // single clip/still); gap-fill overrides with real segment progress (realProg pauses the ramp).
@@ -236,8 +242,12 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     setGenerating(true);
     try {
       if (output === 'clip') {
-        const { spec } = buildSpec();
-        await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS });
+        const { spec, anchorId } = buildSpec();
+        // Anchored (a Character is selected) → identity-locked clip: the brain renders a Soul-locked
+        // still then animates it. Surface the two-stage progress label.
+        await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS,
+          anchorId: anchored ? anchorId : null,
+          onProgress: (job) => { if (job.stage) setGenStage(job.stage === 'still' ? 'rendering character…' : 'animating…'); } });
       } else {
         const { spec } = buildSpec();
         // Gap-fill reports REAL per-segment progress → drive the bar from it (pause the time ramp).
@@ -489,6 +499,9 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
           )}
           {isVideo && output === 'video' && (
             <span className="text-[11px] text-textItemBlur">{seqIds.length} keyframe{seqIds.length === 1 ? '' : 's'} numbered{seqIds.length < 2 ? ' — number ≥2 (right-click a keyframe in the Library) to gap-fill' : ''}</span>
+          )}
+          {anchored && (
+            <span className="text-[11px] text-ai">🔒 Identity-locked via &quot;{anchorName}&quot; — renders a Soul-locked still of the character in this scene, then animates it (image → video). Two generations.</span>
           )}
           {genError && <span className="text-[11px] text-red-400">{genError}</span>}
 

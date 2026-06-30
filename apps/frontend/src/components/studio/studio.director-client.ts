@@ -78,7 +78,7 @@ export async function renderDirectorShot(brandKitId: string, spec: Record<string
   throw new Error('Render timed out.');
 }
 
-export interface RenderJobProgress { status: string; segments?: { done: number; total: number } }
+export interface RenderJobProgress { status: string; segments?: { done: number; total: number }; stage?: 'still' | 'animate' | string }
 /** Poll the shared /director/render/status job map until done (clip + gap-fill reuse it). The optional
  *  onProgress fires each poll — gap-fill jobs carry `segments:{done,total}` for a real progress bar. */
 async function pollRenderResult(jobId: string, maxTries = 120, onProgress?: (j: RenderJobProgress) => void): Promise<{ id: string; url: string; [k: string]: unknown }> {
@@ -102,7 +102,7 @@ export interface VideoMotion { movement?: string; action?: string; speed?: strin
 export async function renderDirectorClip(
   brandKitId: string,
   spec: Record<string, unknown>,
-  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string | null } = {}
+  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string | null; anchorId?: string | null; onProgress?: (j: RenderJobProgress) => void } = {}
 ): Promise<{ id: string; url: string }> {
   const { jobId } = await req<{ jobId: string }>('/director/render-clip', {
     method: 'POST',
@@ -110,9 +110,11 @@ export async function renderDirectorClip(
       spec, brandKitId, motion: opts.motion || {}, model: opts.model || 'veo3_1',
       aspectRatio: opts.aspectRatio || '9:16', durationS: opts.durationS ?? 6,
       firstFrameUrl: opts.firstFrameUrl || null,
+      // Plan 7: an anchored clip image-to-videos from a Soul-locked identity still of this character.
+      ...(opts.anchorId ? { anchorId: opts.anchorId } : {}),
     }),
   });
-  return pollRenderResult(jobId, 160) as Promise<{ id: string; url: string }>;
+  return pollRenderResult(jobId, 200, opts.onProgress) as Promise<{ id: string; url: string }>;
 }
 
 /**
@@ -150,12 +152,13 @@ export function getVideoModelInfo(model: string): Promise<VideoModelInfo> {
 
 export interface VideoCost { credits: number | null; detail?: string }
 /** Live, output-aware credit estimate from `higgsfield generate cost` (cached, no spend). */
-export function getVideoCost(params: { output: string; model: string; duration?: number; aspectRatio?: string; segments?: number }): Promise<VideoCost> {
+export function getVideoCost(params: { output: string; model: string; duration?: number; aspectRatio?: string; segments?: number; anchored?: boolean }): Promise<VideoCost> {
   const q = new URLSearchParams();
   q.set('output', params.output); q.set('model', params.model);
   if (params.duration != null) q.set('duration', String(params.duration));
   if (params.aspectRatio) q.set('aspectRatio', params.aspectRatio);
   if (params.segments != null) q.set('segments', String(params.segments));
+  if (params.anchored) q.set('anchored', '1');
   return req<VideoCost>(`/video/cost?${q.toString()}`);
 }
 
