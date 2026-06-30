@@ -69,7 +69,7 @@ export type StudioAction =
   | { type: 'TL_SPLIT_CLIP'; trackId: string; clipId: string; atFrame: number }
   | { type: 'TL_ADD_TRACK'; track: Track }
   | { type: 'TL_SET_GLOBAL'; patch: Partial<Pick<TimelineEDL, 'fps' | 'format' | 'width' | 'height'>> }
-  | { type: 'OPEN_FLOATING_AGENT'; seed?: string; kind?: string; brandKitId?: string; slot?: string }
+  | { type: 'OPEN_FLOATING_AGENT'; seed?: string; kind?: string; brandKitId?: string; slot?: string; autoSend?: boolean }
   | { type: 'CLOSE_FLOATING_AGENT' }
   | { type: 'RESET' };
 
@@ -202,7 +202,7 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
     case 'TL_SET_GLOBAL':
       return { ...state, timeline: tl.setGlobal(state.timeline, action.patch) };
     case 'OPEN_FLOATING_AGENT':
-      return { ...state, floatingAgent: { seed: action.seed, kind: action.kind, brandKitId: action.brandKitId, slot: action.slot } };
+      return { ...state, floatingAgent: { seed: action.seed, kind: action.kind, brandKitId: action.brandKitId, slot: action.slot, autoSend: action.autoSend } };
     case 'CLOSE_FLOATING_AGENT':
       return { ...state, floatingAgent: null };
     case 'SET_AUDIO_SCRIPT':

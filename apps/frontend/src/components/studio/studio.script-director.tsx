@@ -121,7 +121,9 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
       const kindLabel = c.source === 'youtube' ? 'YouTube video' : 'web page';
       const seed = `Write a short-form script based on this ${kindLabel} ("${c.title}", ${u}). Use it as the source material — pull the core idea, the strongest hook, and the angle from it; keep it grounded in real Re:InvestorHub features.${c.note ? ` Source note: ${c.note}` : ''}\n\nContent:\n${c.text}`;
       setUrlOpen(false); setUrl('');
-      dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'audioscript', brandKitId, seed });
+      // autoSend: the URL content is the whole request — fire it straight into the agent
+      // so it replies immediately, no need for the user to hit submit.
+      dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'audioscript', brandKitId, seed, autoSend: true });
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setFetching(false); }
   };

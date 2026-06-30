@@ -31,7 +31,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`Script service responded ${res.status}${detail ? `: ${detail}` : ''}`);
+    // The brain returns { error } on failure; surface that clean message (e.g. the
+    // "couldn't fetch that URL" guard) rather than a raw status + JSON blob.
+    let friendly = '';
+    try { friendly = (JSON.parse(detail)?.error as string) || ''; } catch { /* not json */ }
+    throw new Error(friendly || `Script service responded ${res.status}${detail ? `: ${detail}` : ''}`);
   }
   return (await res.json().catch(() => ({}))) as T;
 }
