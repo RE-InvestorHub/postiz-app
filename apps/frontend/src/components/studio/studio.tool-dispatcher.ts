@@ -158,6 +158,30 @@ export function requiresApproval(toolName: string): boolean {
     'editor.removeClip',
     'editor.splitClip',
     'editor.patchClip',
+    // Script (Audio writer's room) — ALL structured-data edits / advisory reads, NO spend → auto.
+    // (Plan 1 renders nothing. Multi-voice render lands in Plan 2 and WILL be gated.)
+    'script.create',
+    'script.select',
+    'script.update',
+    'script.delete',
+    'script.setStructure',
+    'script.addCharacter',
+    'script.updateCharacter',
+    'script.removeCharacter',
+    'script.addBeat',
+    'script.updateBeat',
+    'script.removeBeat',
+    'script.reorderBeats',
+    'script.writeBeat',
+    'script.addLine',
+    'script.setLineDirection',
+    'script.removeLine',
+    'script.reorderLines',
+    'script.generateHooks',
+    'script.selectHook',
+    'script.suggestPronunciation',
+    'script.critique',
+    'script.bindToAd',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

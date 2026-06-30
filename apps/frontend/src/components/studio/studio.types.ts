@@ -146,6 +146,50 @@ export interface StoryboardGap {
   durationS?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Script (Audio Studio writer's room — Plan 1). Mirrors the brain model in
+// services/brain/lib/scripts.mjs. The store, script-client, capabilities, the
+// Audio Director, and the Script panel all speak these.
+// ---------------------------------------------------------------------------
+
+export type ScriptFormat = 'reel' | 'tiktok_ad' | 'short_film' | 'explainer' | 'testimonial';
+export type ScriptStructure = 'pas' | 'aida' | 'bab' | 'hook_retain_reward_cta' | 'film_beats';
+export type ScriptTone = 'conversational' | 'warm' | 'authoritative' | 'energetic' | 'calm';
+export type HookPattern = 'contrarian' | 'proof' | 'curiosity' | 'pov' | 'callout' | 'pattern_interrupt';
+
+export interface ScriptCharacter { id: string; name: string; role: string; default_tone: ScriptTone; }
+/** tone '' = inherit the character's default_tone. */
+export interface ScriptLine { id: string; character_id: string | null; text: string; tone: ScriptTone | ''; direction: string; sfx_cue: string; }
+export interface ScriptBeat { id: string; label: string; target_start_s: number; target_duration_s: number; lines: ScriptLine[]; }
+export interface ScriptHook { id: string; pattern: HookPattern; text: string; selected: boolean; }
+export interface ScriptPron { term: string; phonetic: string; }
+
+export interface ScriptDoc {
+  script_id: string;
+  brand_kit_id: string;
+  name: string;
+  format: ScriptFormat;
+  structure: ScriptStructure | '';
+  target_duration_s: number;
+  words_per_second: number;
+  cast: ScriptCharacter[];
+  beats: ScriptBeat[];
+  hooks: ScriptHook[];
+  pronunciation: ScriptPron[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** GET /scripts/frameworks payload — drives the Director + Script-panel pickers. */
+export interface ScriptFrameworks {
+  structures: Array<{ id: ScriptStructure; label: string; blurb: string; beats: Array<{ label: string; share: number; note: string }>; skeleton: ScriptBeat[] }>;
+  hooks: Array<{ id: HookPattern; label: string; guidance: string; example: string }>;
+  templates: Array<{ id: string; label: string; format: string; fields: string[]; sample: string }>;
+}
+
+export const SCRIPT_FORMATS: ScriptFormat[] = ['reel', 'tiktok_ad', 'short_film', 'explainer', 'testimonial'];
+export const SCRIPT_TONES: ScriptTone[] = ['conversational', 'warm', 'authoritative', 'energetic', 'calm'];
+
 export interface StudioState {
   activeTab: StudioTab;
   prompt: string;
@@ -167,6 +211,9 @@ export interface StudioState {
   audioVoiceId: string;
   /** Audio tab: voice-over script (shared by manual UI + agent). */
   audioScript: string;
+  /** Audio tab: the active structured Script being authored (writer's room). The agent's
+   *  script.* capabilities + the Script panel both write here (shared lever). null = none. */
+  activeScript: ScriptDoc | null;
   /** Active Campaign context (Content Composer) — shared across tabs. */
   activeCampaignId: string | null;
   /** Active Ad context within the campaign — "Add to ad" + composers target this. */

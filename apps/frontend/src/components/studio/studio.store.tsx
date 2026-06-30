@@ -24,6 +24,7 @@ import {
   AvatarOnboardingState,
   VideoKeyframe,
   StoryboardGap,
+  ScriptDoc,
   emptyConsentDraft,
   STUDIO_SLOT_COUNT,
 } from '@gitroom/frontend/components/studio/studio.types';
@@ -46,6 +47,7 @@ export type StudioAction =
   | { type: 'PATCH_AVATAR_ONBOARDING'; patch: Partial<AvatarOnboardingState> }
   | { type: 'SET_AUDIO_VOICE'; voiceId: string }
   | { type: 'SET_AUDIO_SCRIPT'; script: string }
+  | { type: 'SET_ACTIVE_SCRIPT'; script: ScriptDoc | null }
   | { type: 'SET_ACTIVE_CAMPAIGN'; campaignId: string | null }
   | { type: 'SET_ACTIVE_AD'; adId: string | null }
   | { type: 'SET_COMPOSER_BRANDKIT'; brandKitId: string }
@@ -87,6 +89,7 @@ export const initialStudioState: StudioState = {
   avatarOnboarding: null,
   audioVoiceId: '',
   audioScript: '',
+  activeScript: null,
   activeCampaignId: null,
   activeAdId: null,
   composerBrandKitId: 'default',
@@ -147,6 +150,8 @@ export function studioReducer(state: StudioState, action: StudioAction): StudioS
         : state;
     case 'SET_AUDIO_VOICE':
       return { ...state, audioVoiceId: action.voiceId };
+    case 'SET_ACTIVE_SCRIPT':
+      return { ...state, activeScript: action.script };
     case 'SET_ACTIVE_CAMPAIGN':
       // Switching campaigns clears the active ad (it belongs to the old campaign).
       return { ...state, activeCampaignId: action.campaignId, activeAdId: null };
