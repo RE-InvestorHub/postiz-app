@@ -27,6 +27,7 @@ export const StudioStoryboardPanel: FC<{ brandKitId: string; videoModel: string 
   const [generating, setGenerating] = useState(false);
   const [stage, setStage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ id: string; url: string } | null>(null); // the just-generated clip, shown inline
   const [cost, setCost] = useState<number | null>(null);
   const [costLoading, setCostLoading] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -66,13 +67,14 @@ export const StudioStoryboardPanel: FC<{ brandKitId: string; videoModel: string 
 
   const onGenerate = async () => {
     if (kfs.length < 2 || generating) return;
-    setError(null); setGenerating(true); setStage('');
+    setError(null); setGenerating(true); setStage(''); setResult(null);
     try {
       const directions = between.map((k) => ({ ...(gaps[k.id] || {}), durationS: gapDur(k.id) }));
-      await gapFillVideo(brandKitId, kfs.map((k) => k.id), {
+      const r = await gapFillVideo(brandKitId, kfs.map((k) => k.id), {
         model: videoModel, aspectRatio: aspect, totalDurationS: totalDur, directions,
         onProgress: (job) => { const s = job.segments; if (s?.total) setStage(`segment ${Math.min(s.done + 1, s.total)}/${s.total}`); },
       });
+      setResult(r); // show it inline immediately (it's also saved to the Library)
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh'));
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setGenerating(false); setStage(''); }
@@ -95,6 +97,19 @@ export const StudioStoryboardPanel: FC<{ brandKitId: string; videoModel: string 
         <span className="text-[11px] text-textItemBlur flex-1">Direct each transition between your numbered keyframes, then render one continuous clip.</span>
         {!gapFillCapable && <span className="text-[11px] text-yellow-400">Pick a start→end model (Kling / Seedance / Wan) in the banner.</span>}
       </div>
+
+      {/* Result — the just-generated clip, shown inline immediately (also saved to the Library). */}
+      {result && (
+        <div className="flex flex-col gap-[6px] rounded-[8px] border border-ai/40 bg-black/40 p-[8px]">
+          <div className="flex items-center gap-[8px]">
+            <span className="text-[11px] font-[700] text-ai">✓ Generated</span>
+            <span className="text-[11px] text-textItemBlur flex-1">Saved to the Library — drop it into the Video Editor to add audio / finish.</span>
+            <a href={result.url} target="_blank" rel="noreferrer" className="text-[11px] text-textItemBlur hover:text-btnText">open ↗</a>
+          </div>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video src={result.url} controls autoPlay loop playsInline className="max-h-[44vh] w-full rounded-[6px] bg-black object-contain" />
+        </div>
+      )}
 
       {/* The board — keyframe tiles with a direction cell in each gap. Horizontal scroll. */}
       <div className="flex items-stretch gap-[8px] overflow-x-auto pb-[6px]">
