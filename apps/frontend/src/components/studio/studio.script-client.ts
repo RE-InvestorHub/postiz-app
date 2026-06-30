@@ -36,6 +36,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const post = <T>(path: string, body: unknown) => req<T>(path, { method: 'POST', body: JSON.stringify(body) });
 
+// --- URL → content (Script Director "from a URL") -------------------------
+export interface FetchedUrl { ok: boolean; source: 'youtube' | 'web'; url: string; title: string; text: string; note?: string; videoId?: string }
+/** Pull the content behind a URL (YouTube transcript or scraped page) for the agent to script about. */
+export const fetchUrlForScript = (url: string) => post<FetchedUrl>('/scripts/fetch-url', { url });
+
 // --- reads ----------------------------------------------------------------
 export async function listScripts(brandKitId?: string): Promise<ScriptDoc[]> {
   const q = brandKitId ? `?brandKitId=${encodeURIComponent(brandKitId)}` : '';

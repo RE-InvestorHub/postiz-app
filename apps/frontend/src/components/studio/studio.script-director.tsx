@@ -12,7 +12,7 @@ import { FC, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { SCRIPT_FORMATS, SCRIPT_TONES, TONE_LABELS, ScriptFormat, ScriptStructure, ScriptTone, ScriptFrameworks } from '@gitroom/frontend/components/studio/studio.types';
-import { createScript, applyStructure, getFrameworks } from '@gitroom/frontend/components/studio/studio.script-client';
+import { createScript, applyStructure, getFrameworks, fetchUrlForScript } from '@gitroom/frontend/components/studio/studio.script-client';
 
 const IconWave: FC = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -38,6 +38,9 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
   const [frameworks, setFrameworks] = useState<ScriptFrameworks | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [urlOpen, setUrlOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  const [fetching, setFetching] = useState(false);
 
   useEffect(() => { getFrameworks(30).then(setFrameworks).catch(() => undefined); }, []);
 
@@ -90,6 +93,23 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
       ? `Import this existing script the user uploaded ("${file.name}") and structure it into the writer's room — create the script, lay out the beats, assign a cast, write the lines, and suggest hooks. Keep the user's wording where it works. Here is the content:\n\n${text}`
       : `The user uploaded a reference file "${file.name}" (not text-readable here). Ask them what to draw from it, then develop the script with them.${brief.trim() ? ` Brief so far: ${brief.trim()}` : ''}`;
     dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'audioscript', brandKitId, seed });
+  };
+
+  // 🔗 From URL — pull the content behind a pasted URL (YouTube transcript / scraped page) on the
+  // brain, then open the 'audioscript' interview seeded with it so the agent scripts ABOUT it.
+  const fromUrl = async () => {
+    const u = url.trim();
+    if (!u) return;
+    setFetching(true); setError(null);
+    try {
+      const c = await fetchUrlForScript(u);
+      if (!c.text) { setError(c.note || 'Could not read any content from that URL.'); return; }
+      const kindLabel = c.source === 'youtube' ? 'YouTube video' : 'web page';
+      const seed = `Write a short-form script based on this ${kindLabel} ("${c.title}", ${u}). Use it as the source material — pull the core idea, the strongest hook, and the angle from it; keep it grounded in real Re:InvestorHub features.${c.note ? ` Source note: ${c.note}` : ''}\n\nContent:\n${c.text}`;
+      setUrlOpen(false); setUrl('');
+      dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'audioscript', brandKitId, seed });
+    } catch (e) { setError((e as Error)?.message ?? String(e)); }
+    finally { setFetching(false); }
   };
 
   const selCls = 'h-[40px] px-[10px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText';
@@ -156,7 +176,11 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
           className="h-[40px] px-[16px] rounded-[8px] bg-newBgColorInner border border-newBorder text-btnText text-[13px] font-[600] hover:bg-boxHover">
           ⬆ Upload
         </button>
-        <span className="text-[11px] text-textItemBlur hidden lg:inline">Draft = a guided writer interview · Blank = the structure skeleton · Upload = import a script or drop a reference.</span>
+        <button type="button" onClick={() => { setError(null); setUrlOpen(true); }}
+          className="h-[40px] px-[16px] rounded-[8px] bg-newBgColorInner border border-newBorder text-btnText text-[13px] font-[600] hover:bg-boxHover">
+          🔗 From URL
+        </button>
+        <span className="text-[11px] text-textItemBlur hidden lg:inline">Draft = a guided writer interview · Blank = the structure skeleton · Upload = import a script · From URL = script about a page or video.</span>
       </div>
         </div>
       )}
@@ -181,6 +205,35 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
               <span className="text-[13px] font-[600] text-btnText">Drag &amp; drop or click to browse</span>
               <span className="text-[11px] text-textItemBlur">.txt · .md · or any reference file</span>
             </label>
+          </div>
+        </div>, document.body)}
+
+      {/* From-URL modal — a data input awaiting a URL; the brain fetches the content and the agent
+          writes a script about it. */}
+      {urlOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => !fetching && setUrlOpen(false)}>
+          <div className="w-[520px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[12px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[15px] font-[700] text-btnText flex-1">Script from a URL</span>
+              <button type="button" onClick={() => setUrlOpen(false)} className="h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText">✕</button>
+            </div>
+            <span className="text-[12px] text-textItemBlur leading-[1.5]">Paste a link to a web page, YouTube video, or an ad. The content behind it is fetched (YouTube → transcript) and the AI writes a script about it.</span>
+            <input
+              autoFocus
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') fromUrl(); }}
+              placeholder="https://…  (webpage · youtube.com/watch · an ad)"
+              className="w-full h-[44px] px-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur"
+            />
+            {error && <div className="text-[12px] text-red-400 leading-[1.4]">{error}</div>}
+            <div className="flex items-center gap-[10px]">
+              <button type="button" onClick={fromUrl} disabled={fetching || !url.trim()}
+                className="h-[40px] px-[18px] rounded-[8px] bg-ai text-white text-[13px] font-[600] hover:opacity-90 disabled:opacity-50">
+                {fetching ? 'Fetching…' : 'Fetch & draft'}
+              </button>
+              <span className="text-[11px] text-textItemBlur">Login-walled posts may return little; public pages, ads &amp; videos work best.</span>
+            </div>
           </div>
         </div>, document.body)}
     </div>
