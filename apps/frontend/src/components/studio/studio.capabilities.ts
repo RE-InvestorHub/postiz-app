@@ -40,7 +40,7 @@ import { composeStill, createTemplateFromStill, composeVideoAd, composeCarousel,
 import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extractBrand, completeBrandPalette, suggestBrandFonts, draftBrandVoice, generateBrandLogos, getBrand, downloadBrandKit, deriveLogoSlot, LogoSlot } from '@gitroom/frontend/components/studio/studio.brand-client';
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
-import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, renderDirectorShot } from '@gitroom/frontend/components/studio/studio.director-client';
+import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, renderDirectorShot, getVideoCost } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
@@ -998,6 +998,17 @@ export function buildStudioCapabilities(
         await addKeyframes(ids);
         dispatch({ type: 'SET_TAB', tab: 'video' });
         refreshVideoLibrary();
+      },
+    },
+    {
+      // Quote the LIVE credit cost of a Video Director output (read-only, NO spend) so the agent can
+      // advise during the interview. Proxies `higgsfield generate cost`. Auto-approved.
+      id: 'video.cost',
+      namespace: 'video',
+      label: 'Quote the live credit cost of a video output (no spend)',
+      params: ['output', 'model', 'duration', 'aspectRatio', 'segments'],
+      handler: async (p: { output?: string; model?: string; duration?: number; aspectRatio?: string; segments?: number } = {}) => {
+        return getVideoCost({ output: p.output || 'clip', model: p.model || 'kling3_0_turbo', duration: p.duration, aspectRatio: p.aspectRatio, segments: p.segments });
       },
     },
   ];
