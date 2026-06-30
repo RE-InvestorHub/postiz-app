@@ -78,12 +78,15 @@ export async function renderDirectorShot(brandKitId: string, spec: Record<string
   throw new Error('Render timed out.');
 }
 
-/** Poll the shared /director/render/status job map until done (clip + gap-fill reuse it). */
-async function pollRenderResult(jobId: string, maxTries = 120): Promise<{ id: string; url: string; [k: string]: unknown }> {
+export interface RenderJobProgress { status: string; segments?: { done: number; total: number } }
+/** Poll the shared /director/render/status job map until done (clip + gap-fill reuse it). The optional
+ *  onProgress fires each poll — gap-fill jobs carry `segments:{done,total}` for a real progress bar. */
+async function pollRenderResult(jobId: string, maxTries = 120, onProgress?: (j: RenderJobProgress) => void): Promise<{ id: string; url: string; [k: string]: unknown }> {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   for (let i = 0; i < maxTries; i++) {
     await sleep(3000);
-    const job = await req<{ status: string; result?: any; error?: string }>(`/director/render/status?jobId=${encodeURIComponent(jobId)}`);
+    const job = await req<{ status: string; result?: any; error?: string; segments?: { done: number; total: number } }>(`/director/render/status?jobId=${encodeURIComponent(jobId)}`);
+    if (onProgress) onProgress(job);
     if (job.status === 'done') return job.result;
     if (job.status === 'error') throw new Error(job.error || 'Render failed.');
   }
@@ -119,7 +122,7 @@ export async function renderDirectorClip(
 export async function gapFillVideo(
   brandKitId: string,
   keyframeIds: string[],
-  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; totalDurationS?: number; style?: string } = {}
+  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; totalDurationS?: number; style?: string; onProgress?: (j: RenderJobProgress) => void } = {}
 ): Promise<{ id: string; url: string; segments?: number }> {
   const { jobId } = await req<{ jobId: string }>('/video/gapfill', {
     method: 'POST',
@@ -129,7 +132,31 @@ export async function gapFillVideo(
       ...(opts.style ? { style: opts.style } : {}),
     }),
   });
-  return pollRenderResult(jobId, 240) as Promise<{ id: string; url: string; segments?: number }>;
+  return pollRenderResult(jobId, 240, opts.onProgress) as Promise<{ id: string; url: string; segments?: number }>;
+}
+
+// --- Video Director: live cost + model duration metadata (Plan 5) ---
+
+export interface VideoModelInfo {
+  model: string;
+  durations: { type: 'range'; min: number; max: number; step: number } | { type: 'enum'; values: number[] };
+  gapFill: boolean;
+  lowest: number;
+}
+/** Per-model allowed durations + gap-fill capability + the model's lowest valid duration. No spend. */
+export function getVideoModelInfo(model: string): Promise<VideoModelInfo> {
+  return req<VideoModelInfo>(`/video/model-info?model=${encodeURIComponent(model)}`);
+}
+
+export interface VideoCost { credits: number | null; detail?: string }
+/** Live, output-aware credit estimate from `higgsfield generate cost` (cached, no spend). */
+export function getVideoCost(params: { output: string; model: string; duration?: number; aspectRatio?: string; segments?: number }): Promise<VideoCost> {
+  const q = new URLSearchParams();
+  q.set('output', params.output); q.set('model', params.model);
+  if (params.duration != null) q.set('duration', String(params.duration));
+  if (params.aspectRatio) q.set('aspectRatio', params.aspectRatio);
+  if (params.segments != null) q.set('segments', String(params.segments));
+  return req<VideoCost>(`/video/cost?${q.toString()}`);
 }
 
 export interface SoulStatus {
