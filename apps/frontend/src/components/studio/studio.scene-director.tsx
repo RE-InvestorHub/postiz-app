@@ -49,6 +49,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   const [totalDurationS, setTotalDurationS] = useState(15);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  // Free-text "describe it" box — a one-shot prompt woven into the spec (both Images + Video).
+  const [description, setDescription] = useState('');
   const seqIds = state.videoKeyframes.map((k) => k.id);
   // Aspect + resolution are STORE-backed (the single home for both — moved out of the bottom bar).
   const aspect = state.aspectRatio;
@@ -110,6 +112,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     const seed =
       `I'm directing an ad shot. Here are my picks — develop the rest, anything not listed is your call:\n` +
       `${lines.length ? lines.join('\n') : '- (all on Auto — propose a strong concept)'}\n` +
+      (description.trim() ? `Free-text brief: ${description.trim()}\n` : '') +
       `Render mode: ${renderMode}. Aspect ratio: ${aspect}. Resolution: ${state.resolution}. When you're confident, the Create button will render it.`;
     dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'shot', brandKitId, seed });
   };
@@ -128,6 +131,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
         if (c) { spec[d.id] = c.name; if (d.component === 'character') anchorId = c.id; }
       }
     }
+    // The free-text box rides along as `description` — the brain prompt-builders weave it in.
+    if (description.trim()) spec.description = description.trim();
     return { spec, anchorId };
   };
 
@@ -152,11 +157,28 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
         const { spec } = buildSpec();
         await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS });
       } else {
-        await gapFillVideo(brandKitId, seqIds, { motion, model: videoModel, aspectRatio: aspect, totalDurationS });
+        const { spec } = buildSpec();
+        await gapFillVideo(brandKitId, seqIds, { motion, model: videoModel, aspectRatio: aspect, totalDurationS, style: spec.style });
       }
       fireVideoRefresh();
     } catch (e) { setGenError((e as Error)?.message ?? String(e)); }
     finally { setGenerating(false); }
+  };
+
+  // Images context — direct, GATED one-shot generate. Renders a still from the picks + free text and
+  // drops it straight into the brand image library (no agent interview). Mirrors the Video keyframe path.
+  const fireImagesRefresh = (selectImageId?: string) => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh', { detail: selectImageId ? { selectImageId } : {} })); };
+  const fireImagesGenerating = (active: boolean) => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-generating', { detail: { active } })); };
+  const onGenerateImage = async () => {
+    setGenError(null);
+    setGenerating(true);
+    fireImagesGenerating(true);
+    try {
+      const { spec, anchorId } = buildSpec();
+      const r = await renderDirectorShot(brandKitId, { ...spec, renderMode, aspectRatio: aspect, anchorId });
+      fireImagesRefresh(r.id);
+    } catch (e) { setGenError((e as Error)?.message ?? String(e)); }
+    finally { setGenerating(false); fireImagesGenerating(false); }
   };
 
   const selectCls = 'h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText w-full';
@@ -235,6 +257,17 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 </label>,
               ];
             })}
+            {/* Free-text "describe it" — fills the trailing cells of the bottom row (spans 2 columns).
+                A one-shot prompt woven into the spec alongside the structured picks. */}
+            <label className="flex flex-col gap-[3px] col-span-2">
+              <span className="text-[11px] font-[600] text-btnText flex-1" title="Free-text prompt — merged with your picks and sent to the model. Leave blank to rely on the dropdowns.">
+                Describe it — free prompt
+              </span>
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+                placeholder={isVideo ? 'e.g. the founder walking through a sunlit downtown loft, confident' : 'e.g. a golden retriever in sunglasses on a sunny beach, product on a towel'}
+                rows={2}
+                className="px-[8px] py-[6px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText placeholder:text-textItemBlur w-full resize-none leading-snug" />
+            </label>
           </div>
 
           {/* Render / Output row — on Video the Output toggle is inline here (with Render/aspect/res). */}
@@ -287,9 +320,18 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 {generating ? 'Generating…' : output === 'keyframe' ? '✨ Generate keyframe' : output === 'clip' ? '✨ Generate clip ($)' : '🎬 Generate video ($)'}
               </button>
             ) : (
-              <button type="button" onClick={onDevelop} className="ml-auto h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90">
-                ✨ Develop with AI
-              </button>
+              <span className="ml-auto flex items-center gap-[8px]">
+                <button type="button" onClick={onDevelop}
+                  title="Open the AI agent — it asks a few questions, then the Create button renders"
+                  className="h-[36px] px-[14px] rounded-[8px] border border-ai/60 text-ai text-[13px] font-[700] hover:bg-ai/10">
+                  ✨ Develop with AI
+                </button>
+                <button type="button" disabled={generating} onClick={onGenerateImage}
+                  title="One-shot render from your picks + free text — straight to the image library (uses image credits)"
+                  className="h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
+                  {generating ? 'Generating…' : '⚡ Generate ($)'}
+                </button>
+              </span>
             )}
           </div>
 
@@ -304,7 +346,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 <select value={speed} onChange={(e) => setSpeed(e.target.value)} className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">{MOTION_SPEEDS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
               {output === 'clip' ? (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Duration {durationS}s</span>
-                  <input type="range" min={2} max={10} step={1} value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
+                  {/* Min 3s — Kling/Seedance reject shorter clips (<3 → "duration must be ≥ 3"). */}
+                  <input type="range" min={3} max={10} step={1} value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
               ) : (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Total {totalDurationS}s</span>
                   <input type="range" min={4} max={30} step={1} value={totalDurationS} onChange={(e) => setTotalDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
@@ -317,7 +360,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
           {isVideo && output === 'video' && (
             <span className="text-[11px] text-textItemBlur">{seqIds.length} keyframe{seqIds.length === 1 ? '' : 's'} numbered{seqIds.length < 2 ? ' — number ≥2 (right-click a keyframe in the Library) to gap-fill' : ''}</span>
           )}
-          {isVideo && genError && <span className="text-[11px] text-red-400">{genError}</span>}
+          {genError && <span className="text-[11px] text-red-400">{genError}</span>}
 
           <span className="text-[10px] text-textItemBlur">
             {isVideo

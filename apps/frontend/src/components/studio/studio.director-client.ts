@@ -119,13 +119,14 @@ export async function renderDirectorClip(
 export async function gapFillVideo(
   brandKitId: string,
   keyframeIds: string[],
-  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; totalDurationS?: number } = {}
+  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; totalDurationS?: number; style?: string } = {}
 ): Promise<{ id: string; url: string; segments?: number }> {
   const { jobId } = await req<{ jobId: string }>('/video/gapfill', {
     method: 'POST',
     body: JSON.stringify({
       keyframeIds, brandKitId, motion: opts.motion || {}, model: opts.model || 'kling3_0',
       aspectRatio: opts.aspectRatio || '9:16', totalDurationS: opts.totalDurationS ?? 15,
+      ...(opts.style ? { style: opts.style } : {}),
     }),
   });
   return pollRenderResult(jobId, 240) as Promise<{ id: string; url: string; segments?: number }>;
