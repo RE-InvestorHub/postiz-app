@@ -25,6 +25,7 @@ const FORMAT_LABELS: Record<ScriptFormat, string> = {
 export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) => {
   const { state, dispatch } = useStudio();
   const active = state.activeScript;
+  const [open, setOpen] = useState(false); // collapsible card (collapsed by default), matching the Scene Director
   const [format, setFormat] = useState<ScriptFormat>('reel');
   const [structure, setStructure] = useState<ScriptStructure | ''>('hook_retain_reward_cta');
   const [targetS, setTargetS] = useState(30);
@@ -63,17 +64,17 @@ export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
   const selCls = 'h-[40px] px-[10px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText';
 
   return (
-    <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[16px] flex flex-col gap-[12px]">
-      <div className="flex items-center gap-[8px]">
-        <span className="w-[28px] h-[28px] rounded-[8px] bg-ai/15 text-ai flex items-center justify-center"><IconWave /></span>
-        <span className="text-[14px] font-[600] text-btnText flex-1">Audio Director</span>
-        {active && <span className="text-[11px] text-textItemBlur truncate max-w-[240px]">Active: {active.name}</span>}
-      </div>
-      <p className="text-[12px] text-textItemBlur leading-[1.5]">
-        Develop a short-form script — hook, structure, beats, and multi-character dialogue. Draft with
-        AI or start blank, then refine it in the Script tab below.
-      </p>
+    <div className="rounded-[8px] border border-ai/40 bg-ai/5">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-[8px] px-[14px] py-[10px] text-left">
+        <span className="w-[24px] h-[24px] rounded-[6px] bg-ai/15 text-ai flex items-center justify-center"><IconWave /></span>
+        <span className="text-[13px] font-[700] text-ai">Audio Director</span>
+        <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Develop a short-form script — hook, structure, beats, dialogue. Draft with AI or start blank.</span>
+        {active && <span className="text-[11px] text-textItemBlur truncate max-w-[200px]">Active: {active.name}</span>}
+        <span className="text-[12px] text-textItemBlur">{open ? '▲' : '▼'}</span>
+      </button>
 
+      {open && (
+        <div className="px-[14px] pb-[14px] flex flex-col gap-[12px]">
       <div className="flex flex-wrap items-end gap-[10px]">
         <label className="flex flex-col gap-[4px]">
           <span className="text-[11px] text-textItemBlur">Format</span>
@@ -116,6 +117,8 @@ export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
         </button>
         <span className="text-[11px] text-textItemBlur hidden lg:inline">Draft = a guided writer interview · Blank = lay the structure skeleton and write it yourself.</span>
       </div>
+        </div>
+      )}
     </div>
   );
 };
