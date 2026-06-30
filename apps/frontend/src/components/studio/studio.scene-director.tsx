@@ -61,6 +61,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   // Video model metadata (allowed durations + gap-fill capability) + the live cost readout.
   const [modelInfo, setModelInfo] = useState<VideoModelInfo | null>(null);
   const [cost, setCost] = useState<{ credits: number | null; detail?: string } | null>(null);
+  const [costLoading, setCostLoading] = useState(false); // show "…" while the (uncached, ~1-2s) cost recalculates
   const seqIds = state.videoKeyframes.map((k) => k.id);
   // Aspect + resolution are STORE-backed (the single home for both — moved out of the bottom bar).
   const aspect = state.aspectRatio;
@@ -118,15 +119,20 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   // Video: live, output-aware credit cost for the readout (keyframe → image; clip → model×duration;
   // video → segments × per-segment). Refetches whenever an input that affects price changes.
   useEffect(() => {
-    if (!isVideo || !open) { setCost(null); return; }
+    if (!isVideo || !open) { setCost(null); setCostLoading(false); return; }
     let alive = true;
+    setCostLoading(true); // immediately signal "recalculating" so a stale number can't look unchanged
     const segs = Math.max(1, seqIds.length - 1);
-    getVideoCost({
-      output, model: videoModel, aspectRatio: aspect,
-      duration: output === 'video' ? totalDurationS : durationS,
-      segments: output === 'video' ? segs : undefined,
-    }).then((c) => { if (alive) setCost(c); }).catch(() => { if (alive) setCost(null); });
-    return () => { alive = false; };
+    // Debounce — dragging the duration slider (or rapid model switches) shouldn't spawn a CLI per tick.
+    const t = setTimeout(() => {
+      getVideoCost({
+        output, model: videoModel, aspectRatio: aspect,
+        duration: output === 'video' ? totalDurationS : durationS,
+        segments: output === 'video' ? segs : undefined,
+      }).then((c) => { if (alive) { setCost(c); setCostLoading(false); } })
+        .catch(() => { if (alive) { setCost(null); setCostLoading(false); } });
+    }, 300);
+    return () => { alive = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVideo, open, output, videoModel, aspect, durationS, totalDurationS, seqIds.length]);
 
@@ -375,19 +381,22 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
               className="h-[32px] px-[10px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">Save template</button>
             {isVideo ? (
               <span className="ml-auto flex items-center gap-[8px]">
-                {/* Live, output-aware credit cost — updates on model / duration / output change. */}
-                {cost?.credits != null && (
-                  <span title={cost.detail || 'Estimated credits'} className="text-[12px] font-[600] text-textItemBlur whitespace-nowrap">≈ {cost.credits} cr</span>
+                {/* Live, output-aware credit cost — recalculates on model / duration / output change.
+                    Shows "…" while the (uncached, ~1-2s) estimate is in flight so a stale value can't mislead. */}
+                {(costLoading || cost?.credits != null) && (
+                  <span title={costLoading ? 'Recalculating…' : (cost?.detail || 'Estimated credits')} className="text-[12px] font-[600] text-textItemBlur whitespace-nowrap">
+                    ≈ {costLoading ? '…' : cost?.credits} cr
+                  </span>
                 )}
                 <button type="button" onClick={onDevelopVideo}
                   title="Open the AI agent — it interviews you, settles keyframe / clip / video, then Create renders it"
                   className="h-[36px] px-[14px] rounded-[8px] border border-ai/60 text-ai text-[13px] font-[700] hover:bg-ai/10">
-                  ✨ Develop with AI
+                  ✨ Generate with AI
                 </button>
                 <button type="button" disabled={generating} onClick={onGenerate}
-                  title="One-off render from your current settings (output + duration + picks + free text)"
+                  title="One-off render from your current settings (output toggle + duration + picks + free text)"
                   className="h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
-                  {generating ? 'Generating…' : output === 'keyframe' ? '⚡ Generate keyframe' : '⚡ Generate ($)'}
+                  {generating ? 'Generating…' : '⚡ Generate ($)'}
                 </button>
               </span>
             ) : (
@@ -395,7 +404,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 <button type="button" onClick={onDevelop}
                   title="Open the AI agent — it asks a few questions, then the Create button renders"
                   className="h-[36px] px-[14px] rounded-[8px] border border-ai/60 text-ai text-[13px] font-[700] hover:bg-ai/10">
-                  ✨ Develop with AI
+                  ✨ Generate with AI
                 </button>
                 <button type="button" disabled={generating} onClick={onGenerateImage}
                   title="One-shot render from your picks + free text — straight to the image library (uses image credits)"
@@ -445,7 +454,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
 
           <span className="text-[10px] text-textItemBlur">
             {isVideo
-              ? '⚡ Generate = one-off from your current settings (the Output toggle picks keyframe / clip / video). ✨ Develop with AI = an interview that settles the output with you (default a ~3s clip) and guides you to keyframes-first for longer / changing-scene videos. Clip + Video spend video credits.'
+              ? '⚡ Generate = one-off from your current settings (the Output toggle picks keyframe / clip / video). ✨ Generate with AI = an interview that settles the output with you (default a ~3s clip) and guides you to keyframes-first for longer / changing-scene videos. Clip + Video spend video credits.'
               : 'The agent asks a few questions, then the Create button renders it (uses image credits). Your picks seed the conversation; anything on Auto, it proposes.'}
           </span>
         </div>
