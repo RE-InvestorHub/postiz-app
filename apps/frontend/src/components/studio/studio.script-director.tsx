@@ -9,6 +9,7 @@
 // Postiz tokens only; magenta bg-ai for the AI action. Authors nothing that spends.
 
 import { FC, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { SCRIPT_FORMATS, SCRIPT_TONES, TONE_LABELS, ScriptFormat, ScriptStructure, ScriptTone, ScriptFrameworks } from '@gitroom/frontend/components/studio/studio.types';
 import { createScript, applyStructure, getFrameworks } from '@gitroom/frontend/components/studio/studio.script-client';
@@ -35,6 +36,8 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [frameworks, setFrameworks] = useState<ScriptFrameworks | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
 
   useEffect(() => { getFrameworks(30).then(setFrameworks).catch(() => undefined); }, []);
 
@@ -62,6 +65,31 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
     } catch (e) {
       setError((e as Error)?.message ?? String(e));
     } finally { setBusy(false); }
+  };
+
+  // ⬆ Upload — the button just opens a dropzone; the CODE decides how to process the file.
+  // A readable text file (a script/transcript) → IMPORT: the agent structures it into the model.
+  // A binary file (image/audio/pdf we can't parse client-side) → REFERENCE: the agent draws on it.
+  // Either way it opens the 'audioscript' interview seeded appropriately (AI does the structuring).
+  const handleUpload = async (file?: File | null) => {
+    setUploadOpen(false);
+    setDragOver(false);
+    if (!file) return;
+    setError(null);
+    let text: string | null = null;
+    try {
+      if (file.size <= 400_000) {
+        const raw = await file.text();
+        // Treat as text only if it is overwhelmingly printable (a .docx/binary read yields garbage).
+        const bad = [...raw].filter((c) => { const x = c.charCodeAt(0); return x === 0xFFFD || (x < 32 && x !== 9 && x !== 10 && x !== 13); }).length;
+        if (raw.trim() && bad / raw.length < 0.02) text = raw.slice(0, 20000);
+      }
+    } catch { /* unreadable → falls through to the reference path */ }
+
+    const seed = text
+      ? `Import this existing script the user uploaded ("${file.name}") and structure it into the writer's room — create the script, lay out the beats, assign a cast, write the lines, and suggest hooks. Keep the user's wording where it works. Here is the content:\n\n${text}`
+      : `The user uploaded a reference file "${file.name}" (not text-readable here). Ask them what to draw from it, then develop the script with them.${brief.trim() ? ` Brief so far: ${brief.trim()}` : ''}`;
+    dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'audioscript', brandKitId, seed });
   };
 
   const selCls = 'h-[40px] px-[10px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText';
@@ -124,10 +152,37 @@ export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId })
           className="h-[40px] px-[16px] rounded-[8px] bg-newBgColorInner border border-newBorder text-btnText text-[13px] font-[600] hover:bg-boxHover disabled:opacity-50">
           {busy ? 'Creating…' : '＋ Blank script'}
         </button>
-        <span className="text-[11px] text-textItemBlur hidden lg:inline">Draft = a guided writer interview · Blank = lay the structure skeleton and write it yourself.</span>
+        <button type="button" onClick={() => setUploadOpen(true)}
+          className="h-[40px] px-[16px] rounded-[8px] bg-newBgColorInner border border-newBorder text-btnText text-[13px] font-[600] hover:bg-boxHover">
+          ⬆ Upload
+        </button>
+        <span className="text-[11px] text-textItemBlur hidden lg:inline">Draft = a guided writer interview · Blank = the structure skeleton · Upload = import a script or drop a reference.</span>
       </div>
         </div>
       )}
+
+      {/* Upload dropzone — the button just opens this; handleUpload inspects the file and routes it
+          (text script → AI import + structure · binary → reference for the draft). */}
+      {uploadOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => setUploadOpen(false)}>
+          <div className="w-[520px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[12px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[15px] font-[700] text-btnText flex-1">Upload a script or reference</span>
+              <button type="button" onClick={() => setUploadOpen(false)} className="h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText">✕</button>
+            </div>
+            <span className="text-[12px] text-textItemBlur leading-[1.5]">Drop a file or browse. A text script (.txt / .md) is imported and structured by AI; anything else is used as a reference for the draft.</span>
+            <label
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => { e.preventDefault(); handleUpload(e.dataTransfer.files?.[0]); }}
+              className={'flex flex-col items-center justify-center gap-[6px] h-[150px] rounded-[10px] border-2 border-dashed cursor-pointer ' + (dragOver ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner hover:bg-boxHover')}>
+              <input type="file" className="hidden" onChange={(e) => handleUpload(e.target.files?.[0])} />
+              <span className="text-[24px]">⬆</span>
+              <span className="text-[13px] font-[600] text-btnText">Drag &amp; drop or click to browse</span>
+              <span className="text-[11px] text-textItemBlur">.txt · .md · or any reference file</span>
+            </label>
+          </div>
+        </div>, document.body)}
     </div>
   );
 };
