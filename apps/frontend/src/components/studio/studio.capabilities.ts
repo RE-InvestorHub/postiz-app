@@ -922,12 +922,13 @@ export function buildStudioCapabilities(
       id: 'director.gapFill',
       namespace: 'director',
       label: 'Gap-fill the numbered keyframe sequence into a short (spends video credits)',
-      params: ['keyframeIds', 'motion', 'model', 'aspectRatio', 'totalDurationS', 'brandKitId'],
-      handler: async (p: { keyframeIds?: string[]; motion?: any; model?: string; aspectRatio?: string; totalDurationS?: number; brandKitId?: string } = {}) => {
+      params: ['keyframeIds', 'motion', 'model', 'aspectRatio', 'totalDurationS', 'directions', 'brandKitId'],
+      handler: async (p: { keyframeIds?: string[]; motion?: any; model?: string; aspectRatio?: string; totalDurationS?: number; directions?: { description?: string; movement?: string; speed?: string; durationS?: number }[]; brandKitId?: string } = {}) => {
         const brandKitId = p.brandKitId || getState().composerBrandKitId || 'default';
         const ids = (p.keyframeIds && p.keyframeIds.length) ? p.keyframeIds : getState().videoKeyframes.map((k) => k.id);
         if (ids.length < 2) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Gap-fill needs ≥2 numbered keyframes.' }); return; }
-        const r = await gapFillVideo(brandKitId, ids, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, totalDurationS: p.totalDurationS });
+        // directions[] = Generated Storyboard per-gap direction (one per gap); falls back to global motion.
+        const r = await gapFillVideo(brandKitId, ids, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, totalDurationS: p.totalDurationS, directions: p.directions });
         refreshVideoLibrary();
         return r;
       },
