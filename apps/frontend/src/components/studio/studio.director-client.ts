@@ -124,7 +124,7 @@ export async function renderDirectorClip(
 export async function gapFillVideo(
   brandKitId: string,
   keyframeIds: string[],
-  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; totalDurationS?: number; style?: string; onProgress?: (j: RenderJobProgress) => void } = {}
+  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; totalDurationS?: number; style?: string; directions?: { description?: string; movement?: string; speed?: string; durationS?: number }[]; onProgress?: (j: RenderJobProgress) => void } = {}
 ): Promise<{ id: string; url: string; segments?: number }> {
   const { jobId } = await req<{ jobId: string }>('/video/gapfill', {
     method: 'POST',
@@ -132,6 +132,8 @@ export async function gapFillVideo(
       keyframeIds, brandKitId, motion: opts.motion || {}, model: opts.model || 'kling3_0',
       aspectRatio: opts.aspectRatio || '9:16', totalDurationS: opts.totalDurationS ?? 15,
       ...(opts.style ? { style: opts.style } : {}),
+      // Generated Storyboard (Plan 8): per-gap direction (description/camera/speed/duration), one per gap.
+      ...(opts.directions?.length ? { directions: opts.directions } : {}),
     }),
   });
   return pollRenderResult(jobId, 240, opts.onProgress) as Promise<{ id: string; url: string; segments?: number }>;
