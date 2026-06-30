@@ -42,6 +42,7 @@ import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pip
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
 import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, renderDirectorShot, getVideoCost } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
+import * as scriptClient from '@gitroom/frontend/components/studio/studio.script-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 
@@ -1028,6 +1029,155 @@ export function buildStudioCapabilities(
         return getVideoCost({ output: p.output || 'clip', model: p.model || 'kling3_0_turbo', duration: p.duration, aspectRatio: p.aspectRatio, segments: p.segments });
       },
     },
+
+    // --- Script (Audio Studio writer's room — Plan 1). Structured-data edits, NO spend → all
+    // auto-approved. Every mutation returns the full ScriptDoc; we publish it to the shared
+    // store (SET_ACTIVE_SCRIPT) so the Script panel + the agent stay in lockstep. `id` defaults
+    // to the active script. The agent drives the SAME ids the human buttons do. ---
+    ...(() => {
+      // Resolve the target script id (explicit → active), or surface a friendly error.
+      const sid = (p: { id?: string }): string | null => {
+        const id = p.id ?? getState().activeScript?.script_id ?? null;
+        if (!id) dispatch({ type: 'SET_STATUS', status: 'error', error: 'No active script — create one first.' });
+        return id;
+      };
+      const publish = (s: import('@gitroom/frontend/components/studio/studio.types').ScriptDoc) => {
+        dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s });
+        return s;
+      };
+      const sc = scriptClient;
+      const caps: Capability[] = [
+        {
+          id: 'script.create', namespace: 'script', label: 'Create a new script (writer\'s room) and make it active',
+          params: ['name', 'format', 'structure', 'targetDurationS'],
+          handler: async (p: { name?: string; format?: any; structure?: any; targetDurationS?: number } = {}) => {
+            if (!p.name?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Script name required.' }); return; }
+            const s = await sc.createScript({ name: p.name.trim(), format: p.format, structure: p.structure, targetDurationS: p.targetDurationS, brandKitId: getState().composerBrandKitId || 'default' });
+            dispatch({ type: 'SET_TAB', tab: 'audio' });
+            return publish(s);
+          },
+        },
+        {
+          id: 'script.select', namespace: 'script', label: 'Load a script by id and make it the active one',
+          params: ['id'],
+          handler: async (p: { id?: string } = {}) => { if (!p.id) return; return publish(await sc.getScript(p.id)); },
+        },
+        {
+          id: 'script.update', namespace: 'script', label: 'Update the active script (name / format / target length / words-per-second)',
+          params: ['id', 'name', 'format', 'targetDurationS', 'wordsPerSecond'],
+          handler: async (p: any = {}) => { const id = sid(p); if (!id) return; return publish(await sc.updateScript(id, p)); },
+        },
+        {
+          id: 'script.delete', namespace: 'script', label: 'Delete the active (or given) script',
+          params: ['id'],
+          handler: async (p: { id?: string } = {}) => {
+            const id = sid(p); if (!id) return;
+            await sc.deleteScript(id);
+            if (getState().activeScript?.script_id === id) dispatch({ type: 'SET_ACTIVE_SCRIPT', script: null });
+          },
+        },
+        {
+          id: 'script.setStructure', namespace: 'script', label: 'Lay a structure spine onto the script (replaces beats with the time-budgeted skeleton)',
+          params: ['id', 'structure', 'targetDurationS'],
+          handler: async (p: { id?: string; structure?: any; targetDurationS?: number } = {}) => {
+            const id = sid(p); if (!id || !p.structure) return; return publish(await sc.applyStructure(id, p.structure, p.targetDurationS));
+          },
+        },
+        {
+          id: 'script.addCharacter', namespace: 'script', label: 'Add a character to the cast',
+          params: ['id', 'name', 'role', 'defaultTone'],
+          handler: async (p: { id?: string; name?: string; role?: string; defaultTone?: any } = {}) => {
+            const id = sid(p); if (!id || !p.name?.trim()) return; return publish(await sc.addCharacter(id, { name: p.name.trim(), role: p.role, defaultTone: p.defaultTone }));
+          },
+        },
+        {
+          id: 'script.updateCharacter', namespace: 'script', label: 'Update a cast character',
+          params: ['id', 'charId', 'name', 'role', 'defaultTone'],
+          handler: async (p: any = {}) => { const id = sid(p); if (!id || !p.charId) return; return publish(await sc.updateCharacter(id, p.charId, { name: p.name, role: p.role, default_tone: p.defaultTone })); },
+        },
+        {
+          id: 'script.removeCharacter', namespace: 'script', label: 'Remove a cast character (its lines become narration)',
+          params: ['id', 'charId'],
+          handler: async (p: { id?: string; charId?: string } = {}) => { const id = sid(p); if (!id || !p.charId) return; return publish(await sc.removeCharacter(id, p.charId)); },
+        },
+        {
+          id: 'script.addBeat', namespace: 'script', label: 'Add a beat',
+          params: ['id', 'label', 'targetDurationS'],
+          handler: async (p: { id?: string; label?: string; targetDurationS?: number } = {}) => { const id = sid(p); if (!id) return; return publish(await sc.addBeat(id, { label: p.label, target_duration_s: p.targetDurationS })); },
+        },
+        {
+          id: 'script.updateBeat', namespace: 'script', label: 'Update a beat (label / timing)',
+          params: ['id', 'beatId', 'label', 'targetStartS', 'targetDurationS'],
+          handler: async (p: any = {}) => { const id = sid(p); if (!id || !p.beatId) return; return publish(await sc.updateBeat(id, p.beatId, { label: p.label, target_start_s: p.targetStartS, target_duration_s: p.targetDurationS })); },
+        },
+        {
+          id: 'script.removeBeat', namespace: 'script', label: 'Remove a beat',
+          params: ['id', 'beatId'],
+          handler: async (p: { id?: string; beatId?: string } = {}) => { const id = sid(p); if (!id || !p.beatId) return; return publish(await sc.removeBeat(id, p.beatId)); },
+        },
+        {
+          id: 'script.reorderBeats', namespace: 'script', label: 'Reorder beats',
+          params: ['id', 'order'],
+          handler: async (p: { id?: string; order?: string[] } = {}) => { const id = sid(p); if (!id || !p.order) return; return publish(await sc.reorderBeats(id, p.order)); },
+        },
+        {
+          id: 'script.writeBeat', namespace: 'script', label: 'Write (replace) the lines of one beat',
+          params: ['id', 'beatId', 'lines'],
+          handler: async (p: { id?: string; beatId?: string; lines?: any[] } = {}) => { const id = sid(p); if (!id || !p.beatId) return; return publish(await sc.setBeatLines(id, p.beatId, (p.lines || []))); },
+        },
+        {
+          id: 'script.addLine', namespace: 'script', label: 'Add one line to a beat',
+          params: ['id', 'beatId', 'line'],
+          handler: async (p: { id?: string; beatId?: string; line?: any } = {}) => { const id = sid(p); if (!id || !p.beatId || !p.line) return; return publish(await sc.addLine(id, p.beatId, p.line)); },
+        },
+        {
+          id: 'script.setLineDirection', namespace: 'script', label: 'Set a line\'s tone and/or delivery direction',
+          params: ['id', 'beatId', 'lineId', 'tone', 'direction'],
+          handler: async (p: any = {}) => { const id = sid(p); if (!id || !p.beatId || !p.lineId) return; return publish(await sc.updateLine(id, p.beatId, p.lineId, { tone: p.tone, direction: p.direction })); },
+        },
+        {
+          id: 'script.removeLine', namespace: 'script', label: 'Remove a line',
+          params: ['id', 'beatId', 'lineId'],
+          handler: async (p: { id?: string; beatId?: string; lineId?: string } = {}) => { const id = sid(p); if (!id || !p.beatId || !p.lineId) return; return publish(await sc.removeLine(id, p.beatId, p.lineId)); },
+        },
+        {
+          id: 'script.reorderLines', namespace: 'script', label: 'Reorder the lines within a beat',
+          params: ['id', 'beatId', 'order'],
+          handler: async (p: { id?: string; beatId?: string; order?: string[] } = {}) => { const id = sid(p); if (!id || !p.beatId || !p.order) return; return publish(await sc.reorderLines(id, p.beatId, p.order)); },
+        },
+        {
+          id: 'script.generateHooks', namespace: 'script', label: 'Publish 3-5 hook variants (tagged by pattern) for the script',
+          params: ['id', 'hooks'],
+          handler: async (p: { id?: string; hooks?: any[] } = {}) => { const id = sid(p); if (!id || !p.hooks) return; return publish(await sc.setHooks(id, p.hooks)); },
+        },
+        {
+          id: 'script.selectHook', namespace: 'script', label: 'Select one hook variant (single-select)',
+          params: ['id', 'hookId'],
+          handler: async (p: { id?: string; hookId?: string } = {}) => { const id = sid(p); if (!id || !p.hookId) return; return publish(await sc.selectHook(id, p.hookId)); },
+        },
+        {
+          id: 'script.suggestPronunciation', namespace: 'script', label: 'Set jargon pronunciation overrides',
+          params: ['id', 'pronunciation'],
+          handler: async (p: { id?: string; pronunciation?: any[] } = {}) => { const id = sid(p); if (!id || !p.pronunciation) return; return publish(await sc.setPronunciation(id, p.pronunciation)); },
+        },
+        {
+          id: 'script.critique', namespace: 'script', label: 'Record an advisory critique of the script (read-only — changes no data)',
+          params: ['id', 'assessment', 'suggestions'],
+          handler: async () => { /* advisory only — the agent surfaces this in chat; no data change */ },
+        },
+        {
+          id: 'script.bindToAd', namespace: 'script', label: 'Bind the active script to the active ad (project_addObject type=script)',
+          params: ['id', 'adId'],
+          handler: async (p: { id?: string; adId?: string } = {}) => {
+            const id = sid(p); if (!id) return;
+            const adId = p.adId ?? getState().activeAdId;
+            if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No active ad to bind the script to.' }); return; }
+            await addObject({ adId, type: 'script', id });
+          },
+        },
+      ];
+      return caps;
+    })(),
   ];
 
   return caps.reduce<Record<string, Capability>>((acc, c) => {

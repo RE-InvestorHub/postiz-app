@@ -209,9 +209,12 @@ export const StudioAgentPanel: FC<{
   floating?: boolean;
   /** Prefill the message box (e.g. opened from the logo "Generate with AI" button). */
   initialInput?: string;
+  /** Auto-send initialInput once on mount (e.g. "Script from a URL"): the agent replies
+   *  immediately instead of parking the request in the box for the user to submit. */
+  autoSend?: boolean;
   /** Generation-interview mode: the agent interviews for this kind; Create runs its generator. */
   generation?: { kind?: string; brandKitId?: string; slot?: string };
-}> = ({ caps, onClose, onCreate, floating, initialInput, generation }) => {
+}> = ({ caps, onClose, onCreate, floating, initialInput, autoSend, generation }) => {
   const { state } = useStudio();
   const toaster = useToaster();
   // Chat state
@@ -473,6 +476,17 @@ export const StudioAgentPanel: FC<{
     generation?.brandKitId,
     genKind,
   ]);
+
+  // Auto-send the seed once on mount (autoSend, e.g. "Script from a URL"): fire the
+  // request straight into the agent so it replies immediately, no manual submit. The
+  // ref guards against React re-runs (deps change after send clears the input).
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (autoSend && !autoSentRef.current && (initialInput ?? '').trim() && BRAIN_CONFIGURED && !streaming) {
+      autoSentRef.current = true;
+      send();
+    }
+  }, [autoSend, initialInput, streaming, send]);
 
   // A dropped reference image: remember it (injected into the spec at Create) and tell the
   // agent so it factors the reference into its plan/confidence.
