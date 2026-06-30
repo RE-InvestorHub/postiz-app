@@ -346,7 +346,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 <select value={speed} onChange={(e) => setSpeed(e.target.value)} className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">{MOTION_SPEEDS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
               {output === 'clip' ? (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Duration {durationS}s</span>
-                  <input type="range" min={2} max={10} step={1} value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
+                  {/* Min 3s — Kling/Seedance reject shorter clips (<3 → "duration must be ≥ 3"). */}
+                  <input type="range" min={3} max={10} step={1} value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
               ) : (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Total {totalDurationS}s</span>
                   <input type="range" min={4} max={30} step={1} value={totalDurationS} onChange={(e) => setTotalDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
