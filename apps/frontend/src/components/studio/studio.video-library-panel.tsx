@@ -96,7 +96,9 @@ export const StudioVideoLibraryPanel: FC = () => {
       } else {
         await removeKeyframe(selected.id);
         dispatch({ type: 'REMOVE_VIDEO_KEYFRAME', id: selected.id });
-        toaster.show('Removed from the Video library (the image itself is kept).', 'success');
+        // The image keeps living in the Images library — refresh it so its keyframe chip clears.
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
+        toaster.show('Removed from keyframes (the image itself is kept).', 'success');
       }
       setConfirmDel(false);
       await load();
@@ -115,6 +117,8 @@ export const StudioVideoLibraryPanel: FC = () => {
       const kfIds = keyframes.filter((k) => checked.has(k.id)).map((k) => k.id);
       if (clipIds.length) await deleteBrandClips(clipIds);
       for (const id of kfIds) { await removeKeyframe(id); dispatch({ type: 'REMOVE_VIDEO_KEYFRAME', id }); }
+      // Un-marked keyframes stay in the Images library — refresh it so their keyframe chips clear.
+      if (kfIds.length && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
       toaster.show(`${checked.size} item${checked.size === 1 ? '' : 's'} removed from the Video library.`, 'success');
       exitSelect();
       await load();

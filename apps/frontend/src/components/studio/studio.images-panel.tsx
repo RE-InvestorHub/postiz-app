@@ -14,7 +14,7 @@ import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
-import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
+import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { CanvasSoulButton } from '@gitroom/frontend/components/studio/studio.soul-control';
 import { captureComponent, COMPONENT_KINDS } from '@gitroom/frontend/components/studio/studio.director-client';
@@ -208,18 +208,37 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
     } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
   };
 
-  // Images→Video bridge: mark the checked images as keyframes (persist via the brain so they land
-  // in the Video Library's Keyframes pool), then jump to the Video tab. The user numbers them there
-  // (right-click a keyframe → set its sequence position).
-  const doSendToVideo = async () => {
+  // Keyframe is a flag on the SAME asset — a marked image shows in both the Images library and the
+  // Video Library's Keyframes pool. Refresh both after a toggle so the asset's dual presence stays in sync.
+  const fireVideoRefresh = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh')); };
+
+  // Canvas promote/demote — toggle the selected image's keyframe flag (immediate, no separate Save).
+  const [kfBusy, setKfBusy] = useState(false);
+  const doToggleKeyframe = async () => {
+    if (!selected || kfBusy) return;
+    setKfBusy(true); setError(null);
+    try {
+      if (selected.keyframe) { await removeKeyframe(selected.id); toaster.show('Removed from keyframes — the image is kept.', 'success'); }
+      else { await addKeyframes([selected.id]); toaster.show('Marked as a keyframe — find it in the Video tab.', 'success'); }
+      await load();          // re-fetch so the toggle label + chip reflect the new state
+      fireVideoRefresh();    // the Video Library's Keyframes pool updates too
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setKfBusy(false); }
+  };
+
+  // Bulk promote/demote on the checked images — mark IN PLACE (no forced tab-jump) + a toast.
+  const doBulkKeyframe = async (mark: boolean) => {
     if (!checked.size) return;
     setBulkBusy(true); setError(null);
     try {
       const ids = images.filter((i) => checked.has(i.id)).map((i) => i.id);
-      await addKeyframes(ids);
+      if (mark) await addKeyframes(ids);
+      else { for (const id of ids) await removeKeyframe(id); }
       exitSelect();
-      dispatch({ type: 'SET_TAB', tab: 'video' });
-      toaster.show(`Sent ${ids.length} keyframe${ids.length === 1 ? '' : 's'} to the Video tab — right-click them to set the sequence.`, 'success');
+      await load();
+      fireVideoRefresh();
+      toaster.show(mark
+        ? `Marked ${ids.length} as keyframe${ids.length === 1 ? '' : 's'} — find them in the Video tab.`
+        : `Removed ${ids.length} from keyframes — the image${ids.length === 1 ? ' is' : 's are'} kept.`, 'success');
     } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
   };
 
@@ -268,9 +287,12 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
               <button type="button" onClick={selectAll} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">All</button>
               <button type="button" onClick={() => setChecked(new Set())} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">None</button>
               <button type="button" onClick={exitSelect} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">Done</button>
-              <button type="button" disabled={!checked.size || bulkBusy} onClick={doSendToVideo}
-                title="Send the selected images to the Video tab as keyframes"
-                className="px-[8px] h-[24px] rounded-[5px] border border-ai/40 text-ai font-[600] disabled:opacity-40 hover:bg-ai/10">▦ Send to Video ({checked.size})</button>
+              <button type="button" disabled={!checked.size || bulkBusy} onClick={() => doBulkKeyframe(true)}
+                title="Mark the selected images as Video keyframes (they appear in the Video tab too)"
+                className="px-[8px] h-[24px] rounded-[5px] border border-ai/40 text-ai font-[600] disabled:opacity-40 hover:bg-ai/10">▦ Make keyframe ({checked.size})</button>
+              <button type="button" disabled={!checked.size || bulkBusy} onClick={() => doBulkKeyframe(false)}
+                title="Remove the selected images from the keyframe pool (the images are kept)"
+                className="px-[8px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur font-[600] disabled:opacity-40 hover:text-btnText">▦ Remove keyframe ({checked.size})</button>
               {confirmBulk ? (
                 <>
                   <button type="button" disabled={!checked.size || bulkBusy} onClick={doBulkDelete} className="px-[8px] h-[24px] rounded-[5px] bg-[#ff7eb6] text-[#3a0d23] font-[700] disabled:opacity-50">{bulkBusy ? '…' : `Delete ${checked.size}`}</button>
@@ -321,6 +343,10 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
                     {!img.channelShort && img.editOp && (
                       <span className="absolute bottom-[3px] left-[3px] right-[3px] truncate rounded-[4px] bg-btnPrimary/85 text-white text-[9px] font-[700] leading-none px-[4px] py-[3px] text-center">{img.editOp.replace(/_/g, ' ')}</span>
                     )}
+                    {/* Keyframe badge — this image is also a Video keyframe (top-right; select check is top-left). */}
+                    {img.keyframe && (
+                      <span title="Also a Video keyframe" className="absolute top-[3px] right-[3px] h-[16px] rounded-[4px] bg-ai/90 text-white text-[9px] font-[700] leading-[16px] px-[4px] flex items-center">▦</span>
+                    )}
                     {selectMode && (
                       <span className={'absolute top-[3px] left-[3px] h-[18px] w-[18px] rounded-[4px] border flex items-center justify-center text-[11px] leading-none ' + (isChecked ? 'bg-[#ff7eb6] border-[#ff7eb6] text-[#3a0d23]' : 'bg-black/45 border-white/50 text-transparent')}>✓</span>
                     )}
@@ -353,6 +379,13 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
                 <button type="button" onClick={() => { setCaptureName(''); setCaptureOpen(true); }}
                   title="Save this image as a reusable Scene Director component (character / scene / lighting / …)"
                   className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10">★ Save as component</button>
+                {/* Keyframe promote/demote — one-click toggle of the keyframe flag (same asset, shows in
+                    both libraries when marked). Filled when already a keyframe. */}
+                <button type="button" disabled={kfBusy} onClick={doToggleKeyframe}
+                  title={selected.keyframe ? 'This image is a Video keyframe — click to remove (the image is kept)' : 'Mark this image as a Video keyframe (it appears in the Video tab too)'}
+                  className={'h-[36px] px-[14px] rounded-[8px] text-[12px] font-[600] disabled:opacity-50 ' + (selected.keyframe ? 'bg-ai text-white hover:opacity-90' : 'border border-ai/40 text-ai hover:bg-ai/10')}>
+                  {kfBusy ? '…' : selected.keyframe ? '▦ Keyframe ✓' : '▦ Use as keyframe'}
+                </button>
                 {/* Capture Soul — dimmed until this image is saved as a Character; then it trains a Soul. */}
                 <CanvasSoulButton imageId={selected.id} />
                 {selected.spec && (
