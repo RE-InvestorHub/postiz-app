@@ -888,10 +888,11 @@ export function buildStudioCapabilities(
       id: 'director.renderClip',
       namespace: 'director',
       label: 'Render one motion clip from a Scene Director spec (spends video credits)',
-      params: ['spec', 'motion', 'model', 'aspectRatio', 'durationS', 'firstFrameUrl', 'brandKitId'],
-      handler: async (p: { spec?: Record<string, unknown>; motion?: any; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string; brandKitId?: string } = {}) => {
+      params: ['spec', 'motion', 'model', 'aspectRatio', 'durationS', 'firstFrameUrl', 'anchorId', 'brandKitId'],
+      handler: async (p: { spec?: Record<string, unknown>; motion?: any; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string; anchorId?: string; brandKitId?: string } = {}) => {
         const brandKitId = p.brandKitId || getState().composerBrandKitId || 'default';
-        const r = await renderDirectorClip(brandKitId, p.spec || {}, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, durationS: p.durationS, firstFrameUrl: p.firstFrameUrl });
+        // anchorId → identity-locked clip (renders a Soul-locked still of the character, then animates it).
+        const r = await renderDirectorClip(brandKitId, p.spec || {}, { motion: p.motion, model: p.model, aspectRatio: p.aspectRatio, durationS: p.durationS, firstFrameUrl: p.firstFrameUrl, anchorId: p.anchorId });
         refreshVideoLibrary();
         return r;
       },
