@@ -10,6 +10,7 @@ import { FC, useCallback, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { ScriptDoc, ScriptBeat, ScriptLine, SCRIPT_TONES, ScriptTone } from '@gitroom/frontend/components/studio/studio.types';
 import * as sc from '@gitroom/frontend/components/studio/studio.script-client';
+import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 
 const inputCls = 'px-[10px] py-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
 const tinySel = 'h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
@@ -21,6 +22,7 @@ export const StudioScriptPanel: FC = () => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [library, setLibrary] = useState<ScriptDoc[]>([]);
+  const [bound, setBound] = useState(false); // "→ Ad" confirmation flash. Declared before any early return (rules-of-hooks).
 
   const brandKitId = state.composerBrandKitId || 'default';
   const publish = useCallback((s: ScriptDoc) => dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s }), [dispatch]);
@@ -80,6 +82,13 @@ export const StudioScriptPanel: FC = () => {
   const removeLine = (bid: string, lid: string) => run(sc.removeLine(id, bid, lid));
   const selectHook = (hid: string) => run(sc.selectHook(id, hid));
   const setPron = (rows: Array<{ term: string; phonetic: string }>) => run(sc.setPronunciation(id, rows.filter((r) => r.term.trim())));
+  const bindToAd = async () => {
+    const adId = state.activeAdId;
+    if (!adId) { setError('Select an active ad first (Director bar above).'); return; }
+    setBusy(true); setError(null);
+    try { await addObject({ adId, type: 'script', id }); setBound(true); setTimeout(() => setBound(false), 2500); }
+    catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBusy(false); }
+  };
 
   return (
     <div className="flex flex-col gap-[14px]">
@@ -87,6 +96,11 @@ export const StudioScriptPanel: FC = () => {
       <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
         <div className="flex items-center gap-[10px]">
           <input value={script.name} onChange={(e) => setName(e.target.value)} className={inputCls + ' flex-1 font-[600]'} />
+          <button type="button" onClick={bindToAd} disabled={!state.activeAdId}
+            className={'h-[34px] px-[12px] rounded-[8px] border text-[12px] font-[600] ' + (bound ? 'border-ai text-ai bg-ai/10' : 'border-newBorder text-textItemBlur hover:text-btnText hover:bg-boxHover') + ' disabled:opacity-40'}
+            title={state.activeAdId ? 'Attach this script to the active ad' : 'Select an active ad first'}>
+            {bound ? '✓ Bound' : '→ Ad'}
+          </button>
           <button type="button" onClick={del} className={ghostBtn} title="Delete script">🗑</button>
         </div>
         <BudgetMeter budget={budget} onTargetChange={setTarget} />
