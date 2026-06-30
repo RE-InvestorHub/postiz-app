@@ -43,7 +43,8 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { generateLogoFromSpec } from '@gitroom/frontend/components/studio/studio.brand-client';
-import { renderDirectorShot } from '@gitroom/frontend/components/studio/studio.director-client';
+import { renderDirectorShot, renderDirectorClip, gapFillVideo } from '@gitroom/frontend/components/studio/studio.director-client';
+import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 
 // Broadcast generation start/stop so panels (e.g. the Images library) can show a spinner.
 function emitGenerating(active: boolean, kind?: string) {
@@ -63,6 +64,29 @@ async function runGeneration(kind: string, brandKitId: string, spec: Record<stri
       // Tell the Images tab to refresh its library so the new shot appears.
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
       return `Ad shot rendered (${r.mode}) and added to your image library.`;
+    }
+    if (kind === 'videoshot') {
+      // The interview settled an output: keyframe (still → pool), clip (one motion), or video
+      // (gap-fill across numbered keyframes). Separate the control fields from the dimension spec.
+      const { output = 'clip', motion, model, aspectRatio, durationS, keyframeIds, anchorId, renderMode, ...dimSpec } = spec as Record<string, any>;
+      const refreshVideo = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh')); };
+      if (output === 'keyframe') {
+        const r = await renderDirectorShot(brandKitId, { ...dimSpec, renderMode, aspectRatio, anchorId });
+        await addKeyframes([r.id]); // mark the still as a keyframe so it lands in the Video Library
+        refreshVideo();
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh'));
+        return `Keyframe rendered and added to the Video Library.`;
+      }
+      if (output === 'video') {
+        const ids: string[] = Array.isArray(keyframeIds) ? keyframeIds : [];
+        if (ids.length < 2) throw new Error('A gap-fill video needs ≥2 numbered keyframes — compose + number them first, then generate.');
+        const r = await gapFillVideo(brandKitId, ids, { motion, model, aspectRatio, totalDurationS: durationS, style: dimSpec.style });
+        refreshVideo();
+        return `Gap-fill video rendered (${r.segments ?? ids.length - 1} segments) and added to the Video Library.`;
+      }
+      await renderDirectorClip(brandKitId, dimSpec, { motion, model, aspectRatio, durationS });
+      refreshVideo();
+      return `Motion clip rendered and added to the Video Library.`;
     }
     throw new Error(`No generator registered for "${kind}".`);
   } finally {
@@ -475,6 +499,8 @@ export const StudioAgentPanel: FC<{
     setGenerating(true);
     try {
       const spec = { ...genPlan.spec, ...(generation?.slot ? { slot: generation.slot } : {}), referenceAssetIds: refAssetIds };
+      // Video gap-fill (videoshot, output 'video') morphs the numbered keyframe pool — inject the ids.
+      if (genKind === 'videoshot') (spec as Record<string, unknown>).keyframeIds = state.videoKeyframes.map((k) => k.id);
       const line = await runGeneration(genKind, brandKitId, spec);
       toaster.show(line, 'success');
       // Tell the Brand tab to refresh so the new logo shows in its slot.
@@ -502,7 +528,7 @@ export const StudioAgentPanel: FC<{
     } catch (e) {
       appendMessage({ id: makeId(), role: 'system', text: `Generation failed: ${(e as Error)?.message ?? e}` });
     } finally { setGenerating(false); }
-  }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, refAssetIds, state.composerBrandKitId, toaster, onClose, appendMessage, conversationId, handleEvent, finalizeLastAssistant]);
+  }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, refAssetIds, state.composerBrandKitId, state.videoKeyframes, toaster, onClose, appendMessage, conversationId, handleEvent, finalizeLastAssistant]);
 
   // Create gate: in generation mode, lit only when the agent published ready + ≥95% confidence.
   const genReady = !!genPlan?.ready && (genPlan?.confidence ?? 0) >= 0.95;

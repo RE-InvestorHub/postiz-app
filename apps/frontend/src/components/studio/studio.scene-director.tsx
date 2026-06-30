@@ -9,16 +9,23 @@
 import { FC, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { STUDIO_RESOLUTIONS } from '@gitroom/frontend/components/studio/studio.types';
-import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate, renderDirectorShot, renderDirectorClip, gapFillVideo } from '@gitroom/frontend/components/studio/studio.director-client';
+import { listDirectorDimensions, DirectorDimension, listDirectorTemplates, saveDirectorTemplate, DirectorTemplate, renderDirectorShot, renderDirectorClip, gapFillVideo, getVideoCost, getVideoModelInfo, VideoModelInfo } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
 import { SoulControl } from '@gitroom/frontend/components/studio/studio.soul-control';
 
 // Camera-move / speed presets for the video "Motion & video" section (Video context only).
 const CAMERA_MOVES = ['static', 'slow push-in', 'pull-out', 'pan left', 'pan right', 'tilt up', 'orbit', 'tracking', 'handheld', 'crane up'];
 const MOTION_SPEEDS = ['slow', 'medium', 'fast'];
-// Gap-fill needs a start+end-frame model (Kling/Seedance/Wan); a single clip can also use Veo.
-const MORPH_MODELS = ['kling3_0', 'seedance_2_0', 'wan2_6']; // start+end capable (gap-fill)
 type DirectorOutput = 'keyframe' | 'clip' | 'video';
+
+// Snap a duration to a model's allowed set (clamp into a range, or nearest enum value). Mirrors the
+// brain's snapDuration so the UI never offers a value Higgsfield will reject.
+function snapToModel(info: VideoModelInfo | null, d: number): number {
+  if (!info) return d;
+  const du = info.durations;
+  if (du.type === 'enum') return du.values.reduce((a, b) => (Math.abs(b - d) < Math.abs(a - d) ? b : a), du.values[0]);
+  return Math.max(du.min, Math.min(du.max, Math.round(d)));
+}
 
 // Aspect ratios Higgsfield's Soul model (text2image_soul_v2) accepts — when a saved character is
 // selected the render may run on the Soul, so we restrict to these (4:5 is the notable exclusion).
@@ -31,7 +38,7 @@ const BASE_ASPECT_IDS = ['4:5', '1:1', '9:16', '16:9'];
 // With a character selected, also offer the Soul portrait/landscape ratios.
 const CHAR_ASPECT_IDS = ['4:5', '1:1', '9:16', '16:9', '3:4', '4:3', '2:3', '3:2'];
 
-export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 'video'; videoModel?: string }> = ({ brandKitId, context = 'images', videoModel = 'veo3_1' }) => {
+export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 'video'; videoModel?: string }> = ({ brandKitId, context = 'images', videoModel = 'kling3_0_turbo' }) => {
   const { state, dispatch } = useStudio();
   const isVideo = context === 'video';
   const [open, setOpen] = useState(false);
@@ -51,6 +58,9 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   const [genError, setGenError] = useState<string | null>(null);
   // Free-text "describe it" box — a one-shot prompt woven into the spec (both Images + Video).
   const [description, setDescription] = useState('');
+  // Video model metadata (allowed durations + gap-fill capability) + the live cost readout.
+  const [modelInfo, setModelInfo] = useState<VideoModelInfo | null>(null);
+  const [cost, setCost] = useState<{ credits: number | null; detail?: string } | null>(null);
   const seqIds = state.videoKeyframes.map((k) => k.id);
   // Aspect + resolution are STORE-backed (the single home for both — moved out of the bottom bar).
   const aspect = state.aspectRatio;
@@ -93,6 +103,33 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [charSelected]);
 
+  // Video: load the selected model's allowed durations + gap-fill capability; snap the current
+  // duration into the model's valid set so the user can't pick a value Higgsfield will reject.
+  useEffect(() => {
+    if (!isVideo) return;
+    let alive = true;
+    getVideoModelInfo(videoModel)
+      .then((info) => { if (!alive) return; setModelInfo(info); setDurationS((d) => snapToModel(info, d)); })
+      .catch(() => { if (alive) setModelInfo(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVideo, videoModel]);
+
+  // Video: live, output-aware credit cost for the readout (keyframe → image; clip → model×duration;
+  // video → segments × per-segment). Refetches whenever an input that affects price changes.
+  useEffect(() => {
+    if (!isVideo || !open) { setCost(null); return; }
+    let alive = true;
+    const segs = Math.max(1, seqIds.length - 1);
+    getVideoCost({
+      output, model: videoModel, aspectRatio: aspect,
+      duration: output === 'video' ? totalDurationS : durationS,
+      segments: output === 'video' ? segs : undefined,
+    }).then((c) => { if (alive) setCost(c); }).catch(() => { if (alive) setCost(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVideo, open, output, videoModel, aspect, durationS, totalDurationS, seqIds.length]);
+
   const onDevelop = () => {
     const lines: string[] = [];
     for (const d of dims) {
@@ -115,6 +152,28 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
       (description.trim() ? `Free-text brief: ${description.trim()}\n` : '') +
       `Render mode: ${renderMode}. Aspect ratio: ${aspect}. Resolution: ${state.resolution}. When you're confident, the Create button will render it.`;
     dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'shot', brandKitId, seed });
+  };
+
+  // Video context — open the AI interview ('videoshot'). The agent decides keyframe / clip / video WITH
+  // the user (default a ~3s clip) and renders via Create. Seeded with the current picks + free text +
+  // the selected output / motion / duration / model so the interview builds on them.
+  const onDevelopVideo = () => {
+    const lines: string[] = [];
+    for (const d of dims) {
+      const v = sel[d.id];
+      if (!v || v === 'auto') continue;
+      if (v.startsWith('p:')) { const p = d.presets.find((x) => x.id === v.slice(2)); if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})`); }
+      else if (v.startsWith('c:')) { const c = d.components.find((x) => x.id === v.slice(2)); if (c) lines.push(`- ${d.label}: reuse saved "${c.name}"${d.component === 'character' ? ` (anchorId: ${c.id})` : ''}`); }
+    }
+    const motionLine = `Motion: camera ${movement}${action.trim() ? `, action "${action.trim()}"` : ''}, ${speed}.`;
+    const seed =
+      `I'm directing a VIDEO. My current picks (develop the rest, anything not listed is your call):\n` +
+      `${lines.length ? lines.join('\n') : '- (all on Auto — propose a strong concept)'}\n` +
+      (description.trim() ? `Free-text brief: ${description.trim()}\n` : '') +
+      `Output: ${output} — you can change this with me (default a ~3s clip). ${motionLine} ` +
+      `Duration: ${output === 'video' ? totalDurationS : durationS}s. Model: ${videoModel}. Aspect: ${aspect}. ` +
+      `For a changing scene / long action / longer video, guide me to compose + number keyframes first, then gap-fill.`;
+    dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'videoshot', brandKitId, seed });
   };
 
   // Build a fragment-keyed spec (+ the character anchorId) from the dropdown picks — the same shape
@@ -315,10 +374,22 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
             <button type="button" onClick={onSaveTemplate} title="Save the current picks as a reusable template"
               className="h-[32px] px-[10px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">Save template</button>
             {isVideo ? (
-              <button type="button" disabled={generating} onClick={onGenerate}
-                className="ml-auto h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
-                {generating ? 'Generating…' : output === 'keyframe' ? '✨ Generate keyframe' : output === 'clip' ? '✨ Generate clip ($)' : '🎬 Generate video ($)'}
-              </button>
+              <span className="ml-auto flex items-center gap-[8px]">
+                {/* Live, output-aware credit cost — updates on model / duration / output change. */}
+                {cost?.credits != null && (
+                  <span title={cost.detail || 'Estimated credits'} className="text-[12px] font-[600] text-textItemBlur whitespace-nowrap">≈ {cost.credits} cr</span>
+                )}
+                <button type="button" onClick={onDevelopVideo}
+                  title="Open the AI agent — it interviews you, settles keyframe / clip / video, then Create renders it"
+                  className="h-[36px] px-[14px] rounded-[8px] border border-ai/60 text-ai text-[13px] font-[700] hover:bg-ai/10">
+                  ✨ Develop with AI
+                </button>
+                <button type="button" disabled={generating} onClick={onGenerate}
+                  title="One-off render from your current settings (output + duration + picks + free text)"
+                  className="h-[36px] px-[16px] rounded-[8px] bg-ai text-white text-[13px] font-[700] hover:opacity-90 disabled:opacity-50">
+                  {generating ? 'Generating…' : output === 'keyframe' ? '⚡ Generate keyframe' : '⚡ Generate ($)'}
+                </button>
+              </span>
             ) : (
               <span className="ml-auto flex items-center gap-[8px]">
                 <button type="button" onClick={onDevelop}
@@ -346,14 +417,24 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                 <select value={speed} onChange={(e) => setSpeed(e.target.value)} className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">{MOTION_SPEEDS.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
               {output === 'clip' ? (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Duration {durationS}s</span>
-                  {/* Min 3s — Kling/Seedance reject shorter clips (<3 → "duration must be ≥ 3"). */}
-                  <input type="range" min={3} max={10} step={1} value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
+                  {/* Model-aware: enum models (Veo 4/6/8, Wan 5/10/15, …) get a dropdown; range models a slider. */}
+                  {modelInfo?.durations.type === 'enum' ? (
+                    <select value={durationS} onChange={(e) => setDurationS(Number(e.target.value))}
+                      className="h-[34px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText">
+                      {modelInfo.durations.values.map((v) => <option key={v} value={v}>{v}s</option>)}
+                    </select>
+                  ) : (
+                    <input type="range" min={modelInfo?.durations.type === 'range' ? modelInfo.durations.min : 3}
+                      max={modelInfo?.durations.type === 'range' ? modelInfo.durations.max : 10}
+                      step={modelInfo?.durations.type === 'range' ? modelInfo.durations.step : 1}
+                      value={durationS} onChange={(e) => setDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" />
+                  )}</label>
               ) : (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Total {totalDurationS}s</span>
                   <input type="range" min={4} max={30} step={1} value={totalDurationS} onChange={(e) => setTotalDurationS(Number(e.target.value))} className="h-[34px] w-[110px]" /></label>
               )}
-              {output === 'video' && !MORPH_MODELS.includes(videoModel) && (
-                <span className="text-[11px] text-yellow-400 self-center">Gap-fill needs a start→end model — pick Kling/Seedance in the banner.</span>
+              {output === 'video' && modelInfo && !modelInfo.gapFill && (
+                <span className="text-[11px] text-yellow-400 self-center">Gap-fill needs a start→end model — pick Kling / Seedance / Wan in the banner.</span>
               )}
             </div>
           )}
@@ -364,7 +445,7 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
 
           <span className="text-[10px] text-textItemBlur">
             {isVideo
-              ? 'Direct generation from your picks. Keyframe = a still added to the pool. Clip + Video spend video credits; Video gap-fills the numbered keyframe sequence (Kling/Seedance morph).'
+              ? '⚡ Generate = one-off from your current settings (the Output toggle picks keyframe / clip / video). ✨ Develop with AI = an interview that settles the output with you (default a ~3s clip) and guides you to keyframes-first for longer / changing-scene videos. Clip + Video spend video credits.'
               : 'The agent asks a few questions, then the Create button renders it (uses image credits). Your picks seed the conversation; anything on Auto, it proposes.'}
           </span>
         </div>

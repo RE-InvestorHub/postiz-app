@@ -190,15 +190,17 @@ export const STUDIO_IMAGE_MODELS: ModelOption[] = [
 ];
 
 // Video-generation models (Video tab). Higgsfield video job_set_type values.
+// Ordered cheapest → premium; the Video Director defaults to the first (Kling 3.0 Turbo). Live per-shot
+// cost is shown via the Director's cost readout (GET /video/cost); these hints are just a coarse tier.
 export const STUDIO_VIDEO_MODELS: ModelOption[] = [
-  { value: 'veo3_1', label: 'Google Veo 3.1', credits: 'high' },
-  { value: 'veo3', label: 'Google Veo 3', credits: 'high' },
-  { value: 'seedance_2_0', label: 'Seedance 2.0', credits: 'varies' },
-  { value: 'seedance1_5', label: 'Seedance 1.5 Pro', credits: 'varies' },
-  { value: 'kling3_0', label: 'Kling v3.0', credits: 'varies' },
+  { value: 'kling3_0_turbo', label: 'Kling 3.0 Turbo', credits: 'low' },
+  { value: 'kling3_0', label: 'Kling v3.0', credits: 'low' },
+  { value: 'veo3_1_lite', label: 'Google Veo 3.1 Lite', credits: 'low' },
   { value: 'kling2_6', label: 'Kling 2.6', credits: 'varies' },
   { value: 'minimax_hailuo', label: 'Minimax Hailuo', credits: 'varies' },
   { value: 'wan2_6', label: 'Wan 2.6', credits: 'varies' },
+  { value: 'seedance_2_0', label: 'Seedance 2.0', credits: 'high' },
+  { value: 'veo3_1', label: 'Google Veo 3.1', credits: 'high' },
 ];
 
 // Back-compat alias (image models). Prefer modelsForKind().

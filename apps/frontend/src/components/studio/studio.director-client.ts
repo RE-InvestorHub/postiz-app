@@ -132,6 +132,30 @@ export async function gapFillVideo(
   return pollRenderResult(jobId, 240) as Promise<{ id: string; url: string; segments?: number }>;
 }
 
+// --- Video Director: live cost + model duration metadata (Plan 5) ---
+
+export interface VideoModelInfo {
+  model: string;
+  durations: { type: 'range'; min: number; max: number; step: number } | { type: 'enum'; values: number[] };
+  gapFill: boolean;
+  lowest: number;
+}
+/** Per-model allowed durations + gap-fill capability + the model's lowest valid duration. No spend. */
+export function getVideoModelInfo(model: string): Promise<VideoModelInfo> {
+  return req<VideoModelInfo>(`/video/model-info?model=${encodeURIComponent(model)}`);
+}
+
+export interface VideoCost { credits: number | null; detail?: string }
+/** Live, output-aware credit estimate from `higgsfield generate cost` (cached, no spend). */
+export function getVideoCost(params: { output: string; model: string; duration?: number; aspectRatio?: string; segments?: number }): Promise<VideoCost> {
+  const q = new URLSearchParams();
+  q.set('output', params.output); q.set('model', params.model);
+  if (params.duration != null) q.set('duration', String(params.duration));
+  if (params.aspectRatio) q.set('aspectRatio', params.aspectRatio);
+  if (params.segments != null) q.set('segments', String(params.segments));
+  return req<VideoCost>(`/video/cost?${q.toString()}`);
+}
+
 export interface SoulStatus {
   anchorId: string;
   soul_id: string | null;

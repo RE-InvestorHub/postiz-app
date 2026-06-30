@@ -106,7 +106,8 @@ const VideoTabContent: FC = () => {
   const { state } = useStudio();
   const brandKitId = state.composerBrandKitId || 'default';
   const videoModels = modelsForKind('video');
-  const [videoModel, setVideoModel] = useState(videoModels[0]?.value ?? 'veo3_1');
+  // Default to the cheapest model (Kling 3.0 Turbo — first in STUDIO_VIDEO_MODELS), not Veo (priciest).
+  const [videoModel, setVideoModel] = useState(videoModels[0]?.value ?? 'kling3_0_turbo');
   const [uploadOpen, setUploadOpen] = useState(false);
   const refreshVideo = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh')); };
   return (
