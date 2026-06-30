@@ -104,11 +104,14 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
   // SOUL_ASPECTS — so we dim the rest (4:5) and snap the current pick to a supported ratio.
   const charDim = dims.find((d) => d.component === 'character');
   const charSelected = !!(charDim && sel[charDim.id]?.startsWith('c:'));
-  const aspectIds = charSelected ? CHAR_ASPECT_IDS : BASE_ASPECT_IDS;
+  // A Soul is an IMAGE-gen identity lock (text2image_soul_v2) — video models can't use it. So the
+  // Soul control + the Soul-only aspect restriction apply on the Images tab only, never on Video.
+  const charSoul = charSelected && !isVideo;
+  const aspectIds = charSoul ? CHAR_ASPECT_IDS : BASE_ASPECT_IDS;
   useEffect(() => {
-    if (charSelected && !SOUL_ASPECTS.includes(aspect)) setAspect('3:4');
+    if (charSoul && !SOUL_ASPECTS.includes(aspect)) setAspect('3:4');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [charSelected]);
+  }, [charSoul]);
 
   // Video: load the selected model's allowed durations + gap-fill capability; snap the current
   // duration into the model's valid set so the user can't pick a value Higgsfield will reject.
@@ -312,7 +315,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                     <label key={`${d.id}-character`} className="flex flex-col gap-[3px]">
                       <span className="flex items-center gap-[4px]">
                         <span className="text-[11px] font-[600] text-btnText flex-1" title="Reuse one of your saved characters (locks identity; train a Soul for an exact match)">Character</span>
-                        {isChar && (
+                        {/* Soul training is an IMAGE-gen identity lock — Images tab only (video can't use a Soul). */}
+                        {isChar && !isVideo && (
                           <SoulControl anchorId={sel[d.id].slice(2)} name={d.components.find((c) => c.id === sel[d.id].slice(2))?.name} />
                         )}
                         {isChar && lockBtn(true)}
@@ -390,16 +394,19 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
               </>
             )}
             <select value={aspect} onChange={(e) => setAspect(e.target.value)} className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText"
-              title={charSelected ? 'Aspect ratio — limited to what the character Soul supports' : 'Aspect ratio'}>
+              title={charSoul ? 'Aspect ratio — limited to what the character Soul supports' : 'Aspect ratio'}>
               {aspectIds.map((id) => {
-                const blocked = charSelected && !SOUL_ASPECTS.includes(id);
+                const blocked = charSoul && !SOUL_ASPECTS.includes(id);
                 return <option key={id} value={id} disabled={blocked}>{ASPECT_LABELS[id]}{blocked ? ' — not on Soul' : ''}</option>;
               })}
             </select>
-            <select value={state.resolution} onChange={(e) => dispatch({ type: 'SET_RESOLUTION', resolution: e.target.value as typeof state.resolution })}
-              className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Resolution">
-              {STUDIO_RESOLUTIONS.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
-            </select>
+            {/* Resolution (1k/2k/4k) only affects IMAGE generation — video sizes by aspect ratio. Images-only. */}
+            {!isVideo && (
+              <select value={state.resolution} onChange={(e) => dispatch({ type: 'SET_RESOLUTION', resolution: e.target.value as typeof state.resolution })}
+                className="h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Resolution">
+                {STUDIO_RESOLUTIONS.map((r) => <option key={r} value={r}>{r.toUpperCase()}</option>)}
+              </select>
+            )}
             {/* Templates — load a saved selection set, or save the current one. */}
             {templates.length > 0 && (
               <select defaultValue="" onChange={(e) => { applyTemplate(e.target.value); e.target.value = ''; }}
