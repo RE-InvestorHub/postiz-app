@@ -11,6 +11,8 @@ import {
   HookPattern,
 } from '@gitroom/frontend/components/studio/studio.types';
 
+export interface CreateScriptInput { name: string; format?: ScriptFormat; structure?: ScriptStructure; targetDurationS?: number; brandKitId?: string; defaultTone?: ScriptTone; }
+
 const BRAIN_BASE =
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_BRAIN_URL) ||
   '/api/brain';
@@ -45,9 +47,9 @@ export const getFrameworks = (targetDurationS = 30) =>
   req<ScriptFrameworks>(`/scripts/frameworks?targetDurationS=${targetDurationS}`);
 
 // --- script CRUD ----------------------------------------------------------
-export const createScript = (payload: { name: string; format?: ScriptFormat; structure?: ScriptStructure; targetDurationS?: number; brandKitId?: string }) =>
+export const createScript = (payload: CreateScriptInput) =>
   post<ScriptDoc>('/scripts/create', payload);
-export const updateScript = (id: string, patch: Partial<{ name: string; format: ScriptFormat; structure: ScriptStructure; targetDurationS: number; wordsPerSecond: number; brandKitId: string }>) =>
+export const updateScript = (id: string, patch: Partial<{ name: string; format: ScriptFormat; structure: ScriptStructure; targetDurationS: number; wordsPerSecond: number; brandKitId: string; defaultTone: ScriptTone }>) =>
   post<ScriptDoc>('/scripts/update', { id, patch });
 export const deleteScript = (id: string) => post<{ ok: boolean }>('/scripts/delete', { id });
 export const applyStructure = (id: string, structure: ScriptStructure, targetDurationS?: number) =>

@@ -18,7 +18,7 @@ import { StudioImagesPanel } from '@gitroom/frontend/components/studio/studio.im
 import { StudioVideoEditorNLE } from '@gitroom/frontend/components/studio/studio.video-editor-nle';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
 import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
-import { StudioAudioDirector } from '@gitroom/frontend/components/studio/studio.audio-director';
+import { StudioScriptDirector } from '@gitroom/frontend/components/studio/studio.script-director';
 import { StudioScriptPanel } from '@gitroom/frontend/components/studio/studio.script-panel';
 import { StudioVideoLibraryPanel } from '@gitroom/frontend/components/studio/studio.video-library-panel';
 import { StudioStoryboardPanel } from '@gitroom/frontend/components/studio/studio.storyboard-panel';
@@ -173,7 +173,7 @@ const AudioTabContent: FC = () => {
   const [view, setView] = useState<'library' | 'script' | 'mixer'>('script');
   return (
     <div className="flex flex-col gap-[18px]">
-      <StudioAudioDirector brandKitId={brandKitId} />
+      <StudioScriptDirector brandKitId={brandKitId} />
 
       {/* Sub-view toggle — one Audio tab, three views over the same brand audio pool. */}
       <div className="flex items-center gap-[8px]">

@@ -154,7 +154,8 @@ export interface StoryboardGap {
 
 export type ScriptFormat = 'reel' | 'tiktok_ad' | 'short_film' | 'explainer' | 'testimonial';
 export type ScriptStructure = 'pas' | 'aida' | 'bab' | 'hook_retain_reward_cta' | 'film_beats';
-export type ScriptTone = 'conversational' | 'warm' | 'authoritative' | 'energetic' | 'calm';
+// 'brand' = speak in the active brand's voice/persona (resolved at render in Plan 2).
+export type ScriptTone = 'brand' | 'conversational' | 'warm' | 'authoritative' | 'energetic' | 'calm';
 export type HookPattern = 'contrarian' | 'proof' | 'curiosity' | 'pov' | 'callout' | 'pattern_interrupt';
 
 export interface ScriptCharacter { id: string; name: string; role: string; default_tone: ScriptTone; }
@@ -172,6 +173,7 @@ export interface ScriptDoc {
   structure: ScriptStructure | '';
   target_duration_s: number;
   words_per_second: number;
+  default_tone: ScriptTone; // script-level voice/persona (defaults to 'brand')
   cast: ScriptCharacter[];
   beats: ScriptBeat[];
   hooks: ScriptHook[];
@@ -188,7 +190,16 @@ export interface ScriptFrameworks {
 }
 
 export const SCRIPT_FORMATS: ScriptFormat[] = ['reel', 'tiktok_ad', 'short_film', 'explainer', 'testimonial'];
-export const SCRIPT_TONES: ScriptTone[] = ['conversational', 'warm', 'authoritative', 'energetic', 'calm'];
+export const SCRIPT_TONES: ScriptTone[] = ['brand', 'conversational', 'warm', 'authoritative', 'energetic', 'calm'];
+/** Human label for a tone/persona option (brand reads as "Brand voice"). */
+export const TONE_LABELS: Record<ScriptTone, string> = {
+  brand: 'Brand voice',
+  conversational: 'Conversational',
+  warm: 'Warm',
+  authoritative: 'Authoritative',
+  energetic: 'Energetic',
+  calm: 'Calm',
+};
 
 export interface StudioState {
   activeTab: StudioTab;

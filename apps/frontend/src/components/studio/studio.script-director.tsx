@@ -1,15 +1,16 @@
 'use client';
 
-// Audio Director — the audio-narrowed sibling of the Scene Director (Plan 1). It is the
-// "what are we making" layer for the writer's room: format, structure, target length, and a
-// free-text brief, plus ✨ Draft (an AI script interview — the 'audioscript' generation kind)
-// and ＋ Blank (a hand-authored script). The detailed editing lives in the Script sub-view below.
+// Script Director — the script-narrowed sibling of the Scene Director (Plan 1). It is the
+// "what are we making" layer for the writer's room: format, structure, tone/persona, target
+// length, and a free-text brief, plus ✨ Draft (an AI script interview — the 'audioscript'
+// generation kind) and ＋ Blank (a hand-authored script). Detailed editing lives in the Script
+// sub-view below.
 //
 // Postiz tokens only; magenta bg-ai for the AI action. Authors nothing that spends.
 
 import { FC, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
-import { SCRIPT_FORMATS, ScriptFormat, ScriptStructure, ScriptFrameworks } from '@gitroom/frontend/components/studio/studio.types';
+import { SCRIPT_FORMATS, SCRIPT_TONES, TONE_LABELS, ScriptFormat, ScriptStructure, ScriptTone, ScriptFrameworks } from '@gitroom/frontend/components/studio/studio.types';
 import { createScript, applyStructure, getFrameworks } from '@gitroom/frontend/components/studio/studio.script-client';
 
 const IconWave: FC = () => (
@@ -22,12 +23,13 @@ const FORMAT_LABELS: Record<ScriptFormat, string> = {
   reel: 'Instagram Reel', tiktok_ad: 'TikTok ad', short_film: 'Short film', explainer: 'Explainer', testimonial: 'Testimonial',
 };
 
-export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) => {
+export const StudioScriptDirector: FC<{ brandKitId: string }> = ({ brandKitId }) => {
   const { state, dispatch } = useStudio();
   const active = state.activeScript;
   const [open, setOpen] = useState(false); // collapsible card (collapsed by default), matching the Scene Director
   const [format, setFormat] = useState<ScriptFormat>('reel');
   const [structure, setStructure] = useState<ScriptStructure | ''>('hook_retain_reward_cta');
+  const [tone, setTone] = useState<ScriptTone>('brand'); // tone / persona — defaults to the brand voice
   const [targetS, setTargetS] = useState(30);
   const [brief, setBrief] = useState('');
   const [busy, setBusy] = useState(false);
@@ -42,6 +44,7 @@ export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
     const seed = [
       brief.trim() && `Brief: ${brief.trim()}`,
       `Format: ${FORMAT_LABELS[format]}`,
+      `Tone / persona: ${TONE_LABELS[tone]}`,
       `Target length: ${targetS}s`,
       structure && `Suggested structure: ${structure}`,
     ].filter(Boolean).join('. ');
@@ -53,7 +56,7 @@ export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
     setBusy(true); setError(null);
     try {
       const name = brief.trim() ? brief.trim().slice(0, 48) : `${FORMAT_LABELS[format]} script`;
-      let s = await createScript({ name, format, targetDurationS: targetS, brandKitId });
+      let s = await createScript({ name, format, targetDurationS: targetS, brandKitId, defaultTone: tone });
       if (structure) s = await applyStructure(s.script_id, structure, targetS);
       dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s });
     } catch (e) {
@@ -67,8 +70,8 @@ export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
     <div className="rounded-[8px] border border-ai/40 bg-ai/5">
       <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center gap-[8px] px-[14px] py-[10px] text-left">
         <span className="w-[24px] h-[24px] rounded-[6px] bg-ai/15 text-ai flex items-center justify-center"><IconWave /></span>
-        <span className="text-[13px] font-[700] text-ai">Audio Director</span>
-        <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Develop a short-form script — hook, structure, beats, dialogue. Draft with AI or start blank.</span>
+        <span className="text-[13px] font-[700] text-ai">Script Director</span>
+        <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Develop a short-form script — hook, structure, tone, beats, dialogue. Draft with AI or start blank.</span>
         {active && <span className="text-[11px] text-textItemBlur truncate max-w-[200px]">Active: {active.name}</span>}
         <span className="text-[12px] text-textItemBlur">{open ? '▲' : '▼'}</span>
       </button>
@@ -87,6 +90,12 @@ export const StudioAudioDirector: FC<{ brandKitId: string }> = ({ brandKitId }) 
           <select value={structure} onChange={(e) => setStructure(e.target.value as ScriptStructure | '')} className={selCls}>
             <option value="">(none)</option>
             {(frameworks?.structures || []).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-[4px]">
+          <span className="text-[11px] text-textItemBlur">Tone / persona</span>
+          <select value={tone} onChange={(e) => setTone(e.target.value as ScriptTone)} className={selCls} title="The script's voice — defaults to the active brand's persona">
+            {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-[4px]">

@@ -8,7 +8,7 @@
 
 import { FC, useCallback, useEffect, useState } from 'react';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
-import { ScriptDoc, ScriptBeat, ScriptLine, SCRIPT_TONES, ScriptTone } from '@gitroom/frontend/components/studio/studio.types';
+import { ScriptDoc, ScriptBeat, ScriptLine, SCRIPT_TONES, TONE_LABELS, ScriptTone } from '@gitroom/frontend/components/studio/studio.types';
 import * as sc from '@gitroom/frontend/components/studio/studio.script-client';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 
@@ -38,7 +38,7 @@ export const StudioScriptPanel: FC = () => {
   if (!script) {
     return (
       <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[16px] flex flex-col gap-[12px]">
-        <span className="text-[13px] text-textItemBlur">No active script. Draft one with the Audio Director above, or open a saved script:</span>
+        <span className="text-[13px] text-textItemBlur">No active script. Draft one with the Script Director above, or open a saved script:</span>
         {library.length === 0 ? (
           <span className="text-[12px] text-textItemBlur">No saved scripts for this brand yet.</span>
         ) : (
@@ -131,7 +131,7 @@ export const StudioScriptPanel: FC = () => {
               <div key={c.id} className="flex items-center gap-[6px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[8px] py-[6px]">
                 <input value={c.name} onChange={(e) => updateCharacter(c.id, { name: e.target.value })} className={tinySel + ' w-[110px]'} />
                 <select value={c.default_tone} onChange={(e) => updateCharacter(c.id, { default_tone: e.target.value as ScriptTone })} className={tinySel}>
-                  {SCRIPT_TONES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
                 </select>
                 <button type="button" onClick={() => removeCharacter(c.id)} className="text-textItemBlur hover:text-btnText px-[4px]" title="Remove">✕</button>
               </div>
@@ -242,7 +242,7 @@ const LineRow: FC<{ line: ScriptLine; cast: ScriptDoc['cast']; onChange: (patch:
         rows={1} placeholder="Line…" className={inputCls + ' flex-1 resize-y min-h-[34px]'} />
       <select value={line.tone} onChange={(e) => onChange({ tone: e.target.value })} className={tinySel + ' w-[120px] mt-[1px]'} title="Tone (blank = character default)">
         <option value="">(tone)</option>
-        {SCRIPT_TONES.map((t) => <option key={t} value={t}>{t}</option>)}
+        {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
       </select>
       <input value={line.direction} onChange={(e) => onChange({ direction: e.target.value })} placeholder="direction" className={tinySel + ' w-[120px] mt-[1px]'} title="Delivery direction" />
       <button type="button" onClick={onRemove} className="text-textItemBlur hover:text-btnText px-[2px] mt-[6px]" title="Remove line">✕</button>
