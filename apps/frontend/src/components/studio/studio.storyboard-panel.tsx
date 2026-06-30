@@ -15,8 +15,9 @@ import { gapFillVideo, getVideoCost } from '@gitroom/frontend/components/studio/
 const CAMERA_MOVES = ['subtle', 'slow push-in', 'pull-out', 'pan left', 'pan right', 'tilt up', 'tilt down', 'orbit', 'tracking', 'crane up', 'zoom'];
 const SPEEDS = ['slow', 'medium', 'fast'];
 const DEFAULT_GAP_DUR = 5;
-// Gap-fill morphs between a start AND end frame → only these models qualify (Veo takes a single image).
-const GAPFILL_MODELS = ['kling3_0_turbo', 'kling3_0', 'kling2_6', 'seedance_2_0', 'wan2_6'];
+// Gap-fill morphs between a start AND end frame (a 2-item `medias` array) → only these qualify. Verified:
+// kling3_0_turbo + kling2_6 are SINGLE-image only ("medias: at most 1 item"); Veo takes one --image too.
+const GAPFILL_MODELS = ['kling3_0', 'seedance_2_0', 'wan2_6'];
 
 export const StudioStoryboardPanel: FC<{ brandKitId: string; videoModel: string }> = ({ brandKitId, videoModel }) => {
   const { state, dispatch } = useStudio();
