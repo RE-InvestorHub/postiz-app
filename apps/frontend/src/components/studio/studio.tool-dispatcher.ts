@@ -147,8 +147,9 @@ export function requiresApproval(toolName: string): boolean {
     'data.setField',
     'data.removeField',
     'data.selectRecord',
-    // Images→Video bridge — curation (mark keyframes), no spend.
+    // Images→Video bridge — curation (mark/unmark keyframes), no spend.
     'video.sendToVideo',
+    'video.removeKeyframe',
     // Live video cost quote — read-only proxy of `higgsfield generate cost`, NO spend → auto.
     'video.cost',
     // Video Editor timeline edits — mutate the EDL doc; no spend. (editor.render is GATED — omitted.)

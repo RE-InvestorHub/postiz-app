@@ -41,7 +41,7 @@ import { listBrands, createBrand, updateBrand, addBrandFile, deleteBrand, extrac
 import { planVideo, startRun, acceptShot as pipelineAcceptShot, regenShot as pipelineRegenShot, assembleRun, estimateVideo } from '@gitroom/frontend/components/studio/studio.pipeline-client';
 import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-client';
 import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, renderDirectorShot, getVideoCost } from '@gitroom/frontend/components/studio/studio.director-client';
-import { addKeyframes } from '@gitroom/frontend/components/studio/studio.video-client';
+import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 
@@ -998,6 +998,21 @@ export function buildStudioCapabilities(
         await addKeyframes(ids);
         dispatch({ type: 'SET_TAB', tab: 'video' });
         refreshVideoLibrary();
+      },
+    },
+    {
+      // Demote a keyframe back to a standard image — clears the keyframe flag (the image is kept).
+      // Curation, NO spend → auto-approved. Refreshes both libraries (the asset lives in both).
+      id: 'video.removeKeyframe',
+      namespace: 'video',
+      label: 'Demote a keyframe back to a standard image (no spend)',
+      params: ['imageId'],
+      handler: async (p: { imageId?: string } = {}) => {
+        if (!p.imageId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Need an imageId to remove a keyframe.' }); return; }
+        await removeKeyframe(p.imageId);
+        dispatch({ type: 'REMOVE_VIDEO_KEYFRAME', id: p.imageId });
+        refreshVideoLibrary();
+        refreshImageLibrary();
       },
     },
     {

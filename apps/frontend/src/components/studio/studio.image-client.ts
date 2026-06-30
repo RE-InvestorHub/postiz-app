@@ -24,6 +24,11 @@ export interface BrandImage {
   sourceId?: string | null;
   /** Graphics-edit lineage: the op that produced this variant (e.g. "duotone", "magick"). */
   editOp?: string | null;
+  /** Scene Director lineage: the JSON spec + render mode (for the Tweak loop). */
+  spec?: Record<string, unknown> | null;
+  renderMode?: string | null;
+  /** Whether this image is also marked as a Video keyframe (drives the canvas toggle + chip). */
+  keyframe?: boolean;
 }
 
 export interface ChannelPreset {
