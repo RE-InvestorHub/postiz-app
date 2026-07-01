@@ -1,60 +1,115 @@
 'use client';
 
-// Script panel — the ✍ Script sub-view of the Audio tab: the writer's-room canvas (Plan 1).
-// Reads/writes the active structured Script (services/brain/lib/scripts.mjs) via the script-client.
-// Cast + time-budgeted beats + per-line dialogue/direction + hook variants + pronunciation, with a
-// live words/seconds budget meter. Every edit returns the full ScriptDoc → SET_ACTIVE_SCRIPT (the
-// agent + the panel share this lever). Postiz tokens only.
+// Writer's Room — the ✍ sub-view of the Audio tab (Plan 1b). Laid out like the Images/Video tabs:
+// a left SCRIPTS SIDEBAR (the brand's saved scripts, always visible) + a right CANVAS for the
+// selected script. The canvas is the writer's-room proper: a script-driven VO preview strip (T3),
+// a live words/seconds budget meter, hook variants, cast, time-budgeted beats with per-line
+// dialogue/direction, and pronunciation overrides. Every edit returns the full ScriptDoc →
+// SET_ACTIVE_SCRIPT (the agent + the panel share this lever). The former ▦ Library sub-view is gone;
+// audio uploads live behind the sidebar's ⬆ button and the active ad's audio cascades in below.
+// Postiz tokens only.
 
 import { FC, useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { ScriptDoc, ScriptBeat, ScriptLine, SCRIPT_TONES, TONE_LABELS, ScriptTone } from '@gitroom/frontend/components/studio/studio.types';
 import * as sc from '@gitroom/frontend/components/studio/studio.script-client';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
+import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
+import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 
 const inputCls = 'px-[10px] py-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
 const tinySel = 'h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
 const ghostBtn = 'h-[30px] px-[10px] rounded-[6px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText hover:bg-boxHover';
+const card = 'rounded-[8px] border border-newBorder bg-newBgColor p-[14px]';
 
+// ── Panel shell — scripts sidebar + selected-script canvas ──────────────────
 export const StudioScriptPanel: FC = () => {
   const { state, dispatch } = useStudio();
   const script = state.activeScript;
+  const brandKitId = state.composerBrandKitId || 'default';
+  const [library, setLibrary] = useState<ScriptDoc[]>([]);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const publish = useCallback((s: ScriptDoc) => dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s }), [dispatch]);
+  const refreshLibrary = useCallback(() => { sc.listScripts(brandKitId).then(setLibrary).catch(() => undefined); }, [brandKitId]);
+  // Refresh when the active script changes (draft / select / delete all flip script_id).
+  useEffect(() => { refreshLibrary(); }, [refreshLibrary, script?.script_id]);
+
+  const select = useCallback((id: string) => { sc.getScript(id).then(publish).catch((e) => setError((e as Error)?.message ?? String(e))); }, [publish]);
+
+  return (
+    <div className="flex flex-col md:flex-row gap-[14px]">
+      {/* Left — the brand's scripts library */}
+      <div className={card + ' md:w-[260px] shrink-0 flex flex-col gap-[10px]'}>
+        <div className="flex items-center gap-[8px]">
+          <span className="text-[14px] font-[600] text-btnText flex-1">Scripts</span>
+          <span className="text-[11px] text-textItemBlur">{library.length}</span>
+          <button type="button" onClick={() => setUploadOpen(true)} title="Upload an audio file to this brand"
+            className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">⬆ Upload</button>
+        </div>
+        {library.length === 0 ? (
+          <div className="text-[12px] text-textItemBlur py-[10px] leading-[1.5]">No scripts yet. Draft one with the Script Director above.</div>
+        ) : (
+          <div className="flex flex-col gap-[6px] overflow-y-auto max-h-[62vh] pr-[2px]">
+            {library.map((s) => {
+              const active = s.script_id === script?.script_id;
+              return (
+                <button key={s.script_id} type="button" onClick={() => select(s.script_id)}
+                  className={'flex flex-col gap-[2px] text-left rounded-[8px] border px-[12px] py-[10px] ' + (active ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner hover:bg-boxHover')}>
+                  <span className="text-[13px] font-[600] text-btnText truncate">{s.name}</span>
+                  <span className="text-[11px] text-textItemBlur">{s.format} · {s.beats.length} beats · {s.target_duration_s}s</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {error && <span className="text-[12px] text-red-400">{error}</span>}
+      </div>
+
+      {/* Right — the selected script's canvas */}
+      <div className="flex-1 min-w-0 flex flex-col gap-[14px]">
+        {!script ? (
+          <div className={card + ' flex-1 flex items-center justify-center text-center text-[13px] text-textItemBlur py-[60px]'}>
+            Select a script from the library, or draft one with the Script Director above.
+          </div>
+        ) : (
+          <ScriptCanvas script={script} />
+        )}
+        {/* Audio already attached to the active ad cascades in here (renders nothing when empty). */}
+        <StudioAdAssetShelf objectType="audio" />
+      </div>
+
+      {/* Audio upload modal — mirrors the Images/Video tab uploads. */}
+      {uploadOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 p-[20px]" onClick={() => setUploadOpen(false)}>
+          <div className="w-[560px] max-w-full rounded-[12px] border border-newBorder bg-newBgColor p-[20px] flex flex-col gap-[12px] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-[8px]">
+              <span className="text-[15px] font-[700] text-btnText flex-1">Upload audio to this brand</span>
+              <button type="button" onClick={() => setUploadOpen(false)} className="h-[28px] w-[28px] rounded-[8px] flex items-center justify-center text-textItemBlur hover:text-btnText">✕</button>
+            </div>
+            <span className="text-[12px] text-textItemBlur">Drag &amp; drop or browse: MP3 / WAV / M4A. Added to this brand&apos;s audio pool.</span>
+            <StudioDropZone accept="audio" brandKitId={brandKitId} onUploaded={() => setUploadOpen(false)} />
+          </div>
+        </div>, document.body)}
+    </div>
+  );
+};
+
+// ── Canvas — the active script's writer's room (only mounted when a script exists) ──────────────
+const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
+  const { state, dispatch } = useStudio();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [library, setLibrary] = useState<ScriptDoc[]>([]);
-  const [bound, setBound] = useState(false); // "→ Ad" confirmation flash. Declared before any early return (rules-of-hooks).
+  const [bound, setBound] = useState(false); // "→ Ad" confirmation flash.
 
-  const brandKitId = state.composerBrandKitId || 'default';
   const publish = useCallback((s: ScriptDoc) => dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s }), [dispatch]);
   // Run a mutation, publish the returned doc, surface errors without crashing.
   const run = useCallback(async (p: Promise<ScriptDoc>) => {
     setBusy(true); setError(null);
     try { publish(await p); } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBusy(false); }
   }, [publish]);
-
-  const refreshLibrary = useCallback(() => { sc.listScripts(brandKitId).then(setLibrary).catch(() => undefined); }, [brandKitId]);
-  useEffect(() => { refreshLibrary(); }, [refreshLibrary, script?.script_id]);
-
-  if (!script) {
-    return (
-      <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[16px] flex flex-col gap-[12px]">
-        <span className="text-[13px] text-textItemBlur">No active script. Draft one with the Script Director above, or open a saved script:</span>
-        {library.length === 0 ? (
-          <span className="text-[12px] text-textItemBlur">No saved scripts for this brand yet.</span>
-        ) : (
-          <div className="flex flex-col gap-[6px]">
-            {library.map((s) => (
-              <button key={s.script_id} type="button" onClick={() => sc.getScript(s.script_id).then(publish)}
-                className="flex items-center gap-[8px] text-left rounded-[8px] border border-newBorder bg-newBgColorInner px-[12px] py-[10px] hover:bg-boxHover">
-                <span className="text-[13px] font-[600] text-btnText flex-1 truncate">{s.name}</span>
-                <span className="text-[11px] text-textItemBlur">{s.format} · {s.beats.length} beats · {s.target_duration_s}s</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
 
   const budget = sc.computeBudget(script);
   const id = script.script_id;

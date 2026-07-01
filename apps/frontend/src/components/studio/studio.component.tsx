@@ -13,11 +13,9 @@ import { submitStoryboard } from '@gitroom/frontend/components/studio/studio.sto
 import { StudioAgentPanel } from '@gitroom/frontend/components/studio/studio.agent-panel';
 import { FloatingWindow } from '@gitroom/frontend/components/studio/studio.floating-window';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
-import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 import { StudioImagesPanel } from '@gitroom/frontend/components/studio/studio.images-panel';
 import { StudioVideoEditorNLE } from '@gitroom/frontend/components/studio/studio.video-editor-nle';
 import { StudioAvatarPanel } from '@gitroom/frontend/components/studio/studio.avatar-panel';
-import { StudioAudioPanel } from '@gitroom/frontend/components/studio/studio.audio-panel';
 import { StudioScriptDirector } from '@gitroom/frontend/components/studio/studio.script-director';
 import { StudioScriptPanel } from '@gitroom/frontend/components/studio/studio.script-panel';
 import { StudioVideoLibraryPanel } from '@gitroom/frontend/components/studio/studio.video-library-panel';
@@ -164,23 +162,24 @@ const VideoTabContent: FC = () => {
   );
 };
 
-// Audio tab — mirrors the Images/Video skeleton: the Audio Director on top, then a
-// [ Library | Script | Mixer ] sub-view toggle (Plan 1). Library = the single-voice VO quick path
-// + ad audio + uploads (the minimal media bin); Script = the writer's room; Mixer = Plan 3 (stub).
+// Audio tab — mirrors the Images/Video skeleton: the Script Director on top, then a
+// [ Writer's Room | Mixer ] sub-view toggle. Writer's Room = a scripts sidebar + the selected
+// script's canvas (script-driven VO preview + hooks/cast/beats); Mixer = Plan 3 (stub).
+// The former ▦ Library sub-view is gone — scripts ARE the library now (Plan 1b).
 const AudioTabContent: FC = () => {
   const { state } = useStudio();
   const brandKitId = state.composerBrandKitId || 'default';
-  const [view, setView] = useState<'library' | 'script' | 'mixer'>('script');
+  const [view, setView] = useState<'script' | 'mixer'>('script');
   return (
     <div className="flex flex-col gap-[18px]">
       <StudioScriptDirector brandKitId={brandKitId} />
 
-      {/* Sub-view toggle — one Audio tab, three views over the same brand audio pool. */}
+      {/* Sub-view toggle — one Audio tab: the Writer's Room (scripts) and the Mixer (Plan 3). */}
       <div className="flex items-center gap-[8px]">
         <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
-          {([['library', '▦ Library'], ['script', '✍ Script'], ['mixer', '🎚 Mixer']] as const).map(([v, lbl]) => (
+          {([['script', "✍ Writer's Room"], ['mixer', '🎚 Mixer']] as const).map(([v, lbl]) => (
             <button key={v} type="button" onClick={() => setView(v)}
-              title={v === 'library' ? 'Generated VO + ad audio + uploads' : v === 'script' ? 'The writer’s room — hooks, beats, dialogue' : 'Multi-track mix + SFX (coming in Plan 3)'}
+              title={v === 'script' ? "The writer's room: hooks, beats, dialogue, and a VO preview" : 'Multi-track mix + SFX (coming in Plan 3)'}
               className={'h-[34px] px-[14px] text-[12px] font-[600] ' + (view === v ? 'bg-ai text-white' : 'text-textItemBlur hover:text-btnText')}>{lbl}</button>
           ))}
         </span>
@@ -188,23 +187,9 @@ const AudioTabContent: FC = () => {
 
       {view === 'script' && <StudioScriptPanel />}
 
-      {view === 'library' && (
-        <div className="flex flex-col gap-[15px]">
-          <StudioAudioPanel />
-          {/* Audio assets already on the active Ad, cascaded into this tab. */}
-          <StudioAdAssetShelf objectType="audio" />
-          <div className="flex items-center gap-[10px]">
-            <div className="flex-1 h-px bg-newBorder" />
-            <span className="text-[11px] font-[500] text-textItemBlur uppercase tracking-[0.06em] shrink-0">or upload your own</span>
-            <div className="flex-1 h-px bg-newBorder" />
-          </div>
-          <StudioDropZone accept="audio" />
-        </div>
-      )}
-
       {view === 'mixer' && (
         <div className="rounded-[8px] border border-dashed border-newBorder bg-newBgColor p-[24px] flex flex-col items-center gap-[6px] text-center">
-          <span className="text-[14px] font-[600] text-btnText">🎚 Mixer — coming in Plan 3</span>
+          <span className="text-[14px] font-[600] text-btnText">🎚 Mixer: coming in Plan 3</span>
           <span className="text-[12px] text-textItemBlur max-w-[420px]">Multi-track mixing (Dialogue / SFX / Music), sound effects, music beds with auto-ducking, and a master mix. Built on the same timeline editor as the Video Editor.</span>
         </div>
       )}
