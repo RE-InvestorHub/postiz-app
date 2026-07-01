@@ -1,7 +1,9 @@
 'use client';
 
-// Credits badge — live Higgsfield + Hedra balances in the Project bar so you can see how
-// many credits you have before any paid generation. Read-only (GET /account/credits).
+// Credits badge — live Higgsfield + Hedra + ElevenLabs balances in the Project bar so you can see
+// how many credits you have before any paid generation. Read-only (GET /account/credits). The
+// ElevenLabs (audio) leg needs the API key to carry the `user_read` scope; without it the chip
+// shows "—" with a tooltip explaining how to enable it.
 //
 // Refreshes: on mount, on a manual ↻ click, and whenever a generation event fires
 // (`reinvestorhub:images-refresh` / `reinvestorhub:credits-refresh`) so the number ticks
@@ -13,6 +15,7 @@ import { getCredits, CreditsResponse } from '@gitroom/frontend/components/studio
 // Below these, the chip goes amber as a heads-up (tune as plans change).
 const LOW_HIGGSFIELD = 30;
 const LOW_HEDRA = 200;
+const LOW_ELEVEN = 5000; // ElevenLabs credits = characters; a multi-voice render can be a few hundred.
 
 export const StudioCreditsBadge: FC = () => {
   const [data, setData] = useState<CreditsResponse | null>(null);
@@ -39,6 +42,7 @@ export const StudioCreditsBadge: FC = () => {
 
   const hf = data?.higgsfield;
   const hd = data?.hedra;
+  const el = data?.elevenLabs;
 
   const chip = (
     label: string,
@@ -65,7 +69,7 @@ export const StudioCreditsBadge: FC = () => {
 
   return (
     <div className="ml-auto flex items-center gap-[12px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[10px] py-[6px]"
-      title="Generation credits — Higgsfield (images/video) and Hedra (talking-head video)">
+      title="Generation credits — Higgsfield (images/video), Hedra (talking-head video), ElevenLabs (audio: TTS / multi-voice render / Voice Mirror)">
       {chip(
         '⚡ Higgsfield',
         hf?.connected,
@@ -80,6 +84,18 @@ export const StudioCreditsBadge: FC = () => {
         hd?.remaining,
         LOW_HEDRA,
         hd?.connected ? `Hedra: ${hd.remaining} credits${hd.expiring ? ` · ${hd.expiring} expiring` : ''}` : `Hedra not connected${hd?.error ? `: ${hd.error}` : ''}`,
+      )}
+      <span className="text-newBorder" aria-hidden="true">|</span>
+      {chip(
+        '🗣 ElevenLabs',
+        el?.connected,
+        el?.remaining,
+        LOW_ELEVEN,
+        el?.connected
+          ? `ElevenLabs: ${el.remaining?.toLocaleString()} credits left${el.limit ? ` of ${el.limit.toLocaleString()}` : ''}${el.plan ? ` · ${el.plan} plan` : ''}${el.resetAt ? ` · resets ${new Date(el.resetAt).toLocaleDateString()}` : ''} — audio: TTS / multi-voice render / Voice Mirror`
+          : (el?.error === 'key missing user_read scope'
+              ? 'ElevenLabs balance needs the API key to have the user_read scope (add it in the ElevenLabs dashboard → API Keys)'
+              : `ElevenLabs not connected${el?.error ? `: ${el.error}` : ''}`),
       )}
       <button
         type="button"

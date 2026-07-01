@@ -186,6 +186,13 @@ export function requiresApproval(toolName: string): boolean {
     'script.suggestPronunciation',
     'script.critique',
     'script.bindToAd',
+    // audio.* (Plan 2) — assignments / reads / curation are free → auto-approved. The spenders
+    // (audio.renderScript, audio.regenLine, audio.mirrorVoice) are deliberately OMITTED so they
+    // stay GATED (they spend TTS / speech-to-speech credits).
+    'audio.castVoice',
+    'audio.listLibrary',
+    'audio.assignToAd',
+    'audio.deleteTrack',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

@@ -58,6 +58,9 @@ export const StudioVideoComposerPanel: FC = () => {
   const [beds, setBeds] = useState<MusicBed[]>([]);
   const [musicMood, setMusicMood] = useState('');                  // '' = no music
   const [musicVolume, setMusicVolume] = useState(0.18);
+  // Plan 2 — a rendered audio track bound to this Ad can drive the spot audio in place of per-shot VO.
+  const [boundAudios, setBoundAudios] = useState<ResolvedObject[]>([]);
+  const [useBoundAudio, setUseBoundAudio] = useState(false);
 
   const [images, setImages] = useState<ResolvedObject[]>([]);
   const [plan, setPlan] = useState<{ storyboard: any; shotCount: number } | null>(null);
@@ -70,10 +73,13 @@ export const StudioVideoComposerPanel: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load the Ad's images (for the optional character-reference picker).
+  // Load the Ad's images (character-reference picker) + bound audio tracks (Plan 2 spot-audio choice).
   useEffect(() => {
-    if (!state.activeAdId) { setImages([]); return; }
-    getAdObjects(state.activeAdId).then((objs) => setImages(objs.filter((o) => o.type === 'image'))).catch(() => {});
+    if (!state.activeAdId) { setImages([]); setBoundAudios([]); setUseBoundAudio(false); return; }
+    getAdObjects(state.activeAdId).then((objs) => {
+      setImages(objs.filter((o) => o.type === 'image'));
+      setBoundAudios(objs.filter((o) => o.type === 'audio'));
+    }).catch(() => {});
   }, [state.activeAdId]);
 
   // Load the music-bed library once (for the mood picker).
@@ -119,6 +125,14 @@ export const StudioVideoComposerPanel: FC = () => {
     finally { setBusy(null); }
   }, [coreMessage, briefPayload, model, durationS]);
 
+  // The URL of the bound audio track to use as the spot audio (first bound audio object), if the
+  // "use bound audio" choice is on. Resolves the object's record like charRefUrl does.
+  const boundAudioUrl = useMemo(() => {
+    if (!useBoundAudio) return '';
+    const rec = boundAudios[0]?.record as { url?: string; cdnUrl?: string; path?: string } | undefined;
+    return rec ? (rec.url || rec.cdnUrl || (rec.path ? assetUrl(rec.path) : '')) : '';
+  }, [useBoundAudio, boundAudios]);
+
   const doCompose = useCallback(async () => {
     if (!plan?.storyboard) return;
     setBusy('compose'); setError(null);
@@ -129,11 +143,12 @@ export const StudioVideoComposerPanel: FC = () => {
         voiceTone: voTone,
         ...(advOpen ? { voiceSettings: { stability, style } } : {}),
         ...(musicMood ? { music: { mood: musicMood, volume: musicVolume } } : {}),
+        ...(boundAudioUrl ? { boundAudioUrl } : {}),
       });
       setRun(await pollRun(started.runId));
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setBusy(null); }
-  }, [plan, dryRun, voTone, advOpen, stability, style, musicMood, musicVolume]);
+  }, [plan, dryRun, voTone, advOpen, stability, style, musicMood, musicVolume, boundAudioUrl]);
 
   const doAccept = useCallback(async (shotId: string) => {
     if (!run?.runId) return;
@@ -241,6 +256,13 @@ export const StudioVideoComposerPanel: FC = () => {
           {musicMood && (
             <label className="flex flex-col gap-[4px]" title="Music bed volume (under the VO)"><span className="text-[11px] font-[600] text-textItemBlur uppercase">Bed vol {Math.round(musicVolume * 100)}%</span>
               <input type="range" min={0.05} max={0.6} step={0.01} value={musicVolume} onChange={(e) => setMusicVolume(Number(e.target.value))} className="h-[40px]" />
+            </label>
+          )}
+          {/* Plan 2 — use the Ad's bound rendered audio track as the spot audio instead of per-shot VO. */}
+          {boundAudios.length > 0 && (
+            <label className="flex items-center gap-[6px] h-[40px] text-[12px] text-btnText" title="Play the audio track bound to this ad across the whole spot, instead of generating per-shot VO">
+              <input type="checkbox" checked={useBoundAudio} onChange={(e) => setUseBoundAudio(e.target.checked)} />
+              Use bound audio <span className="text-textItemBlur">(skip per-shot VO)</span>
             </label>
           )}
           <button type="button" onClick={() => setAdvOpen((v) => !v)} className="h-[40px] px-[10px] text-[12px] text-textItemBlur hover:text-btnText" title="Advanced VO settings">

@@ -20,6 +20,7 @@ import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.a
 import { StudioVoicePicker } from '@gitroom/frontend/components/studio/studio.voice-picker';
 import { generateVOFromScript, latestVOForScript } from '@gitroom/frontend/components/studio/studio.voice-client';
 import { WaveformTrack } from '@gitroom/frontend/components/studio/studio.waveform-track';
+import { MultiVoiceRenderBar, RenderedTracksSection, VoiceMirrorButton } from '@gitroom/frontend/components/studio/studio.audio-render';
 
 const inputCls = 'px-[10px] py-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
 const tinySel = 'h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
@@ -214,6 +215,7 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
   const addCharacter = () => run(sc.addCharacter(id, { name: `Character ${script.cast.length + 1}` }));
   const updateCharacter = (cid: string, patch: any) => run(sc.updateCharacter(id, cid, patch));
   const removeCharacter = (cid: string) => run(sc.removeCharacter(id, cid));
+  const castVoice = (cid: string, v: string) => run(sc.castVoice(id, cid, v));
   const addBeat = () => run(sc.addBeat(id, { label: 'New beat', target_duration_s: 5 }));
   const updateBeat = (bid: string, patch: any) => run(sc.updateBeat(id, bid, patch));
   const removeBeat = (bid: string) => run(sc.removeBeat(id, bid));
@@ -320,6 +322,7 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
       const r = await generateVOFromScript({ scriptId: id, voiceId });
       setVo({ url: r.url });
       setGenSig(voSig(script, voiceId));
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:credits-refresh'));
     } catch (e) { setGenErr((e as Error)?.message ?? String(e)); } finally { setGenBusy(false); }
   };
   // When the AI Agent renders a VO for THIS script, show it on the canvas too.
@@ -361,6 +364,7 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
             className="h-[40px] px-[16px] rounded-[8px] bg-ai text-white font-[600] inline-flex items-center justify-center gap-[6px] disabled:opacity-50 disabled:cursor-not-allowed">
             {genBusy && <Spinner />}{genBusy ? 'Generating…' : '⚡ Generate'}
           </button>
+          <VoiceMirrorButton script={script} brandKitId={state.composerBrandKitId || 'default'} />
         </div>
         {vo && (
           <div className="flex flex-col gap-[6px]">
@@ -408,22 +412,28 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
         )}
       </Section>
 
-      {/* Cast */}
-      <Section title="Cast" hint="Who speaks. Voice casting comes in the next phase — here you define the characters." action={<button type="button" onClick={addCharacter} className={ghostBtn}>＋ Character</button>}>
+      {/* Cast — name, tone (persona), and the ElevenLabs voice each character renders in (Plan 2). */}
+      <Section title="Cast" hint="Who speaks. Name + tone (the persona) + the ElevenLabs voice (the sound) each character is rendered in. Leave the voice on House to use the brand voice." action={<button type="button" onClick={addCharacter} className={ghostBtn}>＋ Character</button>}>
         {displayCast.length === 0 ? <Empty>Single narrator. Add a character for multi-voice dialogue.</Empty> : (
-          <div className="flex flex-wrap gap-[8px]">
+          <div className="flex flex-col gap-[8px]">
             {displayCast.map((c) => (
-              <div key={c.id} className="flex items-center gap-[6px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[8px] py-[6px]">
+              <div key={c.id} className="flex items-center gap-[6px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[8px] py-[6px] flex-wrap">
                 <input value={c.name} onChange={(e) => updateCharacter(c.id, { name: e.target.value })} className={tinySel + ' w-[110px]'} />
-                <select value={c.default_tone} onChange={(e) => updateCharacter(c.id, { default_tone: e.target.value as ScriptTone })} className={tinySel}>
+                <select value={c.default_tone} onChange={(e) => updateCharacter(c.id, { default_tone: e.target.value as ScriptTone })} className={tinySel} title="Tone (persona)">
                   {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
                 </select>
+                <StudioVoicePicker value={c.voice_id ?? ''} onChange={(v) => castVoice(c.id, v)} onError={setError}
+                  allowEmpty emptyLabel="🏠 House voice" className={tinySel + ' min-w-[160px]'} />
                 <button type="button" onClick={() => removeCharacter(c.id)} className="text-textItemBlur hover:text-btnText px-[4px]" title="Remove">✕</button>
               </div>
             ))}
           </div>
         )}
       </Section>
+
+      {/* Multi-voice render (Plan 2) — cast → render → the stitched track lands in Rendered tracks below. */}
+      <MultiVoiceRenderBar script={script} brandKitId={state.composerBrandKitId || 'default'} />
+      <RenderedTracksSection script={script} brandKitId={state.composerBrandKitId || 'default'} activeAdId={state.activeAdId} />
 
       {/* Beats */}
       <Section title="Beats" hint="Each beat is time-budgeted; write lines to the seconds you have." action={
