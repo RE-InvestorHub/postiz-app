@@ -340,69 +340,61 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
         )}
       </Section>
 
-      {/* Two columns: LEFT = Hooks (pick / edit / regenerate), RIGHT = time-budgeted Beats.
-          Side by side so the Realign (hook → beats) relationship is visible. */}
-      <div className="flex flex-col lg:flex-row gap-[14px] items-start">
-        {/* Left — Hooks */}
-        <div className="flex-1 min-w-0 w-full">
-          <Section title="Hooks" hint="Scroll-stoppers — pick one (it mirrors into the Hook beat), edit inline, or ↻ regenerate a single hook in context.">
-            {script.hooks.length === 0 ? (
-              <Empty>No hooks yet. Ask the AI to “generate 5 hook variants”, or draft with the Director.</Empty>
-            ) : (
-              <div className="flex flex-col gap-[6px]">
-                {script.hooks.map((h) => (
-                  <div key={h.id} className={'flex items-center gap-[8px] rounded-[8px] border px-[10px] py-[6px] ' + (h.selected ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner')}>
-                    <input type="radio" name="hook" checked={h.selected} onChange={() => selectHook(h.id)} title="Use this hook" className="shrink-0" />
-                    <span className="text-[10px] uppercase tracking-wide text-textItemBlur w-[92px] shrink-0">{h.pattern.replace('_', ' ')}</span>
-                    <input value={hookDraft[h.id] ?? h.text} onChange={(e) => editHook(h, e.target.value)} onBlur={() => commitHook(h)}
-                      placeholder="Hook line…" className="flex-1 min-w-0 bg-transparent text-[13px] text-btnText outline-none border-b border-transparent focus:border-newBorder" />
-                    <button type="button" onClick={() => regenerateHook(h.id)} disabled={regenHookId === h.id}
-                      title="Regenerate this hook — keeps its pattern, uses the full script context"
-                      className="shrink-0 h-[26px] w-[26px] rounded-[6px] flex items-center justify-center text-textItemBlur hover:text-ai hover:bg-ai/10 disabled:opacity-50">
-                      {regenHookId === h.id ? <Spinner /> : <Recycle />}
-                    </button>
-                  </div>
-                ))}
+      {/* Hooks — its own full-width row. */}
+      <Section title="Hooks" hint="Scroll-stoppers — pick one (it mirrors into the Hook beat), edit inline, or ↻ regenerate a single hook in context.">
+        {script.hooks.length === 0 ? (
+          <Empty>No hooks yet. Ask the AI to “generate 5 hook variants”, or draft with the Director.</Empty>
+        ) : (
+          <div className="flex flex-col gap-[6px]">
+            {script.hooks.map((h) => (
+              <div key={h.id} className={'flex items-center gap-[8px] rounded-[8px] border px-[10px] py-[6px] ' + (h.selected ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner')}>
+                <input type="radio" name="hook" checked={h.selected} onChange={() => selectHook(h.id)} title="Use this hook" className="shrink-0" />
+                <span className="text-[10px] uppercase tracking-wide text-textItemBlur w-[92px] shrink-0">{h.pattern.replace('_', ' ')}</span>
+                <input value={hookDraft[h.id] ?? h.text} onChange={(e) => editHook(h, e.target.value)} onBlur={() => commitHook(h)}
+                  placeholder="Hook line…" className="flex-1 min-w-0 bg-transparent text-[13px] text-btnText outline-none border-b border-transparent focus:border-newBorder" />
+                <button type="button" onClick={() => regenerateHook(h.id)} disabled={regenHookId === h.id}
+                  title="Regenerate this hook — keeps its pattern, uses the full script context"
+                  className="shrink-0 h-[26px] w-[26px] rounded-[6px] flex items-center justify-center text-textItemBlur hover:text-ai hover:bg-ai/10 disabled:opacity-50">
+                  {regenHookId === h.id ? <Spinner /> : <Recycle />}
+                </button>
               </div>
-            )}
-          </Section>
-        </div>
+            ))}
+          </div>
+        )}
+      </Section>
 
-        {/* Right — Beats */}
-        <div className="flex-1 min-w-0 w-full">
-          <Section title="Beats" hint="Each beat is time-budgeted; write lines to the seconds you have." action={
-            <span className="flex items-center gap-[8px]">
-              <button type="button" onClick={addBeat} className={ghostBtn}>＋ Beat</button>
-              <button type="button" onClick={realign} disabled={!realignDirty || realigning}
-                title={realignDirty ? 'Rewrite every beat below to pay off the newly selected hook' : 'Pick a different hook to enable'}
-                className={'h-[30px] px-[12px] rounded-[6px] text-[12px] font-[600] inline-flex items-center gap-[6px] transition-colors ' + (realignDirty ? 'bg-ai text-white hover:opacity-90' : 'border border-newBorder text-textItemBlur opacity-50 cursor-not-allowed')}>
-                {realigning ? <Spinner /> : <Recycle />} Realign
-              </button>
-            </span>
-          }>
-            {script.beats.length === 0 ? <Empty>No beats yet. Pick a structure in the Director, or add one.</Empty> : (
-              <div className="flex flex-col gap-[10px]">
-                {script.beats.map((b, i) => (
-                  <BeatCard
-                    key={b.id} beat={b} index={i} count={script.beats.length}
-                    budget={budget.beats.find((x) => x.id === b.id)}
-                    cast={displayCast} charName={charName}
-                    onLabel={(label) => updateBeat(b.id, { label })}
-                    onDur={(d) => updateBeat(b.id, { target_duration_s: d })}
-                    onMove={(dir) => moveBeat(b.id, dir)}
-                    onRemove={() => removeBeat(b.id)}
-                    onAddLine={() => addLine(b.id)}
-                    onLine={(lid, patch) => updateLine(b.id, lid, patch)}
-                    onRemoveLine={(lid) => removeLine(b.id, lid)}
-                    onRegen={() => regenerateBeat(b.id)}
-                    regenerating={regenBeatId === b.id}
-                  />
-                ))}
-              </div>
-            )}
-          </Section>
-        </div>
-      </div>
+      {/* Beats — its own full-width row. */}
+      <Section title="Beats" hint="Each beat is time-budgeted; write lines to the seconds you have." action={
+        <span className="flex items-center gap-[8px]">
+          <button type="button" onClick={addBeat} className={ghostBtn}>＋ Beat</button>
+          <button type="button" onClick={realign} disabled={!realignDirty || realigning}
+            title={realignDirty ? 'Rewrite every beat below to pay off the newly selected hook' : 'Pick a different hook to enable'}
+            className={'h-[30px] px-[12px] rounded-[6px] text-[12px] font-[600] inline-flex items-center gap-[6px] transition-colors ' + (realignDirty ? 'bg-ai text-white hover:opacity-90' : 'border border-newBorder text-textItemBlur opacity-50 cursor-not-allowed')}>
+            {realigning ? <Spinner /> : <Recycle />} Realign
+          </button>
+        </span>
+      }>
+        {script.beats.length === 0 ? <Empty>No beats yet. Pick a structure in the Director, or add one.</Empty> : (
+          <div className="flex flex-col gap-[10px]">
+            {script.beats.map((b, i) => (
+              <BeatCard
+                key={b.id} beat={b} index={i} count={script.beats.length}
+                budget={budget.beats.find((x) => x.id === b.id)}
+                cast={displayCast} charName={charName}
+                onLabel={(label) => updateBeat(b.id, { label })}
+                onDur={(d) => updateBeat(b.id, { target_duration_s: d })}
+                onMove={(dir) => moveBeat(b.id, dir)}
+                onRemove={() => removeBeat(b.id)}
+                onAddLine={() => addLine(b.id)}
+                onLine={(lid, patch) => updateLine(b.id, lid, patch)}
+                onRemoveLine={(lid) => removeLine(b.id, lid)}
+                onRegen={() => regenerateBeat(b.id)}
+                regenerating={regenBeatId === b.id}
+              />
+            ))}
+          </div>
+        )}
+      </Section>
 
       {/* Assemble soundtrack — its own full-width row + the resulting masters. */}
       <AssembleBar script={script} brandKitId={state.composerBrandKitId || 'default'} />
