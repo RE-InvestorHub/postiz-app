@@ -40,6 +40,20 @@ const Recycle: FC = () => (
   </svg>
 );
 
+// Script name — local edit, commit on blur (so spaces + clearing work while typing). An empty/
+// whitespace-only entry snaps back to the current name (a script needs a name); the server trims.
+const NameField: FC<{ value: string; onCommit: (name: string) => void }> = ({ value, onCommit }) => {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  return (
+    <input value={draft} placeholder="Script name" aria-label="Script name"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { const t = draft.trim(); if (t && t !== value) onCommit(t); else setDraft(value); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      className={inputCls + ' flex-1 font-[600]'} />
+  );
+};
+
 // ── Panel shell — scripts sidebar + selected-script canvas ──────────────────
 export const StudioScriptPanel: FC = () => {
   const { state, dispatch } = useStudio();
@@ -360,7 +374,7 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
       {/* Header: name + budget meter + bind/delete */}
       <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
         <div className="flex items-center gap-[10px]">
-          <input value={script.name} onChange={(e) => setName(e.target.value)} className={inputCls + ' flex-1 font-[600]'} />
+          <NameField value={script.name} onCommit={setName} />
           <button type="button" onClick={bindToAd} disabled={!state.activeAdId}
             className={'h-[34px] px-[12px] rounded-[8px] border text-[12px] font-[600] ' + (bound ? 'border-ai text-ai bg-ai/10' : 'border-newBorder text-textItemBlur hover:text-btnText hover:bg-boxHover') + ' disabled:opacity-40'}
             title={state.activeAdId ? 'Attach this script to the active ad' : 'Select an active ad first'}>
