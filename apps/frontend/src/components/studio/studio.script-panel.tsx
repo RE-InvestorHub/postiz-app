@@ -17,11 +17,21 @@ import * as sc from '@gitroom/frontend/components/studio/studio.script-client';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
+import { StudioVoicePicker } from '@gitroom/frontend/components/studio/studio.voice-picker';
+import { generateVOFromScript } from '@gitroom/frontend/components/studio/studio.voice-client';
+import { WaveformTrack } from '@gitroom/frontend/components/studio/studio.waveform-track';
 
 const inputCls = 'px-[10px] py-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
 const tinySel = 'h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
 const ghostBtn = 'h-[30px] px-[10px] rounded-[6px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText hover:bg-boxHover';
 const card = 'rounded-[8px] border border-newBorder bg-newBgColor p-[14px]';
+
+const Spinner: FC = () => (
+  <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+  </svg>
+);
 
 // ── Panel shell — scripts sidebar + selected-script canvas ──────────────────
 export const StudioScriptPanel: FC = () => {
@@ -104,6 +114,14 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
   const [error, setError] = useState<string | null>(null);
   const [bound, setBound] = useState(false); // "→ Ad" confirmation flash.
 
+  // --- VO preview (script-driven, single narrator) ---
+  const voiceId = state.audioVoiceId;
+  const setVoiceId = (v: string) => dispatch({ type: 'SET_AUDIO_VOICE', voiceId: v });
+  const [genBusy, setGenBusy] = useState(false);
+  const [genErr, setGenErr] = useState<string | null>(null);
+  const [vo, setVo] = useState<{ url: string } | null>(null);
+  const [genSig, setGenSig] = useState<string | null>(null);
+
   const publish = useCallback((s: ScriptDoc) => dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s }), [dispatch]);
   // Run a mutation, publish the returned doc, surface errors without crashing.
   const run = useCallback(async (p: Promise<ScriptDoc>) => {
@@ -145,8 +163,54 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
     catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBusy(false); }
   };
 
+  // A signature of what the render depends on — beats/lines text, pronunciation, and voice. If it
+  // changes after a render, the clip is stale (the writer edited the script).
+  const voSig = (s: ScriptDoc, v: string) => JSON.stringify({ v, b: s.beats.map((b) => b.lines.map((l) => l.text)), p: s.pronunciation });
+  const hasLines = script.beats.some((b) => b.lines.some((l) => l.text.trim()));
+  const stale = !!vo && genSig !== voSig(script, voiceId);
+  const generateVoice = async () => {
+    if (!voiceId || !hasLines || genBusy) return;
+    setGenBusy(true); setGenErr(null);
+    try {
+      const r = await generateVOFromScript({ scriptId: id, voiceId });
+      setVo({ url: r.url });
+      setGenSig(voSig(script, voiceId));
+    } catch (e) { setGenErr((e as Error)?.message ?? String(e)); } finally { setGenBusy(false); }
+  };
+  // When the AI Agent renders a VO for THIS script, show it on the canvas too.
+  useEffect(() => {
+    const onVo = (e: Event) => {
+      const d = (e as CustomEvent).detail || {};
+      if (d.url && d.scriptId === id) { setVo({ url: d.url }); setGenSig(voSig(script, voiceId)); }
+    };
+    if (typeof window === 'undefined') return;
+    window.addEventListener('reinvestorhub:script-vo', onVo);
+    return () => window.removeEventListener('reinvestorhub:script-vo', onVo);
+  }, [id, script, voiceId]);
+
   return (
     <div className="flex flex-col gap-[14px]">
+      {/* VO preview — hear the whole script in one voice (per-character casting is Plan 2). */}
+      <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
+        <div className="flex items-center gap-[10px] flex-wrap">
+          <span className="text-[13px] font-[600] text-btnText">Voice-over preview</span>
+          <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Hear your whole script in one voice. Per-character casting comes in Plan 2.</span>
+          <StudioVoicePicker value={voiceId} onChange={setVoiceId} onError={setGenErr} />
+          <button type="button" onClick={generateVoice} disabled={genBusy || !voiceId || !hasLines}
+            title={!hasLines ? 'Write some lines first' : 'Render this script as a single-voice VO'}
+            className="h-[40px] px-[16px] rounded-[8px] bg-ai text-white font-[600] inline-flex items-center justify-center gap-[6px] disabled:opacity-50 disabled:cursor-not-allowed">
+            {genBusy && <Spinner />}{genBusy ? 'Generating…' : '⚡ Generate'}
+          </button>
+        </div>
+        {vo && (
+          <div className="flex flex-col gap-[6px]">
+            <WaveformTrack url={vo.url} stale={stale} onError={setGenErr} />
+            {stale && <span className="text-[11px] text-amber-400">Script or voice changed since this render. Regenerate to hear the latest.</span>}
+          </div>
+        )}
+        {genErr && <div className="text-[12px] text-red-400 leading-[1.4]">{genErr}</div>}
+      </div>
+
       {/* Header: name + budget meter + bind/delete */}
       <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
         <div className="flex items-center gap-[10px]">

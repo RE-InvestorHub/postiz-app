@@ -51,3 +51,12 @@ export function listVoiceLibrary(): Promise<VoiceOption[]> {
 export function generateVO(payload: { text: string; voiceId: string; modelId?: string }): Promise<GeneratedVO> {
   return req<GeneratedVO>('/studio/audio', { method: 'POST', body: JSON.stringify(payload) });
 }
+
+/**
+ * Render a whole structured Script as a single-narrator VO (the Writer's Room "hear it" preview).
+ * The brain flattens beats → lines in order and applies the script's pronunciation overrides.
+ * Per-character casting is Plan 2. Paid TTS — call only from an explicit user action.
+ */
+export function generateVOFromScript(payload: { scriptId: string; voiceId: string; modelId?: string }): Promise<GeneratedVO & { scriptId: string; scriptUpdatedAt?: string }> {
+  return req('/studio/audio/from-script', { method: 'POST', body: JSON.stringify(payload) });
+}

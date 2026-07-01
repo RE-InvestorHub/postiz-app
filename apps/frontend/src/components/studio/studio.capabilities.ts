@@ -43,6 +43,7 @@ import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-c
 import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, renderDirectorShot, getVideoCost } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import * as scriptClient from '@gitroom/frontend/components/studio/studio.script-client';
+import * as voiceClient from '@gitroom/frontend/components/studio/studio.voice-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 
@@ -1173,6 +1174,20 @@ export function buildStudioCapabilities(
             const adId = p.adId ?? getState().activeAdId;
             if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No active ad to bind the script to.' }); return; }
             await addObject({ adId, type: 'script', id });
+          },
+        },
+        {
+          // SPENDS TTS credits → deliberately NOT in AUTO_APPROVE (studio.tool-dispatcher.ts).
+          id: 'script.generateVoicePreview', namespace: 'script', label: 'Render the active script as a single-voice VO preview (SPENDS TTS credits)',
+          params: ['id', 'voiceId'],
+          handler: async (p: { id?: string; voiceId?: string } = {}) => {
+            const id = sid(p); if (!id) return;
+            const voiceId = p.voiceId || getState().audioVoiceId;
+            if (!voiceId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Pick a voice first.' }); return; }
+            const r = await voiceClient.generateVOFromScript({ scriptId: id, voiceId });
+            // Let the Writer's Room canvas show the clip (mirrors the images/video refresh-event pattern).
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:script-vo', { detail: { url: r.url, scriptId: id } }));
+            return r;
           },
         },
       ];
