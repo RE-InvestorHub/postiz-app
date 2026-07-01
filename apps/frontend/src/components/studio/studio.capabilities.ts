@@ -43,6 +43,7 @@ import { reshapeImage } from '@gitroom/frontend/components/studio/studio.image-c
 import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, renderDirectorShot, getVideoCost } from '@gitroom/frontend/components/studio/studio.director-client';
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import * as scriptClient from '@gitroom/frontend/components/studio/studio.script-client';
+import * as voiceClient from '@gitroom/frontend/components/studio/studio.voice-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 
@@ -1156,6 +1157,16 @@ export function buildStudioCapabilities(
           handler: async (p: { id?: string; hookId?: string } = {}) => { const id = sid(p); if (!id || !p.hookId) return; return publish(await sc.selectHook(id, p.hookId)); },
         },
         {
+          id: 'script.regenerateHook', namespace: 'script', label: 'Regenerate one hook (keeps its pattern; full context)',
+          params: ['id', 'hookId'],
+          handler: async (p: { id?: string; hookId?: string } = {}) => { const id = sid(p); if (!id || !p.hookId) return; return publish(await sc.regenerateHook(id, p.hookId)); },
+        },
+        {
+          id: 'script.regenerateBeat', namespace: 'script', label: 'Regenerate one beat\'s lines (on-budget; full context)',
+          params: ['id', 'beatId'],
+          handler: async (p: { id?: string; beatId?: string } = {}) => { const id = sid(p); if (!id || !p.beatId) return; return publish(await sc.regenerateBeat(id, p.beatId)); },
+        },
+        {
           id: 'script.suggestPronunciation', namespace: 'script', label: 'Set jargon pronunciation overrides',
           params: ['id', 'pronunciation'],
           handler: async (p: { id?: string; pronunciation?: any[] } = {}) => { const id = sid(p); if (!id || !p.pronunciation) return; return publish(await sc.setPronunciation(id, p.pronunciation)); },
@@ -1173,6 +1184,20 @@ export function buildStudioCapabilities(
             const adId = p.adId ?? getState().activeAdId;
             if (!adId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No active ad to bind the script to.' }); return; }
             await addObject({ adId, type: 'script', id });
+          },
+        },
+        {
+          // SPENDS TTS credits → deliberately NOT in AUTO_APPROVE (studio.tool-dispatcher.ts).
+          id: 'script.generateVoicePreview', namespace: 'script', label: 'Render the active script as a single-voice VO preview (SPENDS TTS credits)',
+          params: ['id', 'voiceId'],
+          handler: async (p: { id?: string; voiceId?: string } = {}) => {
+            const id = sid(p); if (!id) return;
+            const voiceId = p.voiceId || getState().audioVoiceId;
+            if (!voiceId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'Pick a voice first.' }); return; }
+            const r = await voiceClient.generateVOFromScript({ scriptId: id, voiceId });
+            // Let the Writer's Room canvas show the clip (mirrors the images/video refresh-event pattern).
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:script-vo', { detail: { url: r.url, scriptId: id } }));
+            return r;
           },
         },
       ];
