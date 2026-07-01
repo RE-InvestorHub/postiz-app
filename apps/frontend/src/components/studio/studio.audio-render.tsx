@@ -28,6 +28,8 @@ import {
 
 const AUDIO_LIB_REFRESH = 'reinvestorhub:audio-library-refresh';
 const fireRefresh = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(AUDIO_LIB_REFRESH)); };
+// Tick the Project-bar credits badge after an ElevenLabs spend (render / line re-render / mirror).
+const fireCreditsRefresh = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:credits-refresh')); };
 
 const Spinner: FC = () => (
   <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden xmlns="http://www.w3.org/2000/svg">
@@ -76,7 +78,7 @@ export const MultiVoiceRenderBar: FC<{ script: ScriptDoc; brandKitId: string }> 
       const started = (await renderScriptAudio({ scriptId: script.script_id, brandKitId })) as RenderStarted;
       if (!started.jobId) throw new Error('Render did not start.');
       await pollAudioRender(started.jobId, setProgress);
-      fireRefresh();
+      fireRefresh(); fireCreditsRefresh();
     } catch (e) { setErr((e as Error)?.message ?? String(e)); } finally { setBusy(null); setProgress(null); }
   };
 
@@ -164,7 +166,7 @@ const TrackCard: FC<{ track: AudioTrack; activeAdId: string | null; onChanged: (
     try {
       const started = await renderAudioLine({ trackId: track.id, lineId });
       await pollAudioRender(started.jobId);
-      onChanged();
+      onChanged(); fireCreditsRefresh();
     } catch (e) { setErr((e as Error)?.message ?? String(e)); } finally { setBusyLine(null); }
   };
   const assign = async () => {
@@ -267,7 +269,7 @@ const VoiceMirrorInner: FC<{ script: ScriptDoc; brandKitId: string }> = ({ scrip
       const r = await mirrorVoice({ srcUrl: asset.url, voiceId, scriptId: script.script_id, brandKitId });
       setResult({ url: r.url });
       setNote('Mirrored into the selected voice.');
-      fireRefresh();
+      fireRefresh(); fireCreditsRefresh();
     } catch (e) { setErr((e as Error)?.message ?? String(e)); } finally { setBusy(false); }
   }, [mirror, voiceId, script.script_id, brandKitId]);
 

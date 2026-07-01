@@ -322,6 +322,7 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
       const r = await generateVOFromScript({ scriptId: id, voiceId });
       setVo({ url: r.url });
       setGenSig(voSig(script, voiceId));
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:credits-refresh'));
     } catch (e) { setGenErr((e as Error)?.message ?? String(e)); } finally { setGenBusy(false); }
   };
   // When the AI Agent renders a VO for THIS script, show it on the canvas too.

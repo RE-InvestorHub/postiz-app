@@ -11,14 +11,19 @@ export interface ProviderCredits {
   // Higgsfield
   credits?: number;
   plan?: string | null;
-  // Hedra
+  // Hedra + ElevenLabs share `remaining`
   remaining?: number;
   expiring?: number | null;
+  // ElevenLabs (audio — TTS / multi-voice render / Voice Mirror)
+  limit?: number;
+  used?: number;
+  resetAt?: number | null;
 }
 
 export interface CreditsResponse {
   higgsfield: ProviderCredits;
   hedra: ProviderCredits;
+  elevenLabs?: ProviderCredits;
 }
 
 /** Read-only credit balances (Higgsfield + Hedra). Never throws on a provider error — the
