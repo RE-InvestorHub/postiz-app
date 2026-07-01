@@ -576,12 +576,19 @@ const LineRow: FC<{ line: ScriptLine; cast: ScriptDoc['cast']; onChange: (patch:
         {cast.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
       <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text !== line.text && onChange({ text })}
-        rows={1} placeholder="Line…" className={inputCls + ' flex-1 resize-y min-h-[34px]'} />
-      <select value={line.tone} onChange={(e) => onChange({ tone: e.target.value })} className={tinySel + ' w-[120px] mt-[1px]'} title="Tone (blank = character default)">
-        <option value="">(tone)</option>
-        {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
-      </select>
-      <input value={line.direction} onChange={(e) => onChange({ direction: e.target.value })} placeholder="direction" className={tinySel + ' w-[120px] mt-[1px]'} title="Delivery direction" />
+        rows={2} placeholder="Line…" className={inputCls + ' flex-1 resize-y min-h-[62px]'} />
+      {/* Tone + delivery direction stacked: tone = the vocal preset (voice_settings); direction =
+          free-text mapped to ElevenLabs v3 performance tags (whisper / excited / emphasis…) at render. */}
+      <div className="flex flex-col gap-[4px] w-[150px] shrink-0 mt-[1px]">
+        <select value={line.tone} onChange={(e) => onChange({ tone: e.target.value })} className={tinySel + ' w-full'} title="Tone — the vocal delivery preset (blank = the character's default)">
+          <option value="">(tone)</option>
+          {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
+        </select>
+        <textarea value={line.direction} onChange={(e) => onChange({ direction: e.target.value })} rows={2}
+          placeholder="delivery: whisper, excited, emphasis…"
+          title="Delivery direction — mapped to ElevenLabs v3 performance tags at render (whisper / excited / emphasis / sarcastic / serious / sad / angry / laughs / sighs / shouting)"
+          className={inputCls + ' w-full resize-y min-h-[44px] text-[12px]'} />
+      </div>
       <button type="button" onClick={onRemove} className="text-textItemBlur hover:text-btnText px-[2px] mt-[6px]" title="Remove line">✕</button>
     </div>
   );
