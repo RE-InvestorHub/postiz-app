@@ -18,7 +18,7 @@ import { addObject } from '@gitroom/frontend/components/studio/studio.project-cl
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 import { StudioVoicePicker } from '@gitroom/frontend/components/studio/studio.voice-picker';
-import { generateVOFromScript } from '@gitroom/frontend/components/studio/studio.voice-client';
+import { generateVOFromScript, latestVOForScript } from '@gitroom/frontend/components/studio/studio.voice-client';
 import { WaveformTrack } from '@gitroom/frontend/components/studio/studio.waveform-track';
 
 const inputCls = 'px-[10px] py-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
@@ -318,6 +318,19 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
     window.addEventListener('reinvestorhub:script-vo', onVo);
     return () => window.removeEventListener('reinvestorhub:script-vo', onVo);
   }, [id, script, voiceId]);
+  // Reload the last generated VO for this script from disk on mount / script switch, so the clip
+  // survives navigating away and back (the file + its script-linked manifest persist on the brain).
+  useEffect(() => {
+    let live = true;
+    latestVOForScript(id).then((r) => {
+      if (!live) return;
+      if (r?.url) { setVo({ url: r.url }); setGenSig(voSig(script, voiceId)); }
+      else { setVo(null); setGenSig(null); }
+    }).catch(() => undefined);
+    return () => { live = false; };
+    // Keyed on the script id only — reloading on every edit would fight the stale indicator.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   return (
     <div className="flex flex-col gap-[14px]">

@@ -60,3 +60,8 @@ export function generateVO(payload: { text: string; voiceId: string; modelId?: s
 export function generateVOFromScript(payload: { scriptId: string; voiceId: string; modelId?: string }): Promise<GeneratedVO & { scriptId: string; scriptUpdatedAt?: string }> {
   return req('/studio/audio/from-script', { method: 'POST', body: JSON.stringify(payload) });
 }
+
+/** The latest generated VO for a script (persisted on disk), so the panel reloads it after navigation. */
+export function latestVOForScript(scriptId: string): Promise<{ id: string | null; url: string | null }> {
+  return req(`/studio/audio/for-script?scriptId=${encodeURIComponent(scriptId)}`);
+}
