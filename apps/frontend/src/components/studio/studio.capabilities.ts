@@ -1167,6 +1167,11 @@ export function buildStudioCapabilities(
           handler: async (p: { id?: string; beatId?: string } = {}) => { const id = sid(p); if (!id || !p.beatId) return; return publish(await sc.regenerateBeat(id, p.beatId)); },
         },
         {
+          id: 'script.realignToHook', namespace: 'script', label: 'Rewrite all body beats to pay off the selected hook',
+          params: ['id'],
+          handler: async (p: { id?: string } = {}) => { const id = sid(p); if (!id) return; return publish(await sc.realignToHook(id)); },
+        },
+        {
           id: 'script.suggestPronunciation', namespace: 'script', label: 'Set jargon pronunciation overrides',
           params: ['id', 'pronunciation'],
           handler: async (p: { id?: string; pronunciation?: any[] } = {}) => { const id = sid(p); if (!id || !p.pronunciation) return; return publish(await sc.setPronunciation(id, p.pronunciation)); },

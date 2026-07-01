@@ -181,6 +181,7 @@ export function requiresApproval(toolName: string): boolean {
     'script.selectHook',
     'script.regenerateHook',
     'script.regenerateBeat',
+    'script.realignToHook',
     'script.suggestPronunciation',
     'script.critique',
     'script.bindToAd',

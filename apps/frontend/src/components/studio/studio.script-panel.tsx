@@ -164,15 +164,32 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
   const addLine = (bid: string) => run(sc.addLine(id, bid, { text: '' }));
   const updateLine = (bid: string, lid: string, patch: any) => run(sc.updateLine(id, bid, lid, patch));
   const removeLine = (bid: string, lid: string) => run(sc.removeLine(id, bid, lid));
-  const selectHook = (hid: string) => run(sc.selectHook(id, hid));
 
-  // --- Hooks: inline edit (the SELECTED hook mirrors live into the Hook beat's opening line) +
-  // per-hook regenerate. --- The Hook beat = the first beat labelled "hook", else the first beat.
+  // --- Hooks: edit / select / regenerate all mirror the SELECTED hook into the Hook beat's opening
+  // line. The Hook beat = the first beat labelled "hook", else the first beat. ---
   const hookBeat = script.beats.find((b) => /hook/i.test(b.label)) || script.beats[0] || null;
   const hookLineId = hookBeat?.lines[0]?.id ?? null;
+  const selectedHookId = script.hooks.find((h) => h.selected)?.id ?? null;
   const [hookDraft, setHookDraft] = useState<Record<string, string>>({});
   const [regenHookId, setRegenHookId] = useState<string | null>(null);
   const [regenBeatId, setRegenBeatId] = useState<string | null>(null);
+  // The hook the beats are currently aligned to (baseline). "Realign" activates when the selection
+  // drifts from it, and goes dormant again on revert; resets when the active script changes.
+  const [alignedHookId, setAlignedHookId] = useState<string | null>(selectedHookId);
+  const [realigning, setRealigning] = useState(false);
+  useEffect(() => { setAlignedHookId(script.hooks.find((h) => h.selected)?.id ?? null); }, [script.script_id]);
+  const realignDirty = !!selectedHookId && !!alignedHookId && selectedHookId !== alignedHookId;
+
+  // Select a hook: mark it selected AND mirror its text into the Hook beat's opening line.
+  const selectHook = async (hid: string) => {
+    const hook = script.hooks.find((h) => h.id === hid);
+    setBusy(true); setError(null);
+    try {
+      let doc = await sc.selectHook(id, hid);
+      if (hook && hookBeat && hookLineId) doc = await sc.updateLine(id, hookBeat.id, hookLineId, { text: hook.text });
+      publish(doc);
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBusy(false); }
+  };
 
   const editHook = (h: ScriptDoc['hooks'][number], val: string) => {
     setHookDraft((d) => ({ ...d, [h.id]: val }));
@@ -201,11 +218,23 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
   };
   const regenerateHook = async (hid: string) => {
     setRegenHookId(hid); setError(null);
-    try { publish(await sc.regenerateHook(id, hid)); } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setRegenHookId(null); }
+    try {
+      let doc = await sc.regenerateHook(id, hid);
+      const nh = doc.hooks.find((h) => h.id === hid);
+      if (nh?.selected && hookBeat && hookLineId) doc = await sc.updateLine(id, hookBeat.id, hookLineId, { text: nh.text });
+      publish(doc);
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setRegenHookId(null); }
   };
   const regenerateBeat = async (bid: string) => {
     setRegenBeatId(bid); setError(null);
     try { publish(await sc.regenerateBeat(id, bid)); } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setRegenBeatId(null); }
+  };
+  // Realign: rewrite every body beat to pay off the newly selected hook, then adopt it as the baseline.
+  const realign = async () => {
+    if (!realignDirty || realigning) return;
+    setRealigning(true); setError(null);
+    try { publish(await sc.realignToHook(id)); setAlignedHookId(selectedHookId); }
+    catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setRealigning(false); }
   };
   const setPron = (rows: Array<{ term: string; phonetic: string }>) => run(sc.setPronunciation(id, rows.filter((r) => r.term.trim())));
   const bindToAd = async () => {
@@ -321,7 +350,16 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
       </Section>
 
       {/* Beats */}
-      <Section title="Beats" hint="Each beat is time-budgeted; write lines to the seconds you have." action={<button type="button" onClick={addBeat} className={ghostBtn}>＋ Beat</button>}>
+      <Section title="Beats" hint="Each beat is time-budgeted; write lines to the seconds you have." action={
+        <span className="flex items-center gap-[8px]">
+          <button type="button" onClick={addBeat} className={ghostBtn}>＋ Beat</button>
+          <button type="button" onClick={realign} disabled={!realignDirty || realigning}
+            title={realignDirty ? 'Rewrite every beat below to pay off the newly selected hook' : 'Pick a different hook above to enable'}
+            className={'h-[30px] px-[12px] rounded-[6px] text-[12px] font-[600] inline-flex items-center gap-[6px] transition-colors ' + (realignDirty ? 'bg-ai text-white hover:opacity-90' : 'border border-newBorder text-textItemBlur opacity-50 cursor-not-allowed')}>
+            {realigning ? <Spinner /> : <Recycle />} Realign
+          </button>
+        </span>
+      }>
         {script.beats.length === 0 ? <Empty>No beats yet. Pick a structure in the Director, or add one.</Empty> : (
           <div className="flex flex-col gap-[10px]">
             {script.beats.map((b, i) => (
