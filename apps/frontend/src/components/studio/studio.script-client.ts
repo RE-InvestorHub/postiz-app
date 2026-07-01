@@ -99,6 +99,9 @@ export const addCharacter = (id: string, character: { name: string; role?: strin
 export const updateCharacter = (id: string, charId: string, patch: Partial<{ name: string; role: string; default_tone: ScriptTone }>) =>
   post<ScriptDoc>('/scripts/updateCharacter', { id, charId, patch });
 export const removeCharacter = (id: string, charId: string) => post<ScriptDoc>('/scripts/removeCharacter', { id, charId });
+// Plan 2 casting: assign a character to an ElevenLabs voice (empty voiceId clears it). No spend.
+export const castVoice = (id: string, charId: string, voiceId: string, voiceSettings?: unknown) =>
+  post<ScriptDoc>('/scripts/castVoice', { id, charId, voiceId, voiceSettings });
 
 // --- hooks ----------------------------------------------------------------
 export const setHooks = (id: string, hooks: Array<{ id?: string; pattern: HookPattern; text: string; selected?: boolean }>) => post<ScriptDoc>('/scripts/setHooks', { id, hooks });

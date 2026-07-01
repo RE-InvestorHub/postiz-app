@@ -158,7 +158,7 @@ export type ScriptStructure = 'pas' | 'aida' | 'bab' | 'hook_retain_reward_cta' 
 export type ScriptTone = 'brand' | 'conversational' | 'warm' | 'authoritative' | 'energetic' | 'calm';
 export type HookPattern = 'contrarian' | 'proof' | 'curiosity' | 'pov' | 'callout' | 'pattern_interrupt';
 
-export interface ScriptCharacter { id: string; name: string; role: string; default_tone: ScriptTone; }
+export interface ScriptCharacter { id: string; name: string; role: string; default_tone: ScriptTone; voice_id?: string; voice_settings?: unknown }
 /** tone '' = inherit the character's default_tone. */
 export interface ScriptLine { id: string; character_id: string | null; text: string; tone: ScriptTone | ''; direction: string; sfx_cue: string; }
 export interface ScriptBeat { id: string; label: string; target_start_s: number; target_duration_s: number; lines: ScriptLine[]; }

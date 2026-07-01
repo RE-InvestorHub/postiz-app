@@ -17,6 +17,12 @@ interface Props {
   onChange: (voiceId: string) => void;
   /** Surface load errors to the parent (optional). */
   onError?: (msg: string) => void;
+  /** Casting mode: allow an empty selection (falls back to the house/brand voice) + no auto-default. */
+  allowEmpty?: boolean;
+  /** Label for the empty option when allowEmpty is set. */
+  emptyLabel?: string;
+  /** Override the select classes (e.g. a compact casting-column picker). */
+  className?: string;
 }
 
 const selectCls =
@@ -28,7 +34,7 @@ const GROUPS: { source: VoiceOption['source']; label: string }[] = [
   { source: 'elevenlabs', label: 'ElevenLabs' },
 ];
 
-export const StudioVoicePicker: FC<Props> = ({ value, onChange, onError }) => {
+export const StudioVoicePicker: FC<Props> = ({ value, onChange, onError, allowEmpty, emptyLabel, className }) => {
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,8 +44,9 @@ export const StudioVoicePicker: FC<Props> = ({ value, onChange, onError }) => {
       .then((list) => {
         if (!live) return;
         setVoices(list);
-        // Default to the first ready voice (brand) if nothing is selected.
-        if (!value) {
+        // Default to the first ready voice (brand) if nothing is selected — but NOT in casting mode,
+        // where an empty selection is a valid "use the house/brand voice" choice.
+        if (!value && !allowEmpty) {
           const first = list.find((v) => v.ready);
           if (first) onChange(first.voiceId);
         }
@@ -61,13 +68,14 @@ export const StudioVoicePicker: FC<Props> = ({ value, onChange, onError }) => {
 
   return (
     <select
-      className={selectCls}
+      className={className ?? selectCls}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={!voices}
     >
       {!voices && <option>Loading voices…</option>}
-      {voices && voices.length === 0 && <option value="">No voices available</option>}
+      {voices && allowEmpty && <option value="">{emptyLabel ?? 'House voice'}</option>}
+      {voices && voices.length === 0 && !allowEmpty && <option value="">No voices available</option>}
       {voices &&
         GROUPS.map(({ source, label }) => {
           const group = voices.filter((v) => v.source === source);

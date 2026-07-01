@@ -72,6 +72,8 @@ export interface MusicSpec { bedId?: string; mood?: string; bpm?: number; volume
 export function startRun(payload: {
   storyboard: any; platforms?: string[]; renderFormats?: string[]; voiceId?: string; dryRun?: boolean;
   voiceTone?: string; voiceSettings?: VoiceSettings; music?: MusicSpec;
+  // Plan 2 — an Ad-bound rendered audio track to use as the spot audio in place of per-shot VO.
+  boundAudioUrl?: string;
 }): Promise<{ runId: string } & Partial<PipelineRun>> {
   return req('/pipeline/run', { method: 'POST', body: JSON.stringify(payload) });
 }

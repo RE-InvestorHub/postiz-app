@@ -1214,6 +1214,79 @@ export function buildStudioCapabilities(
             return r;
           },
         },
+
+        // --- audio.* (Plan 2 — multi-voice casting + render + Audio Library + Voice Mirror). Same
+        // shared-lever pattern: the agent drives the SAME ids the human buttons do. Spenders
+        // (renderScript, regenLine, mirrorVoice) are GATED in studio.tool-dispatcher.ts. ---
+        {
+          id: 'audio.castVoice', namespace: 'audio', label: 'Cast a character to an ElevenLabs voice (empty voiceId = house voice). No spend.',
+          params: ['id', 'charId', 'voiceId'],
+          handler: async (p: { id?: string; charId?: string; voiceId?: string } = {}) => {
+            const id = sid(p); if (!id || !p.charId) return;
+            return publish(await sc.castVoice(id, p.charId, p.voiceId ?? ''));
+          },
+        },
+        {
+          // SPENDS TTS credits → NOT auto-approved. Renders the whole script to a multi-voice track.
+          id: 'audio.renderScript', namespace: 'audio', label: 'Render the active script to a multi-voice track (SPENDS TTS credits; dryRun = free)',
+          params: ['scriptId', 'dryRun'],
+          handler: async (p: { scriptId?: string; dryRun?: boolean } = {}) => {
+            const id = p.scriptId ?? getState().activeScript?.script_id ?? null;
+            if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No active script to render.' }); return; }
+            const brandKitId = getState().composerBrandKitId || 'default';
+            const started: any = await voiceClient.renderScriptAudio({ scriptId: id, brandKitId, dryRun: p.dryRun });
+            const result = started?.jobId ? await voiceClient.pollAudioRender(started.jobId) : started;
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh'));
+            return result;
+          },
+        },
+        {
+          // SPENDS one line of TTS → NOT auto-approved.
+          id: 'audio.regenLine', namespace: 'audio', label: 'Re-render one line of a rendered track + splice it back (SPENDS one line)',
+          params: ['trackId', 'lineId'],
+          handler: async (p: { trackId?: string; lineId?: string } = {}) => {
+            if (!p.trackId || !p.lineId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'trackId + lineId required.' }); return; }
+            const started = await voiceClient.renderAudioLine({ trackId: p.trackId, lineId: p.lineId });
+            const result = await voiceClient.pollAudioRender(started.jobId);
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh'));
+            return result;
+          },
+        },
+        {
+          id: 'audio.listLibrary', namespace: 'audio', label: 'List the Audio Library (rendered tracks + VO + clips). No spend.',
+          params: ['brandKitId'],
+          handler: async (p: { brandKitId?: string } = {}) => voiceClient.listAudioLibrary(p.brandKitId ?? getState().composerBrandKitId ?? 'default'),
+        },
+        {
+          id: 'audio.assignToAd', namespace: 'audio', label: 'Bind a rendered audio track to an ad (type=audio). No spend.',
+          params: ['adId', 'trackId'],
+          handler: async (p: { adId?: string; trackId?: string } = {}) => {
+            const adId = p.adId ?? getState().activeAdId;
+            if (!adId || !p.trackId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No active ad / trackId to bind.' }); return; }
+            await addObject({ adId, type: 'audio', id: p.trackId });
+          },
+        },
+        {
+          id: 'audio.deleteTrack', namespace: 'audio', label: 'Delete an audio asset from the Audio Library. No spend.',
+          params: ['id'],
+          handler: async (p: { id?: string } = {}) => {
+            if (!p.id) return;
+            const r = await voiceClient.deleteAudioTrack(p.id);
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh'));
+            return r;
+          },
+        },
+        {
+          // SPENDS EL credits (speech-to-speech) → NOT auto-approved.
+          id: 'audio.mirrorVoice', namespace: 'audio', label: 'Voice Mirror — convert a recorded clip into a target voice (SPENDS EL credits)',
+          params: ['srcUrl', 'voiceId', 'scriptId'],
+          handler: async (p: { srcUrl?: string; voiceId?: string; scriptId?: string } = {}) => {
+            if (!p.srcUrl || !p.voiceId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'srcUrl + voiceId required for mirroring.' }); return; }
+            const r = await voiceClient.mirrorVoice({ srcUrl: p.srcUrl, voiceId: p.voiceId, scriptId: p.scriptId ?? getState().activeScript?.script_id, brandKitId: getState().composerBrandKitId || 'default' });
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh'));
+            return r;
+          },
+        },
       ];
       return caps;
     })(),
