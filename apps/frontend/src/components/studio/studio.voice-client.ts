@@ -86,8 +86,9 @@ export interface RenderJob {
   result?: RenderResult; error?: string;
 }
 
-/** Multi-voice render. dryRun:true → synchronous cost preview + silent stub (no spend). Real → job. */
-export function renderScriptAudio(payload: { scriptId: string; brandKitId?: string; modelId?: string; dryRun?: boolean }): Promise<RenderResult | RenderStarted> {
+/** Multi-voice render. dryRun:true → synchronous cost preview + silent stub (no spend). Real → job.
+ *  `voiceId` = the house/narrator voice (fallback for uncast lines). */
+export function renderScriptAudio(payload: { scriptId: string; brandKitId?: string; modelId?: string; dryRun?: boolean; voiceId?: string }): Promise<RenderResult | RenderStarted> {
   return req('/studio/audio/render', { method: 'POST', body: JSON.stringify(payload) });
 }
 export function audioRenderStatus(jobId: string): Promise<RenderJob> {
