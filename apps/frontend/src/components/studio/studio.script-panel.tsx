@@ -9,7 +9,7 @@
 // audio uploads live behind the sidebar's ⬆ button and the active ad's audio cascades in below.
 // Postiz tokens only.
 
-import { FC, useCallback, useEffect, useState } from 'react';
+import { FC, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { ScriptDoc, ScriptBeat, ScriptLine, SCRIPT_TONES, TONE_LABELS, ScriptTone } from '@gitroom/frontend/components/studio/studio.types';
@@ -480,17 +480,34 @@ const LineRow: FC<{ line: ScriptLine; cast: ScriptDoc['cast']; onChange: (patch:
   // Debounce text into local state so typing stays smooth; commit on blur.
   const [text, setText] = useState(line.text);
   useEffect(() => { setText(line.text); }, [line.text]);
+  // Custom resize: the whole bottom edge of the line box is a drag handle (native resize only grips
+  // the corner). Dragging sets an explicit height on the wrapper, overriding the default stretch.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const wrap = wrapRef.current; if (!wrap) return;
+    const startY = e.clientY; const startH = wrap.offsetHeight;
+    const move = (ev: PointerEvent) => { wrap.style.height = `${Math.max(40, startH + (ev.clientY - startY))}px`; };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  };
   return (
-    <div className="flex items-start gap-[6px]">
-      <select value={cast.some((c) => c.id === line.character_id) ? (line.character_id ?? '') : ''} onChange={(e) => onChange({ characterId: e.target.value || null })} className={tinySel + ' w-[100px] mt-[1px]'} title="Speaker">
+    // items-stretch → the line box matches the stacked tone+direction column height by default.
+    <div className="flex items-stretch gap-[6px]">
+      <select value={cast.some((c) => c.id === line.character_id) ? (line.character_id ?? '') : ''} onChange={(e) => onChange({ characterId: e.target.value || null })} className={tinySel + ' w-[100px] self-start'} title="Speaker">
         <option value="">Narrator</option>
         {cast.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text !== line.text && onChange({ text })}
-        rows={2} placeholder="Line…" className={inputCls + ' flex-1 resize-y min-h-[62px]'} />
+      {/* Line box: fills the row height (matches the stacked column); the bottom bar resizes it. */}
+      <div ref={wrapRef} className="relative flex flex-1 min-w-0 self-stretch">
+        <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text !== line.text && onChange({ text })}
+          placeholder="Line…" className={inputCls + ' flex-1 w-full resize-none'} />
+        <div onPointerDown={startResize} title="Drag to resize" aria-hidden
+          className="absolute inset-x-0 bottom-0 h-[8px] cursor-ns-resize rounded-b-[8px] hover:bg-ai/20" />
+      </div>
       {/* Tone + delivery direction stacked: tone = the vocal preset (voice_settings); direction =
           free-text mapped to ElevenLabs v3 performance tags (whisper / excited / emphasis…) at render. */}
-      <div className="flex flex-col gap-[4px] w-[150px] shrink-0 mt-[1px]">
+      <div className="flex flex-col gap-[4px] w-[150px] shrink-0 self-start">
         <select value={line.tone} onChange={(e) => onChange({ tone: e.target.value })} className={tinySel + ' w-full'} title="Tone — the vocal delivery preset (blank = the character's default)">
           <option value="">(tone)</option>
           {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
@@ -500,7 +517,7 @@ const LineRow: FC<{ line: ScriptLine; cast: ScriptDoc['cast']; onChange: (patch:
           title="Delivery direction — mapped to ElevenLabs v3 performance tags at render (whisper / excited / emphasis / sarcastic / serious / sad / angry / laughs / sighs / shouting)"
           className={inputCls + ' w-full resize-y min-h-[44px] text-[12px]'} />
       </div>
-      <button type="button" onClick={onRemove} className="text-textItemBlur hover:text-btnText px-[2px] mt-[6px]" title="Remove line">✕</button>
+      <button type="button" onClick={onRemove} className="text-textItemBlur hover:text-btnText px-[2px] mt-[6px] self-start" title="Remove line">✕</button>
     </div>
   );
 };
