@@ -1078,6 +1078,15 @@ export function buildStudioCapabilities(
           },
         },
         {
+          id: 'script.deleteMany', namespace: 'script', label: 'Delete multiple scripts by id (bulk)',
+          params: ['ids'],
+          handler: async (p: { ids?: string[] } = {}) => {
+            if (!p.ids?.length) return;
+            await sc.deleteScripts(p.ids);
+            if (p.ids.includes(getState().activeScript?.script_id ?? '')) dispatch({ type: 'SET_ACTIVE_SCRIPT', script: null });
+          },
+        },
+        {
           id: 'script.setStructure', namespace: 'script', label: 'Lay a structure spine onto the script (replaces beats with the time-budgeted skeleton)',
           params: ['id', 'structure', 'targetDurationS'],
           handler: async (p: { id?: string; structure?: any; targetDurationS?: number } = {}) => {

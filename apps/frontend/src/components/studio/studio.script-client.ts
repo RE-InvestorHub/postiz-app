@@ -65,6 +65,7 @@ export const createScript = (payload: CreateScriptInput) =>
 export const updateScript = (id: string, patch: Partial<{ name: string; format: ScriptFormat; structure: ScriptStructure; targetDurationS: number; wordsPerSecond: number; brandKitId: string; defaultTone: ScriptTone }>) =>
   post<ScriptDoc>('/scripts/update', { id, patch });
 export const deleteScript = (id: string) => post<{ ok: boolean }>('/scripts/delete', { id });
+export const deleteScripts = (ids: string[]) => post<{ ok: boolean; deleted: number }>('/scripts/deleteMany', { ids });
 export const applyStructure = (id: string, structure: ScriptStructure, targetDurationS?: number) =>
   post<ScriptDoc>('/scripts/applyStructure', { id, structure, targetDurationS });
 

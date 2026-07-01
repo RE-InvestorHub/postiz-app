@@ -56,27 +56,76 @@ export const StudioScriptPanel: FC = () => {
 
   const select = useCallback((id: string) => { sc.getScript(id).then(publish).catch((e) => setError((e as Error)?.message ?? String(e))); }, [publish]);
 
+  // Bulk select-and-delete (mirrors the Images tab).
+  const [selectMode, setSelectMode] = useState(false);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const exitSelect = () => { setSelectMode(false); setChecked(new Set()); setConfirmBulk(false); };
+  const toggleCheck = (sid: string) => setChecked((s) => { const n = new Set(s); if (n.has(sid)) n.delete(sid); else n.add(sid); return n; });
+  const doBulkDelete = async () => {
+    if (!checked.size) return;
+    setBulkBusy(true); setError(null);
+    try {
+      await sc.deleteScripts([...checked]);
+      if (script && checked.has(script.script_id)) dispatch({ type: 'SET_ACTIVE_SCRIPT', script: null });
+      exitSelect();
+      refreshLibrary();
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBulkBusy(false); }
+  };
+
   return (
     <div className="flex flex-col md:flex-row gap-[14px]">
       {/* Left — the brand's scripts library */}
       <div className={card + ' md:w-[260px] shrink-0 flex flex-col gap-[10px]'}>
-        <div className="flex items-center gap-[8px]">
+        <div className="flex items-center gap-[8px] flex-wrap">
           <span className="text-[14px] font-[600] text-btnText flex-1">Scripts</span>
           <span className="text-[11px] text-textItemBlur">{library.length}</span>
-          <button type="button" onClick={() => setUploadOpen(true)} title="Upload an audio file to this brand"
-            className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">⬆ Upload</button>
+          {library.length > 0 && !selectMode && (
+            <button type="button" onClick={() => setSelectMode(true)}
+              className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">Select</button>
+          )}
+          {!selectMode && (
+            <button type="button" onClick={() => setUploadOpen(true)} title="Upload an audio file to this brand"
+              className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">⬆ Upload</button>
+          )}
         </div>
+        {selectMode && (
+          <div className="flex items-center gap-[6px] flex-wrap text-[11px]">
+            <span className="text-textItemBlur">{checked.size} selected</span>
+            <button type="button" onClick={() => setChecked(new Set(library.map((s) => s.script_id)))} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">All</button>
+            <button type="button" onClick={() => setChecked(new Set())} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">None</button>
+            <button type="button" onClick={exitSelect} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">Done</button>
+            {confirmBulk ? (
+              <>
+                <button type="button" disabled={!checked.size || bulkBusy} onClick={doBulkDelete} className="px-[8px] h-[24px] rounded-[5px] bg-[#ff7eb6] text-[#3a0d23] font-[700] disabled:opacity-50 inline-flex items-center gap-[4px]">{bulkBusy && <Spinner />}Delete {checked.size}</button>
+                <button type="button" onClick={() => setConfirmBulk(false)} className="px-[6px] h-[24px] rounded-[5px] border border-newBorder text-textItemBlur hover:text-btnText">Cancel</button>
+              </>
+            ) : (
+              <button type="button" disabled={!checked.size} onClick={() => setConfirmBulk(true)} className="px-[8px] h-[24px] rounded-[5px] border border-[#ff7eb6]/40 text-[#ff7eb6] font-[600] disabled:opacity-40 hover:bg-[#ff7eb6]/10">Delete ({checked.size})</button>
+            )}
+          </div>
+        )}
         {library.length === 0 ? (
           <div className="text-[12px] text-textItemBlur py-[10px] leading-[1.5]">No scripts yet. Draft one with the Script Director above.</div>
         ) : (
           <div className="flex flex-col gap-[6px] overflow-y-auto max-h-[62vh] pr-[2px]">
             {library.map((s) => {
               const active = s.script_id === script?.script_id;
+              const isChecked = checked.has(s.script_id);
+              const ring = selectMode
+                ? (isChecked ? 'border-[#ff7eb6] bg-[#ff7eb6]/10' : 'border-newBorder bg-newBgColorInner hover:bg-boxHover')
+                : (active ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner hover:bg-boxHover');
               return (
-                <button key={s.script_id} type="button" onClick={() => select(s.script_id)}
-                  className={'flex flex-col gap-[2px] text-left rounded-[8px] border px-[12px] py-[10px] ' + (active ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner hover:bg-boxHover')}>
-                  <span className="text-[13px] font-[600] text-btnText truncate">{s.name}</span>
-                  <span className="text-[11px] text-textItemBlur">{s.format} · {s.beats.length} beats · {s.target_duration_s}s</span>
+                <button key={s.script_id} type="button" onClick={() => (selectMode ? toggleCheck(s.script_id) : select(s.script_id))}
+                  className={'flex items-center gap-[8px] text-left rounded-[8px] border px-[12px] py-[10px] ' + ring}>
+                  {selectMode && (
+                    <span className={'h-[16px] w-[16px] rounded-[4px] border flex items-center justify-center text-[10px] leading-none shrink-0 ' + (isChecked ? 'bg-[#ff7eb6] border-[#ff7eb6] text-[#3a0d23]' : 'border-newBorder text-transparent')}>✓</span>
+                  )}
+                  <span className="flex flex-col gap-[2px] min-w-0 flex-1">
+                    <span className="text-[13px] font-[600] text-btnText truncate">{s.name}</span>
+                    <span className="text-[11px] text-textItemBlur">{s.format} · {s.beats.length} beats · {s.target_duration_s}s</span>
+                  </span>
                 </button>
               );
             })}

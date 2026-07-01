@@ -164,6 +164,7 @@ export function requiresApproval(toolName: string): boolean {
     'script.select',
     'script.update',
     'script.delete',
+    'script.deleteMany',
     'script.setStructure',
     'script.addCharacter',
     'script.updateCharacter',
