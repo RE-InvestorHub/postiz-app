@@ -132,6 +132,10 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
   const budget = sc.computeBudget(script);
   const id = script.script_id;
   const charName = (cid: string | null) => (cid ? script.cast.find((c) => c.id === cid)?.name ?? '—' : 'Narrator');
+  // Narration is the implicit narrator (character_id=null → "Narrator" in the speaker dropdown). Hide
+  // any redundant cast member literally named "Narrator" so we never show two "Narrator"s. New scripts
+  // no longer create one (scriptgen.mjs); this also cleans up scripts saved before that fix.
+  const displayCast = script.cast.filter((c) => c.name.trim().toLowerCase() !== 'narrator');
 
   // --- mutations ---
   const setName = (name: string) => run(sc.updateScript(id, { name }));
@@ -194,8 +198,10 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
       <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
         <div className="flex items-center gap-[10px] flex-wrap">
           <span className="text-[13px] font-[600] text-btnText">Voice-over preview</span>
-          <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Hear your whole script in one voice. Per-character casting comes in Plan 2.</span>
-          <StudioVoicePicker value={voiceId} onChange={setVoiceId} onError={setGenErr} />
+          <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Hear your whole script read by one ElevenLabs voice (the sound). The persona — the way of speaking — is the tone you set per character in Cast below. Per-character voices come in Plan 2.</span>
+          <label className="flex items-center gap-[6px] text-[11px] font-[600] text-textItemBlur">Voice
+            <StudioVoicePicker value={voiceId} onChange={setVoiceId} onError={setGenErr} />
+          </label>
           <button type="button" onClick={generateVoice} disabled={genBusy || !voiceId || !hasLines}
             title={!hasLines ? 'Write some lines first' : 'Render this script as a single-voice VO'}
             className="h-[40px] px-[16px] rounded-[8px] bg-ai text-white font-[600] inline-flex items-center justify-center gap-[6px] disabled:opacity-50 disabled:cursor-not-allowed">
@@ -244,9 +250,9 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
 
       {/* Cast */}
       <Section title="Cast" hint="Who speaks. Voice casting comes in the next phase — here you define the characters." action={<button type="button" onClick={addCharacter} className={ghostBtn}>＋ Character</button>}>
-        {script.cast.length === 0 ? <Empty>Single narrator. Add a character for multi-voice dialogue.</Empty> : (
+        {displayCast.length === 0 ? <Empty>Single narrator. Add a character for multi-voice dialogue.</Empty> : (
           <div className="flex flex-wrap gap-[8px]">
-            {script.cast.map((c) => (
+            {displayCast.map((c) => (
               <div key={c.id} className="flex items-center gap-[6px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[8px] py-[6px]">
                 <input value={c.name} onChange={(e) => updateCharacter(c.id, { name: e.target.value })} className={tinySel + ' w-[110px]'} />
                 <select value={c.default_tone} onChange={(e) => updateCharacter(c.id, { default_tone: e.target.value as ScriptTone })} className={tinySel}>
@@ -267,7 +273,7 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
               <BeatCard
                 key={b.id} beat={b} index={i} count={script.beats.length}
                 budget={budget.beats.find((x) => x.id === b.id)}
-                cast={script.cast} charName={charName}
+                cast={displayCast} charName={charName}
                 onLabel={(label) => updateBeat(b.id, { label })}
                 onDur={(d) => updateBeat(b.id, { target_duration_s: d })}
                 onMove={(dir) => moveBeat(b.id, dir)}
@@ -353,7 +359,7 @@ const LineRow: FC<{ line: ScriptLine; cast: ScriptDoc['cast']; onChange: (patch:
   useEffect(() => { setText(line.text); }, [line.text]);
   return (
     <div className="flex items-start gap-[6px]">
-      <select value={line.character_id ?? ''} onChange={(e) => onChange({ characterId: e.target.value || null })} className={tinySel + ' w-[100px] mt-[1px]'} title="Speaker">
+      <select value={cast.some((c) => c.id === line.character_id) ? (line.character_id ?? '') : ''} onChange={(e) => onChange({ characterId: e.target.value || null })} className={tinySel + ' w-[100px] mt-[1px]'} title="Speaker">
         <option value="">Narrator</option>
         {cast.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
