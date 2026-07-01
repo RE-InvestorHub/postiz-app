@@ -193,6 +193,12 @@ export function requiresApproval(toolName: string): boolean {
     'audio.listLibrary',
     'audio.assignToAd',
     'audio.deleteTrack',
+    // Plan 3 — assembly is a FREE local mix; sfx/music LISTING + Jamendo search are free reads.
+    // The two spenders (sfx.generate, music.generate) are deliberately OMITTED → GATED.
+    'audio.assemble',
+    'sfx.listLibrary',
+    'music.listBeds',
+    'music.searchJamendo',
   ]);
   return !AUTO_APPROVE.has(toCapabilityId(toolName));
 }

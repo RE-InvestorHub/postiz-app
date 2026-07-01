@@ -44,6 +44,8 @@ import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, render
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import * as scriptClient from '@gitroom/frontend/components/studio/studio.script-client';
 import * as voiceClient from '@gitroom/frontend/components/studio/studio.voice-client';
+import * as assembleClient from '@gitroom/frontend/components/studio/studio.assemble-client';
+import { listMusicBeds } from '@gitroom/frontend/components/studio/studio.music-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 
@@ -1284,6 +1286,55 @@ export function buildStudioCapabilities(
             if (!p.srcUrl || !p.voiceId) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'srcUrl + voiceId required for mirroring.' }); return; }
             const r = await voiceClient.mirrorVoice({ srcUrl: p.srcUrl, voiceId: p.voiceId, scriptId: p.scriptId ?? getState().activeScript?.script_id, brandKitId: getState().composerBrandKitId || 'default' });
             if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh'));
+            return r;
+          },
+        },
+
+        // --- Plan 3 sound generation + assembly. Reads/curation auto; the two *.generate spenders
+        // are GATED in studio.tool-dispatcher.ts. ---
+        {
+          id: 'audio.assemble', namespace: 'audio', label: 'Assemble a script\'s soundtrack (VO + SFX cues + ducked bed) → one master. FREE.',
+          params: ['scriptId', 'spec'],
+          handler: async (p: { scriptId?: string; spec?: any } = {}) => {
+            const id = p.scriptId ?? getState().activeScript?.script_id ?? null;
+            if (!id) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'No active script to assemble.' }); return; }
+            const r = await assembleClient.assembleScript({ scriptId: id, spec: p.spec });
+            if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh'));
+            return r;
+          },
+        },
+        {
+          id: 'sfx.listLibrary', namespace: 'sfx', label: 'List the curated sound-effects library. No spend.',
+          params: [],
+          handler: async () => assembleClient.listSfxLibrary(),
+        },
+        {
+          id: 'sfx.generate', namespace: 'sfx', label: 'Generate a bespoke sound effect (ElevenLabs text-to-SFX). SPENDS ~200 cr.',
+          params: ['text', 'durationSeconds'],
+          handler: async (p: { text?: string; durationSeconds?: number } = {}) => {
+            if (!p.text?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'A sound description is required.' }); return; }
+            const r = await assembleClient.generateSfx({ text: p.text, durationSeconds: p.durationSeconds });
+            if (typeof window !== 'undefined') { window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh')); window.dispatchEvent(new CustomEvent('reinvestorhub:credits-refresh')); }
+            return r;
+          },
+        },
+        {
+          id: 'music.listBeds', namespace: 'music', label: 'List the local built-in music beds. No spend.',
+          params: [],
+          handler: async () => listMusicBeds(),
+        },
+        {
+          id: 'music.searchJamendo', namespace: 'music', label: 'Search the Jamendo catalog (a CC track needs a separate Jamendo Licensing buy for ads). No spend.',
+          params: ['query', 'tags'],
+          handler: async (p: { query?: string; tags?: string } = {}) => assembleClient.searchJamendo({ query: p.query, tags: p.tags }),
+        },
+        {
+          id: 'music.generate', namespace: 'music', label: 'Generate a commercially-cleared music bed (ElevenLabs Music). SPENDS ~900 cr/min.',
+          params: ['prompt', 'lengthMs'],
+          handler: async (p: { prompt?: string; lengthMs?: number } = {}) => {
+            if (!p.prompt?.trim()) { dispatch({ type: 'SET_STATUS', status: 'error', error: 'A musical brief is required.' }); return; }
+            const r = await assembleClient.generateMusic({ prompt: p.prompt, lengthMs: p.lengthMs });
+            if (typeof window !== 'undefined') { window.dispatchEvent(new CustomEvent('reinvestorhub:audio-library-refresh')); window.dispatchEvent(new CustomEvent('reinvestorhub:credits-refresh')); }
             return r;
           },
         },

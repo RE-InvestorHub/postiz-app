@@ -163,36 +163,17 @@ const VideoTabContent: FC = () => {
 };
 
 // Audio tab — mirrors the Images/Video skeleton: the Script Director on top, then a
-// [ Writer's Room | Mixer ] sub-view toggle. Writer's Room = a scripts sidebar + the selected
-// script's canvas (script-driven VO preview + hooks/cast/beats); Mixer = Plan 3 (stub).
-// The former ▦ Library sub-view is gone — scripts ARE the library now (Plan 1b).
+// The Audio tab = the Script Director on top + the ✍ Writer's Room body. The former ▦ Library
+// (dropped 1b — scripts ARE the library) and 🎚 Mixer (dropped Plan 3 — manual mixing moved to the
+// Video Editor NLE) sub-views are both gone; the Writer's Room now owns soundtrack **assembly**
+// (VO + SFX + a ducked bed → one master) directly in the script canvas.
 const AudioTabContent: FC = () => {
   const { state } = useStudio();
   const brandKitId = state.composerBrandKitId || 'default';
-  const [view, setView] = useState<'script' | 'mixer'>('script');
   return (
     <div className="flex flex-col gap-[18px]">
       <StudioScriptDirector brandKitId={brandKitId} />
-
-      {/* Sub-view toggle — one Audio tab: the Writer's Room (scripts) and the Mixer (Plan 3). */}
-      <div className="flex items-center gap-[8px]">
-        <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
-          {([['script', "✍ Writer's Room"], ['mixer', '🎚 Mixer']] as const).map(([v, lbl]) => (
-            <button key={v} type="button" onClick={() => setView(v)}
-              title={v === 'script' ? "The writer's room: hooks, beats, dialogue, and a VO preview" : 'Multi-track mix + SFX (coming in Plan 3)'}
-              className={'h-[34px] px-[14px] text-[12px] font-[600] ' + (view === v ? 'bg-ai text-white' : 'text-textItemBlur hover:text-btnText')}>{lbl}</button>
-          ))}
-        </span>
-      </div>
-
-      {view === 'script' && <StudioScriptPanel />}
-
-      {view === 'mixer' && (
-        <div className="rounded-[8px] border border-dashed border-newBorder bg-newBgColor p-[24px] flex flex-col items-center gap-[6px] text-center">
-          <span className="text-[14px] font-[600] text-btnText">🎚 Mixer: coming in Plan 3</span>
-          <span className="text-[12px] text-textItemBlur max-w-[420px]">Multi-track mixing (Dialogue / SFX / Music), sound effects, music beds with auto-ducking, and a master mix. Built on the same timeline editor as the Video Editor.</span>
-        </div>
-      )}
+      <StudioScriptPanel />
     </div>
   );
 };

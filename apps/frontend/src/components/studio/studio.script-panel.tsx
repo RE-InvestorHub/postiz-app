@@ -21,6 +21,7 @@ import { StudioVoicePicker } from '@gitroom/frontend/components/studio/studio.vo
 import { generateVOFromScript, latestVOForScript } from '@gitroom/frontend/components/studio/studio.voice-client';
 import { WaveformTrack } from '@gitroom/frontend/components/studio/studio.waveform-track';
 import { MultiVoiceRenderBar, RenderedTracksSection, VoiceMirrorButton } from '@gitroom/frontend/components/studio/studio.audio-render';
+import { AssembleBar, SoundtracksSection } from '@gitroom/frontend/components/studio/studio.audio-assemble';
 
 const inputCls = 'px-[10px] py-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
 const tinySel = 'h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
@@ -434,6 +435,10 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
       {/* Multi-voice render (Plan 2) — cast → render → the stitched track lands in Rendered tracks below. */}
       <MultiVoiceRenderBar script={script} brandKitId={state.composerBrandKitId || 'default'} />
       <RenderedTracksSection script={script} brandKitId={state.composerBrandKitId || 'default'} activeAdId={state.activeAdId} />
+
+      {/* Soundtrack assembly (Plan 3) — fold the rendered VO + SFX cues + a ducked bed into one master. */}
+      <AssembleBar script={script} brandKitId={state.composerBrandKitId || 'default'} />
+      <SoundtracksSection script={script} brandKitId={state.composerBrandKitId || 'default'} activeAdId={state.activeAdId} />
 
       {/* Beats */}
       <Section title="Beats" hint="Each beat is time-budgeted; write lines to the seconds you have." action={
