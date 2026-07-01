@@ -100,8 +100,11 @@ export const updateCharacter = (id: string, charId: string, patch: Partial<{ nam
 export const removeCharacter = (id: string, charId: string) => post<ScriptDoc>('/scripts/removeCharacter', { id, charId });
 
 // --- hooks ----------------------------------------------------------------
-export const setHooks = (id: string, hooks: Array<{ pattern: HookPattern; text: string; selected?: boolean }>) => post<ScriptDoc>('/scripts/setHooks', { id, hooks });
+export const setHooks = (id: string, hooks: Array<{ id?: string; pattern: HookPattern; text: string; selected?: boolean }>) => post<ScriptDoc>('/scripts/setHooks', { id, hooks });
 export const selectHook = (id: string, hookId: string) => post<ScriptDoc>('/scripts/selectHook', { id, hookId });
+// Context-aware regenerate of ONE hook / ONE beat (LLM text — no provider spend).
+export const regenerateHook = (id: string, hookId: string) => post<ScriptDoc>('/scripts/regenerateHook', { scriptId: id, hookId });
+export const regenerateBeat = (id: string, beatId: string) => post<ScriptDoc>('/scripts/regenerateBeat', { scriptId: id, beatId });
 
 // --- pronunciation --------------------------------------------------------
 export const setPronunciation = (id: string, pronunciation: Array<{ term: string; phonetic?: string }>) => post<ScriptDoc>('/scripts/setPronunciation', { id, pronunciation });

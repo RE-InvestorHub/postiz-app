@@ -1157,6 +1157,16 @@ export function buildStudioCapabilities(
           handler: async (p: { id?: string; hookId?: string } = {}) => { const id = sid(p); if (!id || !p.hookId) return; return publish(await sc.selectHook(id, p.hookId)); },
         },
         {
+          id: 'script.regenerateHook', namespace: 'script', label: 'Regenerate one hook (keeps its pattern; full context)',
+          params: ['id', 'hookId'],
+          handler: async (p: { id?: string; hookId?: string } = {}) => { const id = sid(p); if (!id || !p.hookId) return; return publish(await sc.regenerateHook(id, p.hookId)); },
+        },
+        {
+          id: 'script.regenerateBeat', namespace: 'script', label: 'Regenerate one beat\'s lines (on-budget; full context)',
+          params: ['id', 'beatId'],
+          handler: async (p: { id?: string; beatId?: string } = {}) => { const id = sid(p); if (!id || !p.beatId) return; return publish(await sc.regenerateBeat(id, p.beatId)); },
+        },
+        {
           id: 'script.suggestPronunciation', namespace: 'script', label: 'Set jargon pronunciation overrides',
           params: ['id', 'pronunciation'],
           handler: async (p: { id?: string; pronunciation?: any[] } = {}) => { const id = sid(p); if (!id || !p.pronunciation) return; return publish(await sc.setPronunciation(id, p.pronunciation)); },

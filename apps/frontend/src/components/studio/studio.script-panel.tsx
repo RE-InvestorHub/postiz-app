@@ -33,6 +33,13 @@ const Spinner: FC = () => (
   </svg>
 );
 
+// Circular-arrow "regenerate" glyph.
+const Recycle: FC = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden xmlns="http://www.w3.org/2000/svg">
+    <path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />
+  </svg>
+);
+
 // ── Panel shell — scripts sidebar + selected-script canvas ──────────────────
 export const StudioScriptPanel: FC = () => {
   const { state, dispatch } = useStudio();
@@ -158,6 +165,48 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
   const updateLine = (bid: string, lid: string, patch: any) => run(sc.updateLine(id, bid, lid, patch));
   const removeLine = (bid: string, lid: string) => run(sc.removeLine(id, bid, lid));
   const selectHook = (hid: string) => run(sc.selectHook(id, hid));
+
+  // --- Hooks: inline edit (the SELECTED hook mirrors live into the Hook beat's opening line) +
+  // per-hook regenerate. --- The Hook beat = the first beat labelled "hook", else the first beat.
+  const hookBeat = script.beats.find((b) => /hook/i.test(b.label)) || script.beats[0] || null;
+  const hookLineId = hookBeat?.lines[0]?.id ?? null;
+  const [hookDraft, setHookDraft] = useState<Record<string, string>>({});
+  const [regenHookId, setRegenHookId] = useState<string | null>(null);
+  const [regenBeatId, setRegenBeatId] = useState<string | null>(null);
+
+  const editHook = (h: ScriptDoc['hooks'][number], val: string) => {
+    setHookDraft((d) => ({ ...d, [h.id]: val }));
+    // Optimistic store update so the Beats section reflects the edit live while typing.
+    const nextHooks = script.hooks.map((x) => (x.id === h.id ? { ...x, text: val } : x));
+    const nextBeats = (h.selected && hookBeat && hookLineId)
+      ? script.beats.map((b) => (b.id === hookBeat.id ? { ...b, lines: b.lines.map((l) => (l.id === hookLineId ? { ...l, text: val } : l)) } : b))
+      : script.beats;
+    dispatch({ type: 'SET_ACTIVE_SCRIPT', script: { ...script, hooks: nextHooks, beats: nextBeats } });
+  };
+  const commitHook = async (h: ScriptDoc['hooks'][number]) => {
+    const val = hookDraft[h.id];
+    const clear = () => setHookDraft((d) => { const n = { ...d }; delete n[h.id]; return n; });
+    // A draft only exists after the user typed; persist it. (Can't compare to h.text — the optimistic
+    // live-mirror already set h.text to the draft, which would make an equality check skip the save.)
+    if (val === undefined) { clear(); return; }
+    setBusy(true); setError(null);
+    try {
+      const hooks = script.hooks.map((x) => ({ id: x.id, pattern: x.pattern, text: x.id === h.id ? val : x.text, selected: x.selected }));
+      let doc = await sc.setHooks(id, hooks);
+      // Persist the mirrored Hook-beat line too (selected hook only).
+      if (h.selected && hookBeat && hookLineId) doc = await sc.updateLine(id, hookBeat.id, hookLineId, { text: val });
+      publish(doc);
+    } catch (e) { setError((e as Error)?.message ?? String(e)); }
+    finally { setBusy(false); clear(); }
+  };
+  const regenerateHook = async (hid: string) => {
+    setRegenHookId(hid); setError(null);
+    try { publish(await sc.regenerateHook(id, hid)); } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setRegenHookId(null); }
+  };
+  const regenerateBeat = async (bid: string) => {
+    setRegenBeatId(bid); setError(null);
+    try { publish(await sc.regenerateBeat(id, bid)); } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setRegenBeatId(null); }
+  };
   const setPron = (rows: Array<{ term: string; phonetic: string }>) => run(sc.setPronunciation(id, rows.filter((r) => r.term.trim())));
   const bindToAd = async () => {
     const adId = state.activeAdId;
@@ -231,18 +280,24 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
         <BudgetMeter budget={budget} onTargetChange={setTarget} />
       </div>
 
-      {/* Hooks */}
-      <Section title="Hooks" hint="Scroll-stoppers — the agent generates variants by pattern; pick the winner.">
+      {/* Hooks — pick one (it flows into the Hook beat), edit inline, or ↻ regenerate a single hook. */}
+      <Section title="Hooks" hint="Scroll-stoppers — pick one (it mirrors into the Hook beat), edit inline, or ↻ regenerate a single hook in context.">
         {script.hooks.length === 0 ? (
           <Empty>No hooks yet. Ask the AI to “generate 5 hook variants”, or draft with the Director.</Empty>
         ) : (
           <div className="flex flex-col gap-[6px]">
             {script.hooks.map((h) => (
-              <label key={h.id} className={'flex items-center gap-[8px] rounded-[8px] border px-[10px] py-[8px] cursor-pointer ' + (h.selected ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner')}>
-                <input type="radio" name="hook" checked={h.selected} onChange={() => selectHook(h.id)} />
-                <span className="text-[10px] uppercase tracking-wide text-textItemBlur w-[110px]">{h.pattern.replace('_', ' ')}</span>
-                <span className="text-[13px] text-btnText flex-1">{h.text}</span>
-              </label>
+              <div key={h.id} className={'flex items-center gap-[8px] rounded-[8px] border px-[10px] py-[6px] ' + (h.selected ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner')}>
+                <input type="radio" name="hook" checked={h.selected} onChange={() => selectHook(h.id)} title="Use this hook" className="shrink-0" />
+                <span className="text-[10px] uppercase tracking-wide text-textItemBlur w-[92px] shrink-0">{h.pattern.replace('_', ' ')}</span>
+                <input value={hookDraft[h.id] ?? h.text} onChange={(e) => editHook(h, e.target.value)} onBlur={() => commitHook(h)}
+                  placeholder="Hook line…" className="flex-1 min-w-0 bg-transparent text-[13px] text-btnText outline-none border-b border-transparent focus:border-newBorder" />
+                <button type="button" onClick={() => regenerateHook(h.id)} disabled={regenHookId === h.id}
+                  title="Regenerate this hook — keeps its pattern, uses the full script context"
+                  className="shrink-0 h-[26px] w-[26px] rounded-[6px] flex items-center justify-center text-textItemBlur hover:text-ai hover:bg-ai/10 disabled:opacity-50">
+                  {regenHookId === h.id ? <Spinner /> : <Recycle />}
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -281,6 +336,8 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
                 onAddLine={() => addLine(b.id)}
                 onLine={(lid, patch) => updateLine(b.id, lid, patch)}
                 onRemoveLine={(lid) => removeLine(b.id, lid)}
+                onRegen={() => regenerateBeat(b.id)}
+                regenerating={regenBeatId === b.id}
               />
             ))}
           </div>
@@ -332,7 +389,8 @@ const BeatCard: FC<{
   cast: ScriptDoc['cast']; charName: (cid: string | null) => string;
   onLabel: (s: string) => void; onDur: (n: number) => void; onMove: (dir: -1 | 1) => void; onRemove: () => void;
   onAddLine: () => void; onLine: (lid: string, patch: any) => void; onRemoveLine: (lid: string) => void;
-}> = ({ beat, index, count, budget, cast, onLabel, onDur, onMove, onRemove, onAddLine, onLine, onRemoveLine }) => (
+  onRegen?: () => void; regenerating?: boolean;
+}> = ({ beat, index, count, budget, cast, onLabel, onDur, onMove, onRemove, onAddLine, onLine, onRemoveLine, onRegen, regenerating }) => (
   <div className="rounded-[8px] border border-newBorder bg-newBgColorInner p-[10px] flex flex-col gap-[8px]">
     <div className="flex items-center gap-[8px]">
       <span className="text-[11px] text-textItemBlur w-[18px] text-center">{index + 1}</span>
@@ -340,6 +398,13 @@ const BeatCard: FC<{
       <input type="number" min={0} value={beat.target_duration_s} onChange={(e) => onDur(Math.max(0, Number(e.target.value) || 0))}
         className="h-[30px] w-[58px] px-[8px] rounded-[6px] bg-newBgColor border border-newBorder text-[12px] text-btnText" title="Beat target (s)" />
       {budget && <span className={'text-[11px] tabular-nums ' + (budget.overBudget ? 'text-red-400' : 'text-textItemBlur')}>~{budget.seconds}s</span>}
+      {onRegen && (
+        <button type="button" onClick={onRegen} disabled={regenerating}
+          title="Regenerate this beat's lines — on-budget, full context" aria-label="Regenerate beat"
+          className="text-textItemBlur hover:text-ai disabled:opacity-50 px-[2px] flex items-center">
+          {regenerating ? <Spinner /> : <Recycle />}
+        </button>
+      )}
       <button type="button" onClick={() => onMove(-1)} disabled={index === 0} className="text-textItemBlur hover:text-btnText disabled:opacity-30 px-[2px]" title="Up">↑</button>
       <button type="button" onClick={() => onMove(1)} disabled={index === count - 1} className="text-textItemBlur hover:text-btnText disabled:opacity-30 px-[2px]" title="Down">↓</button>
       <button type="button" onClick={onRemove} className="text-textItemBlur hover:text-btnText px-[2px]" title="Remove beat">✕</button>
