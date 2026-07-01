@@ -9,7 +9,7 @@
 // audio uploads live behind the sidebar's ⬆ button and the active ad's audio cascades in below.
 // Postiz tokens only.
 
-import { FC, useCallback, useEffect, useState } from 'react';
+import { FC, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { ScriptDoc, ScriptBeat, ScriptLine, SCRIPT_TONES, TONE_LABELS, ScriptTone } from '@gitroom/frontend/components/studio/studio.types';
@@ -18,9 +18,8 @@ import { addObject } from '@gitroom/frontend/components/studio/studio.project-cl
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { StudioAdAssetShelf } from '@gitroom/frontend/components/studio/studio.ad-asset-shelf';
 import { StudioVoicePicker } from '@gitroom/frontend/components/studio/studio.voice-picker';
-import { generateVOFromScript, latestVOForScript } from '@gitroom/frontend/components/studio/studio.voice-client';
-import { WaveformTrack } from '@gitroom/frontend/components/studio/studio.waveform-track';
-import { MultiVoiceRenderBar, RenderedTracksSection, VoiceMirrorButton } from '@gitroom/frontend/components/studio/studio.audio-render';
+import { RenderStrip } from '@gitroom/frontend/components/studio/studio.audio-render';
+import { AssembleBar, SoundtracksSection } from '@gitroom/frontend/components/studio/studio.audio-assemble';
 
 const inputCls = 'px-[10px] py-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText placeholder:text-textItemBlur';
 const tinySel = 'h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
@@ -185,14 +184,6 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
   const [error, setError] = useState<string | null>(null);
   const [bound, setBound] = useState(false); // "→ Ad" confirmation flash.
 
-  // --- VO preview (script-driven, single narrator) ---
-  const voiceId = state.audioVoiceId;
-  const setVoiceId = (v: string) => dispatch({ type: 'SET_AUDIO_VOICE', voiceId: v });
-  const [genBusy, setGenBusy] = useState(false);
-  const [genErr, setGenErr] = useState<string | null>(null);
-  const [vo, setVo] = useState<{ url: string } | null>(null);
-  const [genSig, setGenSig] = useState<string | null>(null);
-
   const publish = useCallback((s: ScriptDoc) => dispatch({ type: 'SET_ACTIVE_SCRIPT', script: s }), [dispatch]);
   // Run a mutation, publish the returned doc, surface errors without crashing.
   const run = useCallback(async (p: Promise<ScriptDoc>) => {
@@ -310,70 +301,11 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
     catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setBusy(false); }
   };
 
-  // A signature of what the render depends on — beats/lines text, pronunciation, and voice. If it
-  // changes after a render, the clip is stale (the writer edited the script).
-  const voSig = (s: ScriptDoc, v: string) => JSON.stringify({ v, b: s.beats.map((b) => b.lines.map((l) => l.text)), p: s.pronunciation });
-  const hasLines = script.beats.some((b) => b.lines.some((l) => l.text.trim()));
-  const stale = !!vo && genSig !== voSig(script, voiceId);
-  const generateVoice = async () => {
-    if (!voiceId || !hasLines || genBusy) return;
-    setGenBusy(true); setGenErr(null);
-    try {
-      const r = await generateVOFromScript({ scriptId: id, voiceId });
-      setVo({ url: r.url });
-      setGenSig(voSig(script, voiceId));
-      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:credits-refresh'));
-    } catch (e) { setGenErr((e as Error)?.message ?? String(e)); } finally { setGenBusy(false); }
-  };
-  // When the AI Agent renders a VO for THIS script, show it on the canvas too.
-  useEffect(() => {
-    const onVo = (e: Event) => {
-      const d = (e as CustomEvent).detail || {};
-      if (d.url && d.scriptId === id) { setVo({ url: d.url }); setGenSig(voSig(script, voiceId)); }
-    };
-    if (typeof window === 'undefined') return;
-    window.addEventListener('reinvestorhub:script-vo', onVo);
-    return () => window.removeEventListener('reinvestorhub:script-vo', onVo);
-  }, [id, script, voiceId]);
-  // Reload the last generated VO for this script from disk on mount / script switch, so the clip
-  // survives navigating away and back (the file + its script-linked manifest persist on the brain).
-  useEffect(() => {
-    let live = true;
-    latestVOForScript(id).then((r) => {
-      if (!live) return;
-      if (r?.url) { setVo({ url: r.url }); setGenSig(voSig(script, voiceId)); }
-      else { setVo(null); setGenSig(null); }
-    }).catch(() => undefined);
-    return () => { live = false; };
-    // Keyed on the script id only — reloading on every edit would fight the stale indicator.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
   return (
     <div className="flex flex-col gap-[14px]">
-      {/* VO preview — hear the whole script in one voice (per-character casting is Plan 2). */}
-      <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
-        <div className="flex items-center gap-[10px] flex-wrap">
-          <span className="text-[13px] font-[600] text-btnText">Voice-over preview</span>
-          <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Hear your whole script read by one ElevenLabs voice (the sound). The persona — the way of speaking — is the tone you set per character in Cast below. Per-character voices come in Plan 2.</span>
-          <label className="flex items-center gap-[6px] text-[11px] font-[600] text-textItemBlur">Voice
-            <StudioVoicePicker value={voiceId} onChange={setVoiceId} onError={setGenErr} />
-          </label>
-          <button type="button" onClick={generateVoice} disabled={genBusy || !voiceId || !hasLines}
-            title={!hasLines ? 'Write some lines first' : 'Render this script as a single-voice VO'}
-            className="h-[40px] px-[16px] rounded-[8px] bg-ai text-white font-[600] inline-flex items-center justify-center gap-[6px] disabled:opacity-50 disabled:cursor-not-allowed">
-            {genBusy && <Spinner />}{genBusy ? 'Generating…' : '⚡ Generate'}
-          </button>
-          <VoiceMirrorButton script={script} brandKitId={state.composerBrandKitId || 'default'} />
-        </div>
-        {vo && (
-          <div className="flex flex-col gap-[6px]">
-            <WaveformTrack url={vo.url} stale={stale} onError={setGenErr} />
-            {stale && <span className="text-[11px] text-amber-400">Script or voice changed since this render. Regenerate to hear the latest.</span>}
-          </div>
-        )}
-        {genErr && <div className="text-[12px] text-red-400 leading-[1.4]">{genErr}</div>}
-      </div>
+      {/* Voice-over — one render surface: house voice + ⚡ Generate (multi-voice) + Dry run + Record
+          + the latest rendered track (waveform / → Ad / delete / stale-on-edit). */}
+      <RenderStrip script={script} />
 
       {/* Header: name + budget meter + bind/delete */}
       <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
@@ -389,7 +321,26 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
         <BudgetMeter budget={budget} onTargetChange={setTarget} />
       </div>
 
-      {/* Hooks — pick one (it flows into the Hook beat), edit inline, or ↻ regenerate a single hook. */}
+      {/* Cast — its own full-width row, right under the name. */}
+      <Section title="Cast" hint="Who speaks. Name + tone (persona) + the ElevenLabs voice each character renders in. Leave the voice on 🏠 House to use the house/brand voice." action={<button type="button" onClick={addCharacter} className={ghostBtn}>＋ Character</button>}>
+        {displayCast.length === 0 ? <Empty>Single narrator. Add a character for multi-voice dialogue.</Empty> : (
+          <div className="flex flex-col gap-[8px]">
+            {displayCast.map((c) => (
+              <div key={c.id} className="flex items-center gap-[6px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[8px] py-[6px] flex-wrap">
+                <input value={c.name} onChange={(e) => updateCharacter(c.id, { name: e.target.value })} className={tinySel + ' w-[110px]'} />
+                <select value={c.default_tone} onChange={(e) => updateCharacter(c.id, { default_tone: e.target.value as ScriptTone })} className={tinySel} title="Tone (persona)">
+                  {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
+                </select>
+                <StudioVoicePicker value={c.voice_id ?? ''} onChange={(v) => castVoice(c.id, v)} onError={setError}
+                  allowEmpty emptyLabel="🏠 House voice" className={tinySel + ' min-w-[160px]'} />
+                <button type="button" onClick={() => removeCharacter(c.id)} className="text-textItemBlur hover:text-btnText px-[4px]" title="Remove">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Hooks — its own full-width row. */}
       <Section title="Hooks" hint="Scroll-stoppers — pick one (it mirrors into the Hook beat), edit inline, or ↻ regenerate a single hook in context.">
         {script.hooks.length === 0 ? (
           <Empty>No hooks yet. Ask the AI to “generate 5 hook variants”, or draft with the Director.</Empty>
@@ -412,35 +363,12 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
         )}
       </Section>
 
-      {/* Cast — name, tone (persona), and the ElevenLabs voice each character renders in (Plan 2). */}
-      <Section title="Cast" hint="Who speaks. Name + tone (the persona) + the ElevenLabs voice (the sound) each character is rendered in. Leave the voice on House to use the brand voice." action={<button type="button" onClick={addCharacter} className={ghostBtn}>＋ Character</button>}>
-        {displayCast.length === 0 ? <Empty>Single narrator. Add a character for multi-voice dialogue.</Empty> : (
-          <div className="flex flex-col gap-[8px]">
-            {displayCast.map((c) => (
-              <div key={c.id} className="flex items-center gap-[6px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[8px] py-[6px] flex-wrap">
-                <input value={c.name} onChange={(e) => updateCharacter(c.id, { name: e.target.value })} className={tinySel + ' w-[110px]'} />
-                <select value={c.default_tone} onChange={(e) => updateCharacter(c.id, { default_tone: e.target.value as ScriptTone })} className={tinySel} title="Tone (persona)">
-                  {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
-                </select>
-                <StudioVoicePicker value={c.voice_id ?? ''} onChange={(v) => castVoice(c.id, v)} onError={setError}
-                  allowEmpty emptyLabel="🏠 House voice" className={tinySel + ' min-w-[160px]'} />
-                <button type="button" onClick={() => removeCharacter(c.id)} className="text-textItemBlur hover:text-btnText px-[4px]" title="Remove">✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* Multi-voice render (Plan 2) — cast → render → the stitched track lands in Rendered tracks below. */}
-      <MultiVoiceRenderBar script={script} brandKitId={state.composerBrandKitId || 'default'} />
-      <RenderedTracksSection script={script} brandKitId={state.composerBrandKitId || 'default'} activeAdId={state.activeAdId} />
-
-      {/* Beats */}
+      {/* Beats — its own full-width row. */}
       <Section title="Beats" hint="Each beat is time-budgeted; write lines to the seconds you have." action={
         <span className="flex items-center gap-[8px]">
           <button type="button" onClick={addBeat} className={ghostBtn}>＋ Beat</button>
           <button type="button" onClick={realign} disabled={!realignDirty || realigning}
-            title={realignDirty ? 'Rewrite every beat below to pay off the newly selected hook' : 'Pick a different hook above to enable'}
+            title={realignDirty ? 'Rewrite every beat below to pay off the newly selected hook' : 'Pick a different hook to enable'}
             className={'h-[30px] px-[12px] rounded-[6px] text-[12px] font-[600] inline-flex items-center gap-[6px] transition-colors ' + (realignDirty ? 'bg-ai text-white hover:opacity-90' : 'border border-newBorder text-textItemBlur opacity-50 cursor-not-allowed')}>
             {realigning ? <Spinner /> : <Recycle />} Realign
           </button>
@@ -468,6 +396,10 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
         )}
       </Section>
 
+      {/* Assemble soundtrack — its own full-width row + the resulting masters. */}
+      <AssembleBar script={script} brandKitId={state.composerBrandKitId || 'default'} />
+      <SoundtracksSection script={script} brandKitId={state.composerBrandKitId || 'default'} activeAdId={state.activeAdId} />
+
       {/* Pronunciation */}
       <PronunciationEditor rows={script.pronunciation} onChange={setPron} />
 
@@ -479,12 +411,14 @@ const ScriptCanvas: FC<{ script: ScriptDoc }> = ({ script }) => {
 
 // --- sub-components --------------------------------------------------------
 
-const Section: FC<{ title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }> = ({ title, hint, action, children }) => (
-  <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
-    <div className="flex items-center gap-[8px]">
-      <span className="text-[13px] font-[600] text-btnText">{title}</span>
-      {hint && <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">{hint}</span>}
-      <span className="ml-auto">{action}</span>
+const Section: FC<{ title: string; hint?: string; action?: React.ReactNode; bare?: boolean; children: React.ReactNode }> = ({ title, hint, action, bare, children }) => (
+  <div className={bare ? 'flex flex-col gap-[10px]' : 'rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]'}>
+    <div className="flex flex-col gap-[3px]">
+      <div className="flex items-center gap-[8px]">
+        <span className="text-[13px] font-[600] text-btnText">{title}</span>
+        <span className="ml-auto">{action}</span>
+      </div>
+      {hint && <span className="text-[11px] text-textItemBlur leading-[1.45]">{hint}</span>}
     </div>
     {children}
   </div>
@@ -546,20 +480,44 @@ const LineRow: FC<{ line: ScriptLine; cast: ScriptDoc['cast']; onChange: (patch:
   // Debounce text into local state so typing stays smooth; commit on blur.
   const [text, setText] = useState(line.text);
   useEffect(() => { setText(line.text); }, [line.text]);
+  // Custom resize: the whole bottom edge of the line box is a drag handle (native resize only grips
+  // the corner). Dragging sets an explicit height on the wrapper, overriding the default stretch.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const wrap = wrapRef.current; if (!wrap) return;
+    const startY = e.clientY; const startH = wrap.offsetHeight;
+    const move = (ev: PointerEvent) => { wrap.style.height = `${Math.max(40, startH + (ev.clientY - startY))}px`; };
+    const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
+  };
   return (
-    <div className="flex items-start gap-[6px]">
-      <select value={cast.some((c) => c.id === line.character_id) ? (line.character_id ?? '') : ''} onChange={(e) => onChange({ characterId: e.target.value || null })} className={tinySel + ' w-[100px] mt-[1px]'} title="Speaker">
+    // items-stretch → the line box matches the stacked tone+direction column height by default.
+    <div className="flex items-stretch gap-[6px]">
+      <select value={cast.some((c) => c.id === line.character_id) ? (line.character_id ?? '') : ''} onChange={(e) => onChange({ characterId: e.target.value || null })} className={tinySel + ' w-[100px] self-start'} title="Speaker">
         <option value="">Narrator</option>
         {cast.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text !== line.text && onChange({ text })}
-        rows={1} placeholder="Line…" className={inputCls + ' flex-1 resize-y min-h-[34px]'} />
-      <select value={line.tone} onChange={(e) => onChange({ tone: e.target.value })} className={tinySel + ' w-[120px] mt-[1px]'} title="Tone (blank = character default)">
-        <option value="">(tone)</option>
-        {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
-      </select>
-      <input value={line.direction} onChange={(e) => onChange({ direction: e.target.value })} placeholder="direction" className={tinySel + ' w-[120px] mt-[1px]'} title="Delivery direction" />
-      <button type="button" onClick={onRemove} className="text-textItemBlur hover:text-btnText px-[2px] mt-[6px]" title="Remove line">✕</button>
+      {/* Line box: fills the row height (matches the stacked column); the bottom bar resizes it. */}
+      <div ref={wrapRef} className="relative flex flex-1 min-w-0 self-stretch">
+        <textarea value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text !== line.text && onChange({ text })}
+          placeholder="Line…" className={inputCls + ' flex-1 w-full resize-none'} />
+        <div onPointerDown={startResize} title="Drag to resize" aria-hidden
+          className="absolute inset-x-0 bottom-0 h-[8px] cursor-ns-resize rounded-b-[8px] hover:bg-ai/20" />
+      </div>
+      {/* Tone + delivery direction stacked: tone = the vocal preset (voice_settings); direction =
+          free-text mapped to ElevenLabs v3 performance tags (whisper / excited / emphasis…) at render. */}
+      <div className="flex flex-col gap-[4px] w-[150px] shrink-0 self-start">
+        <select value={line.tone} onChange={(e) => onChange({ tone: e.target.value })} className={tinySel + ' w-full'} title="Tone — the vocal delivery preset (blank = the character's default)">
+          <option value="">(tone)</option>
+          {SCRIPT_TONES.map((t) => <option key={t} value={t}>{TONE_LABELS[t]}</option>)}
+        </select>
+        <textarea value={line.direction} onChange={(e) => onChange({ direction: e.target.value })} rows={2}
+          placeholder="delivery: whisper, excited, emphasis…"
+          title="Delivery direction — mapped to ElevenLabs v3 performance tags at render (whisper / excited / emphasis / sarcastic / serious / sad / angry / laughs / sighs / shouting)"
+          className={inputCls + ' w-full resize-y min-h-[44px] text-[12px]'} />
+      </div>
+      <button type="button" onClick={onRemove} className="text-textItemBlur hover:text-btnText px-[2px] mt-[6px] self-start" title="Remove line">✕</button>
     </div>
   );
 };
