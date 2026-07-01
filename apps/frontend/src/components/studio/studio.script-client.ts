@@ -65,6 +65,7 @@ export const createScript = (payload: CreateScriptInput) =>
 export const updateScript = (id: string, patch: Partial<{ name: string; format: ScriptFormat; structure: ScriptStructure; targetDurationS: number; wordsPerSecond: number; brandKitId: string; defaultTone: ScriptTone }>) =>
   post<ScriptDoc>('/scripts/update', { id, patch });
 export const deleteScript = (id: string) => post<{ ok: boolean }>('/scripts/delete', { id });
+export const deleteScripts = (ids: string[]) => post<{ ok: boolean; deleted: number }>('/scripts/deleteMany', { ids });
 export const applyStructure = (id: string, structure: ScriptStructure, targetDurationS?: number) =>
   post<ScriptDoc>('/scripts/applyStructure', { id, structure, targetDurationS });
 
@@ -105,6 +106,8 @@ export const selectHook = (id: string, hookId: string) => post<ScriptDoc>('/scri
 // Context-aware regenerate of ONE hook / ONE beat (LLM text — no provider spend).
 export const regenerateHook = (id: string, hookId: string) => post<ScriptDoc>('/scripts/regenerateHook', { scriptId: id, hookId });
 export const regenerateBeat = (id: string, beatId: string) => post<ScriptDoc>('/scripts/regenerateBeat', { scriptId: id, beatId });
+// Rewrite all body beats to pay off the currently selected hook (one coherent call). No spend.
+export const realignToHook = (id: string) => post<ScriptDoc>('/scripts/realign', { scriptId: id });
 
 // --- pronunciation --------------------------------------------------------
 export const setPronunciation = (id: string, pronunciation: Array<{ term: string; phonetic?: string }>) => post<ScriptDoc>('/scripts/setPronunciation', { id, pronunciation });

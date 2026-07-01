@@ -1078,6 +1078,15 @@ export function buildStudioCapabilities(
           },
         },
         {
+          id: 'script.deleteMany', namespace: 'script', label: 'Delete multiple scripts by id (bulk)',
+          params: ['ids'],
+          handler: async (p: { ids?: string[] } = {}) => {
+            if (!p.ids?.length) return;
+            await sc.deleteScripts(p.ids);
+            if (p.ids.includes(getState().activeScript?.script_id ?? '')) dispatch({ type: 'SET_ACTIVE_SCRIPT', script: null });
+          },
+        },
+        {
           id: 'script.setStructure', namespace: 'script', label: 'Lay a structure spine onto the script (replaces beats with the time-budgeted skeleton)',
           params: ['id', 'structure', 'targetDurationS'],
           handler: async (p: { id?: string; structure?: any; targetDurationS?: number } = {}) => {
@@ -1165,6 +1174,11 @@ export function buildStudioCapabilities(
           id: 'script.regenerateBeat', namespace: 'script', label: 'Regenerate one beat\'s lines (on-budget; full context)',
           params: ['id', 'beatId'],
           handler: async (p: { id?: string; beatId?: string } = {}) => { const id = sid(p); if (!id || !p.beatId) return; return publish(await sc.regenerateBeat(id, p.beatId)); },
+        },
+        {
+          id: 'script.realignToHook', namespace: 'script', label: 'Rewrite all body beats to pay off the selected hook',
+          params: ['id'],
+          handler: async (p: { id?: string } = {}) => { const id = sid(p); if (!id) return; return publish(await sc.realignToHook(id)); },
         },
         {
           id: 'script.suggestPronunciation', namespace: 'script', label: 'Set jargon pronunciation overrides',
