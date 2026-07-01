@@ -58,7 +58,10 @@ function estimateCost(script: ScriptDoc): { lines: number; chars: number; credit
 }
 
 // ── Render bar ───────────────────────────────────────────────────────────────
-export const MultiVoiceRenderBar: FC<{ script: ScriptDoc; brandKitId: string }> = ({ script, brandKitId }) => {
+const cardCls = 'rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]';
+const bareCls = 'flex flex-col gap-[10px]';
+
+export const MultiVoiceRenderBar: FC<{ script: ScriptDoc; brandKitId: string; bare?: boolean }> = ({ script, brandKitId, bare }) => {
   const cost = useMemo(() => estimateCost(script), [script]);
   const [busy, setBusy] = useState<null | 'dry' | 'real'>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -83,13 +86,10 @@ export const MultiVoiceRenderBar: FC<{ script: ScriptDoc; brandKitId: string }> 
   };
 
   return (
-    <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
+    <div className={bare ? bareCls : cardCls}>
       <div className="flex items-center gap-[10px] flex-wrap">
         <span className="text-[13px] font-[600] text-btnText">Multi-voice render</span>
-        <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">
-          Render every line in its character&apos;s cast voice + tone, stitched in beat order into one track. Cast voices in the Cast section below.
-        </span>
-        <span className="text-[11px] text-textItemBlur tabular-nums">
+        <span className="text-[11px] text-textItemBlur tabular-nums ml-auto">
           {cost.lines} line{cost.lines === 1 ? '' : 's'} · {cost.voices} voice{cost.voices === 1 ? '' : 's'} · ~{cost.credits} cr
         </span>
         <button type="button" onClick={dryRun} disabled={!!busy || !cost.lines}
@@ -104,6 +104,7 @@ export const MultiVoiceRenderBar: FC<{ script: ScriptDoc; brandKitId: string }> 
           {busy === 'real' && progress ? `Rendering ${progress.done}/${progress.total}…` : '⚡ Render'}
         </button>
       </div>
+      <span className="text-[11px] text-textItemBlur leading-[1.45]">Render every line in its character&apos;s cast voice + tone, stitched in beat order into one track.</span>
       {confirming && (
         <div className="flex items-center gap-[10px] rounded-[8px] border border-ai/40 bg-ai/10 px-[12px] py-[8px] text-[12px] text-btnText">
           <span className="flex-1">Render {cost.lines} lines in {cost.voices} voice{cost.voices === 1 ? '' : 's'}? This spends about <span className="font-[700]">{cost.credits} credits</span>.</span>
@@ -117,7 +118,7 @@ export const MultiVoiceRenderBar: FC<{ script: ScriptDoc; brandKitId: string }> 
 };
 
 // ── Rendered tracks (the Audio Library for this script) ───────────────────────
-export const RenderedTracksSection: FC<{ script: ScriptDoc; brandKitId: string; activeAdId: string | null }> = ({ script, brandKitId, activeAdId }) => {
+export const RenderedTracksSection: FC<{ script: ScriptDoc; brandKitId: string; activeAdId: string | null; bare?: boolean }> = ({ script, brandKitId, activeAdId, bare }) => {
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -138,11 +139,13 @@ export const RenderedTracksSection: FC<{ script: ScriptDoc; brandKitId: string; 
   }, [refresh]);
 
   return (
-    <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[10px]">
-      <div className="flex items-center gap-[8px]">
-        <span className="text-[13px] font-[600] text-btnText">Rendered tracks</span>
-        <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Multi-voice tracks for this script. Play, re-render a single line, download captions, or assign to the active ad.</span>
-        {loading && <Spinner />}
+    <div className={bare ? bareCls : cardCls}>
+      <div className="flex flex-col gap-[3px]">
+        <div className="flex items-center gap-[8px]">
+          <span className="text-[13px] font-[600] text-btnText">Rendered tracks</span>
+          {loading && <Spinner />}
+        </div>
+        <span className="text-[11px] text-textItemBlur leading-[1.45]">Multi-voice tracks for this script. Play, re-render a single line, download captions, or assign to the active ad.</span>
       </div>
       {tracks.length === 0 ? (
         <span className="text-[12px] text-textItemBlur">No rendered tracks yet. Cast your voices and hit ⚡ Render above.</span>

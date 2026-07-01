@@ -39,7 +39,7 @@ type MusicSource = 'none' | 'local' | 'jamendo' | 'elevenlabs';
 interface SfxPlacement { key: string; label: string; sfxId?: string; assetId?: string; atS: number }
 
 // ── Assemble bar ──────────────────────────────────────────────────────────────
-export const AssembleBar: FC<{ script: ScriptDoc; brandKitId: string }> = ({ script, brandKitId }) => {
+export const AssembleBar: FC<{ script: ScriptDoc; brandKitId: string; grow?: boolean }> = ({ script, brandKitId, grow }) => {
   const [source, setSource] = useState<MusicSource>('local');
   const [beds, setBeds] = useState<MusicBed[]>([]);
   const [mood, setMood] = useState('calm');
@@ -124,10 +124,10 @@ export const AssembleBar: FC<{ script: ScriptDoc; brandKitId: string }> = ({ scr
   };
 
   return (
-    <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[12px]">
-      <div className="flex items-center gap-[10px] flex-wrap">
+    <div className={'rounded-[8px] border border-newBorder bg-newBgColor p-[14px] flex flex-col gap-[12px]' + (grow ? ' flex-1' : '')}>
+      <div className="flex flex-col gap-[3px]">
         <span className="text-[13px] font-[600] text-btnText">Assemble soundtrack</span>
-        <span className="text-[11px] text-textItemBlur flex-1 hidden lg:inline">Fold this script&apos;s rendered voice-over + its SFX cues + a music bed (ducked under the speech) into one master track. Local ffmpeg — free.</span>
+        <span className="text-[11px] text-textItemBlur leading-[1.45]">Fold this script&apos;s rendered voice-over + its SFX cues + a music bed (ducked under the speech) into one master track. Local ffmpeg — free.</span>
       </div>
 
       {/* Music source */}
@@ -230,13 +230,13 @@ export const AssembleBar: FC<{ script: ScriptDoc; brandKitId: string }> = ({ scr
         </div>
       )}
 
-      <div className="flex items-center gap-[10px]">
+      <div className="flex items-center gap-[10px] mt-auto">
+        <span className="text-[11px] text-textItemBlur">Free — needs a rendered voice-over above.</span>
         <button type="button" onClick={assemble} disabled={!!busy || commercialBlocked}
           title={commercialBlocked ? 'License this track for commercial use first, or pick a cleared source' : 'Assemble the master soundtrack (free)'}
-          className="h-[38px] px-[16px] rounded-[8px] bg-ai text-white font-[600] text-[13px] inline-flex items-center gap-[6px] disabled:opacity-50">
-          {busy === 'assemble' && <Spinner />}{busy === 'assemble' ? 'Assembling…' : '＋ Assemble soundtrack'}
+          className="ml-auto h-[38px] px-[16px] rounded-[8px] bg-ai text-white font-[600] text-[13px] inline-flex items-center gap-[6px] disabled:opacity-50">
+          {busy === 'assemble' && <Spinner />}{busy === 'assemble' ? 'Assembling…' : 'Assemble soundtrack'}
         </button>
-        <span className="text-[11px] text-textItemBlur">Free — needs a rendered voice-over above.</span>
       </div>
       {err && <div className="text-[12px] text-red-400 leading-[1.4]">{err}</div>}
     </div>
