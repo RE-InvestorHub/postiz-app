@@ -75,7 +75,8 @@ function rowsToEdl(rows: TimelineRow[], prev: TimelineEDL): TimelineEDL {
 }
 
 const card = 'rounded-[8px] border border-newBorder bg-newBgColor';
-const ROW_H = 40;
+const ROW_H = 30;
+const RULER_H = 32; // the widget's time-ruler height — the label column clears it with this top pad.
 
 // Tiny inline waveform for an audio clip's timeline block. Peaks are normalized 0–1 (brain-side).
 const WaveBars: FC<{ peaks: number[]; color: string }> = ({ peaks, color }) => {
@@ -117,6 +118,7 @@ export const StudioVideoEditorNLE: FC = () => {
   const [genBusy, setGenBusy] = useState(false);
   const [confirmGen, setConfirmGen] = useState<null | 'sfx' | 'music'>(null);
   const [peaks, setPeaks] = useState<Record<string, number[]>>({});
+  const [addingLane, setAddingLane] = useState(false);
 
   const playerRef = useRef<PlayerRef>(null);
   const timelineState = useRef<TimelineState>(null);
@@ -156,6 +158,9 @@ export const StudioVideoEditorNLE: FC = () => {
 
   const durationInFrames = Math.max(1, edlDuration(edl));
   const rows = useMemo(() => edlToRows(edl), [edl]);
+  // Fit the timeline to exactly its lanes (ruler + one ROW_H per track) so there's no dead space;
+  // grows automatically as tracks are added/removed.
+  const timelineHeight = RULER_H + edl.tracks.length * ROW_H;
 
   const selected = useMemo(() => {
     for (const t of edl.tracks) { const c = t.clips.find((x) => x.id === selectedClipId); if (c) return { clip: c, track: t }; }
@@ -247,6 +252,21 @@ export const StudioVideoEditorNLE: FC = () => {
 
   const toggleMute = (t: Track) => dispatch({ type: 'SET_TIMELINE', timeline: { ...edl, tracks: edl.tracks.map((x) => (x.id === t.id ? { ...x, muted: !x.muted } : x)) } });
 
+  // Vertical reorder: swap a track with its neighbour (order = lane order + video/text visual stacking).
+  const moveTrack = (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= edl.tracks.length) return;
+    const tracks = edl.tracks.slice();
+    [tracks[index], tracks[j]] = [tracks[j], tracks[index]];
+    dispatch({ type: 'SET_TIMELINE', timeline: { ...edl, tracks } });
+  };
+  // Add an extra lane beyond the default five (e.g. a 2nd music/SFX lane or a PiP video track).
+  const addLane = (kind: Track['kind'], role?: AudioRole) => {
+    const id = `${role || kind}-${Math.random().toString(36).slice(2, 6)}`;
+    dispatch({ type: 'TL_ADD_TRACK', track: { id, kind, ...(role ? { role } : {}), clips: [] } });
+    setAddingLane(false);
+  };
+
   const onExport = useCallback(async () => {
     if (durationInFrames < 2) { setError('Add at least one clip to the timeline first.'); return; }
     setRendering(true); setError(null); setRenderUrl(null); setAdded(false);
@@ -261,7 +281,11 @@ export const StudioVideoEditorNLE: FC = () => {
       if (!job || job.status !== 'done' || !job.outputUrl) throw new Error(job?.error || 'Render did not complete.');
       setRenderUrl(job.outputUrl);
       toaster.show('Timeline rendered.', 'success');
-    } catch (e) { setError((e as Error)?.message ?? String(e)); }
+    } catch (e) {
+      // User-facing message only; keep the raw error in the console for troubleshooting.
+      console.error('[VideoEditor] export failed:', e);
+      setError('Export failed — the render service couldn\'t finish this timeline. See the browser console for details.');
+    }
     finally { setRendering(false); }
   }, [durationInFrames, format, edl, fps, toaster]);
 
@@ -512,20 +536,41 @@ export const StudioVideoEditorNLE: FC = () => {
 
       {/* Timeline — lane labels + multi-track lanes on one ruler */}
       <div className={card + ' p-[8px] overflow-hidden flex'}>
-        {/* Lane labels (aligned to the widget's rows; top spacer clears its time ruler) */}
-        <div className="shrink-0 w-[86px] pr-[6px]" style={{ paddingTop: 32 }}>
-          {edl.tracks.map((t) => (
-            <div key={t.id} style={{ height: ROW_H }} className="flex items-center gap-[5px] text-[10px] font-[600]">
-              <span style={{ width: 7, height: 7, borderRadius: 7, background: laneColorOf(t) }} />
+        {/* Lane labels + controls (aligned to the widget's rows; top spacer clears its time ruler) */}
+        <div className="shrink-0 w-[112px] pr-[6px]" style={{ paddingTop: RULER_H }}>
+          {edl.tracks.map((t, i) => (
+            <div key={t.id} style={{ height: ROW_H }} className="flex items-center gap-[3px] text-[10px] font-[600]">
+              <span style={{ width: 6, height: 6, borderRadius: 6, background: laneColorOf(t), flexShrink: 0 }} />
               <span className="text-btnText truncate flex-1">{laneLabelOf(t)}</span>
+              <span className="flex flex-col leading-[7px]">
+                <button type="button" onClick={() => moveTrack(i, -1)} disabled={i === 0} title="Move up"
+                  className="text-[8px] text-textItemBlur hover:text-btnText disabled:opacity-25">▲</button>
+                <button type="button" onClick={() => moveTrack(i, 1)} disabled={i === edl.tracks.length - 1} title="Move down"
+                  className="text-[8px] text-textItemBlur hover:text-btnText disabled:opacity-25">▼</button>
+              </span>
               {t.kind === 'audio' && (
                 <button type="button" onClick={() => toggleMute(t)} title={t.muted ? 'Unmute' : 'Mute'}
-                  className={'text-[10px] leading-none px-[3px] rounded-[3px] ' + (t.muted ? 'text-red-400' : 'text-textItemBlur hover:text-btnText')}>{t.muted ? '🔇' : '🔊'}</button>
+                  className={'text-[9px] leading-none px-[2px] rounded-[3px] ' + (t.muted ? 'text-red-400' : 'text-textItemBlur hover:text-btnText')}>{t.muted ? '🔇' : '🔊'}</button>
               )}
             </div>
           ))}
+          {/* Add an extra lane beyond the default five */}
+          <div className="relative mt-[4px]">
+            <button type="button" onClick={() => setAddingLane((v) => !v)} title="Add a track"
+              className="h-[20px] w-full rounded-[5px] border border-dashed border-newBorder text-[11px] text-textItemBlur hover:text-btnText hover:border-ai">＋ Track</button>
+            {addingLane && (
+              <div className="absolute z-10 left-0 top-[24px] w-[128px] rounded-[6px] border border-newBorder bg-newBgColorInner p-[4px] flex flex-col gap-[2px] shadow-lg">
+                {([['video', undefined, 'Video'], ['audio', 'dialogue', 'Dialogue'], ['audio', 'sfx', 'SFX'], ['audio', 'music', 'Music'], ['text', undefined, 'Text']] as Array<[Track['kind'], AudioRole | undefined, string]>).map(([k, r, lbl]) => (
+                  <button key={lbl} type="button" onClick={() => addLane(k, r)}
+                    className="text-left px-[6px] py-[4px] rounded-[4px] text-[11px] text-btnText hover:bg-ai/10 flex items-center gap-[6px]">
+                    <span style={{ width: 6, height: 6, borderRadius: 6, background: LANE_COLOR[r || k] }} />{lbl}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0" style={{ height: timelineHeight }}>
           <TimelineWidget
             ref={timelineState}
             editorData={rows}
@@ -534,6 +579,7 @@ export const StudioVideoEditorNLE: FC = () => {
             gridSnap
             dragLine
             rowHeight={ROW_H}
+            style={{ height: timelineHeight, width: '100%' }}
             scale={1}
             scaleWidth={80}
             startLeft={20}
