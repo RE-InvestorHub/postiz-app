@@ -208,27 +208,33 @@ export const StudioAvatarLibrary: FC = () => {
 
   if (state.avatars.length === 0) {
     return (
-      <div className="flex flex-col items-start gap-[12px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[20px]">
-        <p className="text-[13px] text-textItemBlur leading-[1.5] max-w-[460px]">
-          No avatars yet. Register one to reuse a person’s likeness and voice across commercials —
-          you’ll record consent first, then add likeness images and voice samples.
-        </p>
-        <button
-          type="button"
-          onClick={openOnboarding}
-          className="h-[40px] px-[16px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] hover:opacity-90 transition-opacity"
-        >
-          Register your first avatar
-        </button>
+      <div className="flex flex-col gap-[10px]">
+        <h3 className="text-[13px] font-[600] text-btnText">People (real-person clones)</h3>
+        <div className="flex flex-col items-start gap-[12px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[20px]">
+          <p className="text-[13px] text-textItemBlur leading-[1.5] max-w-[460px]">
+            No real-person clones yet. Clone a person to reuse their likeness and voice across
+            commercials — you’ll record consent first, then add likeness images and voice samples.
+          </p>
+          <button
+            type="button"
+            onClick={openOnboarding}
+            className="h-[40px] px-[16px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] hover:opacity-90 transition-opacity"
+          >
+            Clone a person
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-[12px]">
-      {state.avatars.map((clone) => (
-        <Avatar key={clone.clone_id} clone={clone} onChanged={load} />
-      ))}
+    <div className="flex flex-col gap-[10px]">
+      <h3 className="text-[13px] font-[600] text-btnText">People (real-person clones)</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-[12px]">
+        {state.avatars.map((clone) => (
+          <Avatar key={clone.clone_id} clone={clone} onChanged={load} />
+        ))}
+      </div>
     </div>
   );
 };

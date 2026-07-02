@@ -168,6 +168,12 @@ export function requiresApproval(toolName: string): boolean {
     'editor.listTimelines',
     'editor.openTimeline',
     'editor.deleteTimeline',
+    // Synthetic avatars — reads + free management are auto-approved. register / cast / reshootPortrait
+    // are OMITTED (they spend image / voice / lip-sync credits) so they stay GATED.
+    'synthetic.listSoulAnchors',
+    'synthetic.list',
+    'synthetic.setVoice',
+    'synthetic.archive',
     // Script (Audio writer's room) — ALL structured-data edits / advisory reads, NO spend → auto.
     // (Plan 1 renders nothing. Multi-voice render lands in Plan 2 and WILL be gated.)
     'script.create',
