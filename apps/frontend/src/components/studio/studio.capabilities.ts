@@ -44,6 +44,7 @@ import { startSoulTraining, removeSoul, renderDirectorClip, gapFillVideo, render
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import * as scriptClient from '@gitroom/frontend/components/studio/studio.script-client';
 import * as voiceClient from '@gitroom/frontend/components/studio/studio.voice-client';
+import * as timelineClient from '@gitroom/frontend/components/studio/studio.timeline-client';
 import * as assembleClient from '@gitroom/frontend/components/studio/studio.assemble-client';
 import { listMusicBeds } from '@gitroom/frontend/components/studio/studio.music-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
@@ -1046,6 +1047,38 @@ export function buildStudioCapabilities(
         const id = `cap_${dlg.id}_${Math.random().toString(36).slice(2, 6)}`;
         dispatch({ type: 'TL_ADD_CLIP', trackId: capTrackId, clip: { kind: 'captions', id, from: dlg.from, durationInFrames: dlg.durationInFrames, tokens, styleId: p.styleId || 'pop', bgColor: p.bgColor ?? '#d82d7e', fromClipId: dlg.id } as Clip });
       },
+    },
+    {
+      // Persist the current timeline as a named project (Layer-2). Curation, no spend.
+      id: 'editor.saveTimeline',
+      namespace: 'editor',
+      label: 'Save the current Video Editor timeline as a named project',
+      params: ['id', 'name'],
+      handler: async (p: { id?: string; name?: string } = {}) => {
+        const st = getState();
+        return timelineClient.saveTimeline({ id: p.id, name: p.name || 'Untitled edit', brandKitId: st.composerBrandKitId ?? 'default', edl: st.timeline, adId: st.activeAdId || null });
+      },
+    },
+    {
+      id: 'editor.listTimelines',
+      namespace: 'editor',
+      label: 'List saved Video Editor timelines',
+      params: [],
+      handler: async () => timelineClient.listTimelines(getState().composerBrandKitId ?? 'default'),
+    },
+    {
+      id: 'editor.openTimeline',
+      namespace: 'editor',
+      label: 'Load a saved timeline into the Video Editor',
+      params: ['id'],
+      handler: async (p: { id?: string } = {}) => { if (!p.id) return; const rec = await timelineClient.getTimeline(p.id); dispatch({ type: 'SET_TIMELINE', timeline: rec.edl }); },
+    },
+    {
+      id: 'editor.deleteTimeline',
+      namespace: 'editor',
+      label: 'Delete a saved Video Editor timeline',
+      params: ['id'],
+      handler: async (p: { id?: string } = {}) => { if (p.id) await timelineClient.deleteTimeline(p.id); },
     },
     {
       // Render the timeline → MP4 via the (free, local) Remotion render service. A render → GATED.
