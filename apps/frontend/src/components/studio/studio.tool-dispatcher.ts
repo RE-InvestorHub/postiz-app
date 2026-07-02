@@ -158,6 +158,11 @@ export function requiresApproval(toolName: string): boolean {
     'editor.removeClip',
     'editor.splitClip',
     'editor.patchClip',
+    // Plan 9 audio lanes — placing an EXISTING audio asset + setting its mix are structured EDL edits,
+    // no spend (the render is the free timeline render). Generating a NEW SFX/music asset routes to the
+    // Audio-tab gated sfx.generate / music.generate.
+    'editor.addAudioClip',
+    'editor.setAudioMix',
     // Script (Audio writer's room) — ALL structured-data edits / advisory reads, NO spend → auto.
     // (Plan 1 renders nothing. Multi-voice render lands in Plan 2 and WILL be gated.)
     'script.create',

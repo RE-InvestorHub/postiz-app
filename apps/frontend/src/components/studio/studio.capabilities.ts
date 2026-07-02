@@ -47,7 +47,7 @@ import * as voiceClient from '@gitroom/frontend/components/studio/studio.voice-c
 import * as assembleClient from '@gitroom/frontend/components/studio/studio.assemble-client';
 import { listMusicBeds } from '@gitroom/frontend/components/studio/studio.music-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
-import type { TimelineEDL, Clip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
+import type { TimelineEDL, Clip, AudioRole } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 
 /** Fire the library-refresh event so the Images canvas re-fetches (picks up a new variant). */
 function refreshImageLibrary(): void {
@@ -976,6 +976,48 @@ export function buildStudioCapabilities(
       label: 'Edit a clip\'s props (trim/volume/transform/transition)',
       params: ['trackId', 'clipId', 'patch'],
       handler: (p: { trackId?: string; clipId?: string; patch?: Partial<Clip> } = {}) => { if (p.trackId && p.clipId && p.patch) dispatch({ type: 'TL_PATCH_CLIP', trackId: p.trackId, clipId: p.clipId, patch: p.patch }); },
+    },
+    {
+      // Plan 9 — place an EXISTING audio asset onto its role lane (resolves/creates the lane), carrying
+      // the mixer defaults. Move/trim/split use editor.patchClip / editor.splitClip (generic). No spend.
+      id: 'editor.addAudioClip',
+      namespace: 'editor',
+      label: 'Place an audio asset on a Video Editor lane (dialogue/sfx/music)',
+      params: ['role', 'srcId', 'srcUrl', 'atFrame', 'durationInFrames', 'gainDb', 'duck', 'spans'],
+      handler: (p: { role?: AudioRole; srcId?: string; srcUrl?: string; atFrame?: number; durationInFrames?: number; gainDb?: number; duck?: boolean; spans?: { startMs: number; endMs: number }[] } = {}) => {
+        const role = p.role;
+        if (!role || !p.srcId || !p.srcUrl) return;
+        const st = getState().timeline;
+        const fps = st.fps || 30;
+        let trackId = st.tracks.find((t) => t.kind === 'audio' && t.role === role)?.id;
+        if (!trackId) { trackId = `a-${role}`; dispatch({ type: 'TL_ADD_TRACK', track: { id: trackId, kind: 'audio', role, clips: [] } }); }
+        const clip = {
+          kind: 'audio', id: `${role[0]}_${p.srcId}_${Math.random().toString(36).slice(2, 7)}`,
+          srcId: p.srcId, srcUrl: p.srcUrl,
+          from: typeof p.atFrame === 'number' ? p.atFrame : 0,
+          durationInFrames: Math.max(15, p.durationInFrames ?? Math.round(3 * fps)),
+          inPoint: 0, gainDb: p.gainDb ?? 0,
+          ...(p.spans && p.spans.length ? { spans: p.spans } : {}),
+          ...(role === 'music' ? { duck: !!p.duck } : {}),
+        } as Clip;
+        dispatch({ type: 'TL_ADD_CLIP', trackId, clip });
+      },
+    },
+    {
+      // Plan 9 — set gain (dB) / fades / duck on an audio clip. Any subset. No spend.
+      id: 'editor.setAudioMix',
+      namespace: 'editor',
+      label: 'Set gain/fades/duck on a Video Editor audio clip',
+      params: ['trackId', 'clipId', 'gainDb', 'fadeInFrames', 'fadeOutFrames', 'duck'],
+      handler: (p: { trackId?: string; clipId?: string; gainDb?: number; fadeInFrames?: number; fadeOutFrames?: number; duck?: boolean } = {}) => {
+        if (!p.trackId || !p.clipId) return;
+        const patch: Record<string, unknown> = {};
+        if (typeof p.gainDb === 'number') patch.gainDb = p.gainDb;
+        if (typeof p.fadeInFrames === 'number') patch.fadeInFrames = p.fadeInFrames;
+        if (typeof p.fadeOutFrames === 'number') patch.fadeOutFrames = p.fadeOutFrames;
+        if (typeof p.duck === 'boolean') patch.duck = p.duck;
+        if (Object.keys(patch).length) dispatch({ type: 'TL_PATCH_CLIP', trackId: p.trackId, clipId: p.clipId, patch: patch as Partial<Clip> });
+      },
     },
     {
       // Render the timeline → MP4 via the (free, local) Remotion render service. A render → GATED.
