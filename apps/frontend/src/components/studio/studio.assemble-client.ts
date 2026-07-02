@@ -12,7 +12,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json().catch(() => ({}))) as T;
 }
 
-export interface SfxItem { id: string; file: string; label: string; kind: string; durationS: number; builtin?: boolean }
+export interface SfxItem { id: string; file: string; label: string; kind: string; durationS: number; builtin?: boolean; url?: string }
 export interface JamendoTrack {
   jamendoId: string; name: string; artist: string; durationS: number; audioUrl: string;
   image?: string; tags?: string[]; ccLicenseUrl?: string; commercialUse: boolean; proLicensable: boolean; proUrl?: string;
@@ -23,9 +23,15 @@ export interface AssembleSpec {
   masterGainDb?: number;
 }
 export interface AssembleResult { id: string; url: string; durationS: number; sfxCount: number; hasMusic: boolean }
+export interface MusicBed { id: string; file: string; mood: string; bpm: number; durationS: number; builtin?: boolean; url: string }
+export interface PeaksData { id: string; peaks: number[]; count: number }
 
-/** Curated SFX library (free). */
-export function listSfxLibrary(): Promise<{ sfx: SfxItem[] }> { return req('/sfx/library'); }
+/** Curated SFX library (free). Each item's playable URL is derived from its asset path. */
+export async function listSfxLibrary(): Promise<{ sfx: SfxItem[] }> {
+  const r = await req<{ sfx: SfxItem[] }>('/sfx/library');
+  const sfx = (r.sfx || []).map((s) => ({ ...s, url: s.url || `${base()}/assets/sfx/${s.file}` }));
+  return { sfx };
+}
 /** Generate a bespoke SFX (ElevenLabs text-to-SFX). SPENDS → gate at the call site. */
 export function generateSfx(payload: { text: string; durationSeconds?: number }): Promise<{ id: string; url: string; label: string }> {
   return req('/sfx/generate', { method: 'POST', body: JSON.stringify(payload) });
@@ -49,4 +55,14 @@ export function generateMusic(payload: { prompt: string; lengthMs?: number }): P
 /** Assemble a script's soundtrack (VO + SFX cues + ducked music) → one master. FREE (local ffmpeg). */
 export function assembleScript(payload: { scriptId: string; spec?: AssembleSpec }): Promise<AssembleResult> {
   return req('/audio/assemble', { method: 'POST', body: JSON.stringify(payload) });
+}
+/** Curated local music beds (free). Each bed's playable URL is derived from its asset path. */
+export async function listMusicBeds(): Promise<{ beds: MusicBed[] }> {
+  const beds = await req<Array<Omit<MusicBed, 'url'>>>('/music/beds');
+  const arr = Array.isArray(beds) ? beds : [];
+  return { beds: arr.map((b) => ({ ...b, url: `${base()}/assets/music/${b.file}` })) };
+}
+/** Normalized 0–1 waveform peaks for an audio asset (by library assetId). Cached brain-side. */
+export function fetchAudioPeaks(assetId: string, n = 400): Promise<PeaksData> {
+  return req(`/audio/peaks?id=${encodeURIComponent(assetId)}&n=${n}`);
 }
