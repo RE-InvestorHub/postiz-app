@@ -18,8 +18,11 @@ import {
   useVideoConfig,
 } from 'remotion';
 import type { TimelineEDL, VideoClip, AudioClip, TextClip, CaptionClip, Clip, Track } from './timeline.contract';
+import { clipVolumeAt, duckVolumeAt, dialogueSpansSec } from './timeline.contract';
 
 const msToFrames = (ms: number, fps: number) => Math.round((ms / 1000) * fps);
+
+type DuckSpan = { start: number; end: number };
 
 /** Opacity for a clip: short edge fade-in + a fade-out matching `transitionOut` (default cut). */
 function useClipOpacity(durationInFrames: number, transitionOut?: { durationInFrames: number }, baseOpacity = 1): number {
@@ -56,9 +59,18 @@ const VideoClipView: React.FC<{ clip: VideoClip }> = ({ clip }) => {
   );
 };
 
-const AudioClipView: React.FC<{ clip: AudioClip }> = ({ clip }) => (
-  <Audio src={clip.srcUrl} trimBefore={clip.inPoint ?? 0} volume={clip.volume ?? 1} />
-);
+// Audio clip: gain (dB or legacy 0–1) shaped by edge fades, and — for a music clip with `duck` on —
+// dipped under the dialogue lane's speech spans. `volume` is a per-frame fn; the frame is LOCAL to the
+// clip's <Sequence> (0 = clip start), so `clip.from + f` recovers the timeline-absolute time for duck.
+const AudioClipView: React.FC<{ clip: AudioClip; fps: number; duckSpans: DuckSpan[] }> = ({ clip, fps, duckSpans }) => {
+  const doDuck = !!clip.duck && duckSpans.length > 0;
+  const volume = (f: number): number => {
+    const own = clipVolumeAt(clip, f, fps);
+    if (!doDuck) return own;
+    return own * duckVolumeAt((clip.from + f) / fps, duckSpans, { duckRatio: 0.3, ramp: 0.25 });
+  };
+  return <Audio src={clip.srcUrl} trimBefore={clip.inPoint ?? 0} volume={volume} />;
+};
 
 const TextClipView: React.FC<{ clip: TextClip }> = ({ clip }) => {
   const opacity = useClipOpacity(clip.durationInFrames, clip.transitionOut);
@@ -117,17 +129,17 @@ const CaptionClipView: React.FC<{ clip: CaptionClip; fps: number }> = ({ clip, f
   );
 };
 
-const ClipView: React.FC<{ clip: Clip; fps: number }> = ({ clip, fps }) => {
+const ClipView: React.FC<{ clip: Clip; fps: number; duckSpans: DuckSpan[] }> = ({ clip, fps, duckSpans }) => {
   switch (clip.kind) {
     case 'video': return <VideoClipView clip={clip} />;
-    case 'audio': return <AudioClipView clip={clip} />;
+    case 'audio': return <AudioClipView clip={clip} fps={fps} duckSpans={duckSpans} />;
     case 'text': return <TextClipView clip={clip} />;
     case 'captions': return <CaptionClipView clip={clip} fps={fps} />;
     default: return null;
   }
 };
 
-const TrackView: React.FC<{ track: Track; fps: number }> = ({ track, fps }) => {
+const TrackView: React.FC<{ track: Track; fps: number; duckSpans: DuckSpan[] }> = ({ track, fps, duckSpans }) => {
   if (track.hidden) return null;
   return (
     <>
@@ -135,7 +147,7 @@ const TrackView: React.FC<{ track: Track; fps: number }> = ({ track, fps }) => {
         if (track.muted && (clip.kind === 'audio')) return null;
         return (
           <Sequence key={clip.id} from={clip.from} durationInFrames={clip.durationInFrames} name={`${track.kind}:${clip.id}`}>
-            <ClipView clip={clip} fps={fps} />
+            <ClipView clip={clip} fps={fps} duckSpans={duckSpans} />
           </Sequence>
         );
       })}
@@ -150,10 +162,13 @@ export interface TimelineProps {
 
 export const Timeline: React.FC<TimelineProps> = ({ tracks = [] }) => {
   const { fps } = useVideoConfig();
+  // Speech spans (timeline-absolute seconds) from the dialogue lane(s) — the music duck reads these.
+  // Computed once here so every ducked music clip mixes against the SAME envelope (preview == render).
+  const duckSpans = dialogueSpansSec(tracks, fps);
   return (
     <AbsoluteFill style={{ backgroundColor: '#000000', overflow: 'hidden' }}>
       {tracks.map((track) => (
-        <TrackView key={track.id} track={track} fps={fps} />
+        <TrackView key={track.id} track={track} fps={fps} duckSpans={duckSpans} />
       ))}
     </AbsoluteFill>
   );
