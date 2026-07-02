@@ -20,7 +20,7 @@ import {
   castAndWait,
   reshootPortrait,
   setSynthVoice,
-  archiveSynthAvatar,
+  deleteSynthAvatar,
 } from '@gitroom/frontend/components/studio/studio.synthavatar-client';
 import { listVoiceLibrary, VoiceOption } from '@gitroom/frontend/components/studio/studio.voice-client';
 
@@ -169,7 +169,19 @@ const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: 
         <div className="flex items-center gap-[8px] text-[11px]">
           <button type="button" disabled={busy} onClick={openVoicePicker} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText disabled:opacity-50">Change voice</button>
           <button type="button" disabled={busy} onClick={doReshoot} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText disabled:opacity-50">Re-shoot portrait</button>
-          <button type="button" disabled={busy} onClick={() => run(() => archiveSynthAvatar(avatar.synth_id))} className="h-[32px] px-[10px] rounded-[8px] border border-red-500/60 text-red-400 disabled:opacity-50">Archive</button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              const ok = typeof window === 'undefined' ? true : window.confirm(
+                `Permanently delete "${avatar.name}"?\n\nThis removes the avatar and its portrait. Any clips already cast and saved to the Video Library are kept. This cannot be undone.`
+              );
+              if (ok) run(() => deleteSynthAvatar(avatar.synth_id));
+            }}
+            className="h-[32px] px-[10px] rounded-[8px] border border-red-500/60 text-red-400 disabled:opacity-50"
+          >
+            Delete
+          </button>
         </div>
       )}
     </div>

@@ -185,3 +185,8 @@ export function setSynthVoice(synthId: string, voiceId: string, voiceLabel?: str
 export function archiveSynthAvatar(synthId: string): Promise<SynthAvatar> {
   return post<SynthAvatar>('/synthetic-avatar/archive', { synthId });
 }
+
+/** Permanently delete an avatar (record + its portrait/VO files). Cast clips are kept. Irreversible. */
+export function deleteSynthAvatar(synthId: string): Promise<{ deleted: number; synthId: string }> {
+  return post<{ deleted: number; synthId: string }>('/synthetic-avatar/delete', { synthId });
+}

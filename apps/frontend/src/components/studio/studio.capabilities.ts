@@ -1198,6 +1198,19 @@ export function buildStudioCapabilities(
       },
     },
     {
+      // Irreversible removal → GATED (omitted from AUTO_APPROVE) even though it doesn't spend.
+      id: 'synthetic.delete',
+      namespace: 'synthetic',
+      label: 'Permanently delete a synthetic avatar (irreversible)',
+      params: ['synthId'],
+      handler: async (p: { synthId?: string } = {}) => {
+        if (!p.synthId) return;
+        const r = await synthClient.deleteSynthAvatar(p.synthId);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        return r;
+      },
+    },
+    {
       // Images→Video bridge: stage library images as video keyframes. Marks them on the brain (so
       // they appear in the Video Library's Keyframes view), drops them into the keyframe tray, and
       // switches to the Video tab. Curation, NO spend → auto-approved.
