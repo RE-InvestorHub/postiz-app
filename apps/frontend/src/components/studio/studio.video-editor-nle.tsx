@@ -78,6 +78,12 @@ const card = 'rounded-[8px] border border-newBorder bg-newBgColor';
 const ROW_H = 30;
 const RULER_H = 32; // the widget's time-ruler height — the label column clears it with this top pad.
 
+// Ruler labels as a minute counter (m:ss) — 30→"0:30", 60→"1:00", 120→"2:00", … (seconds in → clock out).
+const fmtClock = (sec: number): string => {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
 // Tiny inline waveform for an audio clip's timeline block. Peaks are normalized 0–1 (brain-side).
 const WaveBars: FC<{ peaks: number[]; color: string }> = ({ peaks, color }) => {
   const sample = peaks.length > 56 ? peaks.filter((_, i) => i % Math.ceil(peaks.length / 56) === 0) : peaks;
@@ -119,7 +125,8 @@ export const StudioVideoEditorNLE: FC = () => {
   const [confirmGen, setConfirmGen] = useState<null | 'sfx' | 'music'>(null);
   const [peaks, setPeaks] = useState<Record<string, number[]>>({});
   const [addingLane, setAddingLane] = useState(false);
-  const [scaleWidth, setScaleWidth] = useState(80); // px per second (scale=1) — the zoom level.
+  const [pxPerSec, setPxPerSec] = useState(80); // continuous zoom (px per second on the ruler).
+  const [viewportW, setViewportW] = useState(1200); // measured timeline viewport width (for ruler length).
 
   const playerRef = useRef<PlayerRef>(null);
   const timelineState = useRef<TimelineState>(null);
@@ -127,13 +134,24 @@ export const StudioVideoEditorNLE: FC = () => {
   const scrollLeftRef = useRef(0);            // live horizontal scroll (from the widget's onScroll)
   const pendingScrollRef = useRef<number | null>(null); // scroll to apply AFTER a zoom re-render
 
-  // After a zoom changes scaleWidth, restore the scroll so the anchored time stays under the cursor.
+  // After a zoom changes the scale, restore the scroll so the anchored time stays under the cursor.
   useEffect(() => {
     if (pendingScrollRef.current != null && timelineState.current) {
       timelineState.current.setScrollLeft(Math.max(0, pendingScrollRef.current));
       pendingScrollRef.current = null;
     }
-  }, [scaleWidth]);
+  }, [pxPerSec]);
+
+  // Track the timeline viewport width so the ruler length can fill it at any zoom.
+  useEffect(() => {
+    const el = widgetWrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const apply = () => setViewportW(el.clientWidth || 1200);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Source bins + export formats.
   useEffect(() => { listVideoLibrary(brandKitId).then((l) => setClips(l.clips)).catch(() => {}); }, [brandKitId]);
@@ -173,10 +191,23 @@ export const StudioVideoEditorNLE: FC = () => {
   // Fit the timeline to exactly its lanes (ruler + one ROW_H per track) so there's no dead space;
   // grows automatically as tracks are added/removed.
   const timelineHeight = RULER_H + edl.tracks.length * ROW_H;
-  // Ruler length (seconds, scale=1): always a comfortable pad past the content, and it can grow to a
-  // 5-minute (300s) ceiling as clips are placed/dragged out — the excess just scrolls off-screen.
+  // Adaptive ruler (readable at any zoom): the zoom is continuous (pxPerSec), but the LABEL interval
+  // snaps up a base-60 "1-2-5" ladder so a label lands roughly every ~82px — never a crowded smear.
+  // Each labelled tick shows SPLIT minor sub-ticks. Total length caps at 5 minutes (300s).
   const TIMELINE_MAX_SEC = 300;
-  const minScaleCount = Math.min(TIMELINE_MAX_SEC, Math.max(40, Math.ceil(durationInFrames / fps) + 20));
+  const ZOOM_LADDER = [1, 2, 5, 10, 15, 30, 60, 120, 300]; // seconds per labelled tick
+  const TICK_MIN_PX = 82;
+  const SPLIT = 5;
+  const contentSec = Math.ceil(durationInFrames / fps);
+  const rulerScale = ZOOM_LADDER.find((L) => L * pxPerSec >= TICK_MIN_PX) ?? TIMELINE_MAX_SEC; // sec/label
+  const rulerScaleWidth = rulerScale * pxPerSec;                     // px between labels (≥ TICK_MIN_PX)
+  const maxScaleCount = Math.max(1, Math.ceil(TIMELINE_MAX_SEC / rulerScale));  // # labels to cover 5 min
+  const minScaleCount = Math.min(
+    maxScaleCount,
+    Math.max(Math.ceil((contentSec + 20) / rulerScale), Math.ceil(viewportW / rulerScaleWidth) + 1)
+  );
+  // Fully zoomed out shows the whole 5 min across the viewport (no dead space); deep-in ≈ frame level.
+  const minPxPerSec = Math.max(0.4, viewportW / TIMELINE_MAX_SEC);
 
   const selected = useMemo(() => {
     for (const t of edl.tracks) { const c = t.clips.find((x) => x.id === selectedClipId); if (c) return { clip: c, track: t }; }
@@ -291,16 +322,16 @@ export const StudioVideoEditorNLE: FC = () => {
     if (!wrap) return;
     e.preventDefault();
     const anchorScreenX = e.clientX - wrap.getBoundingClientRect().left; // px from the widget's left edge
-    const scaleAtDown = scaleWidth;                                       // px/sec at grab
-    const anchorTime = Math.max(0, (anchorScreenX - START_LEFT + scrollLeftRef.current) / scaleAtDown);
+    const zoomAtDown = pxPerSec;                                          // px/sec at grab
+    const anchorTime = Math.max(0, (anchorScreenX - START_LEFT + scrollLeftRef.current) / zoomAtDown);
     const startX = e.clientX;
     let moved = false;
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - startX;
       if (Math.abs(dx) > 2) moved = true;
-      const nw = Math.max(16, Math.min(400, scaleAtDown * Math.exp(-dx * 0.006))); // left→in, right→out
-      pendingScrollRef.current = START_LEFT + anchorTime * nw - anchorScreenX;      // keep anchorTime fixed
-      setScaleWidth(nw);
+      const nz = Math.max(minPxPerSec, Math.min(240, zoomAtDown * Math.exp(-dx * 0.006))); // left→in, right→out
+      pendingScrollRef.current = START_LEFT + anchorTime * nz - anchorScreenX;      // keep anchorTime fixed
+      setPxPerSec(nz);
     };
     const up = () => {
       document.removeEventListener('pointermove', move);
@@ -627,11 +658,13 @@ export const StudioVideoEditorNLE: FC = () => {
             dragLine
             rowHeight={ROW_H}
             style={{ height: timelineHeight, width: '100%' }}
-            scale={1}
-            scaleWidth={scaleWidth}
+            scale={rulerScale}
+            scaleWidth={rulerScaleWidth}
+            scaleSplitCount={SPLIT}
             startLeft={START_LEFT}
             minScaleCount={minScaleCount}
-            maxScaleCount={TIMELINE_MAX_SEC}
+            maxScaleCount={maxScaleCount}
+            getScaleRender={(sec: number) => <span className="tabular-nums">{fmtClock(sec)}</span>}
             onScroll={(p: { scrollLeft: number }) => { scrollLeftRef.current = p.scrollLeft; }}
             onChange={onWidgetChange}
             onClickAction={(_e, { action }: { action: TimelineAction }) => setSelectedClipId(action.id)}
