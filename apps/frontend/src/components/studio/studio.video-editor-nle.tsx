@@ -29,6 +29,7 @@ import {
   listSfxLibrary, listMusicBeds, searchJamendo, pickJamendo, generateSfx, generateMusic, fetchAudioPeaks,
   SfxItem, MusicBed, JamendoTrack,
 } from '@gitroom/frontend/components/studio/studio.assemble-client';
+import { listTimelines, getTimeline, saveTimeline, deleteTimeline, TimelineMeta } from '@gitroom/frontend/components/studio/studio.timeline-client';
 
 const EFFECTS = { default: { id: 'default', name: 'clip' } };
 const TRANSITIONS = ['cut', 'fade', 'dissolve', 'slide', 'wipe', 'zoomBlur', 'iris', 'cube'];
@@ -132,9 +133,24 @@ export const StudioVideoEditorNLE: FC = () => {
   const [addingLane, setAddingLane] = useState(false);
   const [pxPerSec, setPxPerSec] = useState(80); // continuous zoom (px per second on the ruler).
   const [viewportW, setViewportW] = useState(1200); // measured timeline viewport width (for ruler length).
+  // Unified transport (drives the single @remotion/player; the timeline cursor is a two-way slave).
+  const [playing, setPlaying] = useState(false);
+  const [curFrame, setCurFrame] = useState(0);   // throttled, for the m:ss readout
+  const [scrubOn, setScrubOn] = useState(true);  // release-preview scrub audio on/off
+  // Persistence: Layer-1 localStorage autosave (crash/nav net) + Layer-2 named brain projects.
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState('Untitled edit');
+  const [projects, setProjects] = useState<TimelineMeta[]>([]);
+  const [openProjects, setOpenProjects] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [restored, setRestored] = useState(false);
+  const restoredRef = useRef(false);
 
   const playerRef = useRef<PlayerRef>(null);
   const timelineState = useRef<TimelineState>(null);
+  const draggingCursorRef = useRef(false);        // true while the user drags the playhead (don't fight it)
+  const scrubTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readoutFrameRef = useRef(0);              // last frame we pushed to the readout (throttle)
   const widgetWrapRef = useRef<HTMLDivElement>(null);
   const scrollLeftRef = useRef(0);            // live horizontal scroll (from the widget's onScroll)
   const pendingScrollRef = useRef<number | null>(null); // scroll to apply AFTER a zoom re-render
@@ -166,27 +182,112 @@ export const StudioVideoEditorNLE: FC = () => {
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
 
-  // Drive the timeline playhead from the preview player: as @remotion/player plays or seeks, move the
-  // widget cursor to the same time (frame → seconds). Both are imperative refs → no React re-render.
+  // The player is the single playback clock. As it plays/seeks, move the widget cursor to match (unless
+  // the user is dragging the cursor) and keep a throttled frame for the m:ss readout + the play/pause
+  // state for the transport. Cursor motion is imperative (no re-render); the readout updates ~4×/s.
   useEffect(() => {
     let raf = 0;
     let player: PlayerRef | null = null;
     const onFrame = (e: { detail?: { frame?: number } }) => {
-      try { timelineState.current?.setTime((e.detail?.frame ?? 0) / fps); } catch { /* widget not ready */ }
+      const f = e.detail?.frame ?? 0;
+      if (!draggingCursorRef.current) { try { timelineState.current?.setTime(f / fps); } catch { /* not ready */ } }
+      if (Math.abs(f - readoutFrameRef.current) >= Math.max(1, Math.round(fps / 4))) { readoutFrameRef.current = f; setCurFrame(f); }
     };
+    const onPlay = () => setPlaying(true);
+    const onStop = () => setPlaying(false);
     const attach = () => {
       player = playerRef.current;
-      if (player) player.addEventListener('frameupdate', onFrame);
-      else raf = requestAnimationFrame(attach); // player mounts a tick later
+      if (player) {
+        player.addEventListener('frameupdate', onFrame);
+        player.addEventListener('play', onPlay);
+        player.addEventListener('pause', onStop);
+        player.addEventListener('ended', onStop);
+      } else raf = requestAnimationFrame(attach); // player mounts a tick later
     };
     attach();
-    return () => { cancelAnimationFrame(raf); try { player?.removeEventListener('frameupdate', onFrame); } catch { /* unmounted */ } };
+    return () => {
+      cancelAnimationFrame(raf);
+      try { player?.removeEventListener('frameupdate', onFrame); player?.removeEventListener('play', onPlay); player?.removeEventListener('pause', onStop); player?.removeEventListener('ended', onStop); } catch { /* unmounted */ }
+    };
   }, [fps]);
+
+  // ── Transport (drives the player) ──────────────────────────────────────────────────────────────
+  const seekPlayer = useCallback((frame: number) => { try { playerRef.current?.seekTo(Math.max(0, Math.round(frame))); } catch { /* not ready */ } }, []);
+  const togglePlay = useCallback(() => { const p = playerRef.current; if (!p) return; if (playing) p.pause(); else p.play(); }, [playing]);
+  const stopPlayback = useCallback(() => { const p = playerRef.current; if (!p) return; try { p.pause(); p.seekTo(0); } catch { /* not ready */ } }, []);
+  const toStart = useCallback(() => seekPlayer(0), [seekPlayer]);
+
+  // Release-preview scrub: after the playhead lands, play a short audible burst from there, then park.
+  const scrubPreview = useCallback((frame: number) => {
+    const p = playerRef.current;
+    if (!p || !scrubOn || playing) return;
+    if (scrubTimerRef.current) clearTimeout(scrubTimerRef.current);
+    try { p.seekTo(Math.max(0, Math.round(frame))); p.play(); } catch { return; }
+    scrubTimerRef.current = setTimeout(() => { try { p.pause(); p.seekTo(Math.max(0, Math.round(frame))); } catch { /* gone */ } }, 420);
+  }, [scrubOn, playing]);
+
+  // Two-way sync: dragging/clicking the timeline cursor seeks the player (the missing half — otherwise
+  // play resumes at the old position). During a drag we suppress the frameupdate→setTime feedback.
+  const onCursorDragStart = useCallback(() => { draggingCursorRef.current = true; }, []);
+  const onCursorDrag = useCallback((time: number) => { seekPlayer(time * fps); }, [seekPlayer, fps]);
+  const onCursorDragEnd = useCallback((time: number) => { draggingCursorRef.current = false; seekPlayer(time * fps); scrubPreview(time * fps); }, [seekPlayer, scrubPreview, fps]);
 
   // Stable ruler-label renderer (m:ss) — an inline fn here would re-mount the widget every render.
   const renderScale = useCallback((sec: number) => <span className="tabular-nums">{fmtClock(sec)}</span>, []);
   // Stable onScroll — records scroll to a ref (no setState, so no re-render/loop).
   const onWidgetScroll = useCallback((p: { scrollLeft: number }) => { scrollLeftRef.current = p.scrollLeft; }, []);
+
+  // ── Layer 1: localStorage autosave (crash/navigation net) ──────────────────────────────────────
+  const AUTOSAVE_KEY = `reinvestorhub:nle:autosave:${brandKitId}`;
+  useEffect(() => { // debounced write on every edit
+    if (typeof window === 'undefined') return;
+    const t = setTimeout(() => {
+      try { window.localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ edl, projectId, projectName, at: Date.now() })); } catch { /* quota / disabled */ }
+    }, 700);
+    return () => clearTimeout(t);
+  }, [edl, projectId, projectName, AUTOSAVE_KEY]);
+  useEffect(() => { // restore once on mount if the store is empty but an autosave exists
+    if (typeof window === 'undefined' || restoredRef.current) return;
+    restoredRef.current = true;
+    try {
+      const raw = window.localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { edl?: TimelineEDL; projectId?: string; projectName?: string };
+      const savedClips = (saved?.edl?.tracks || []).reduce((n, t) => n + (t.clips?.length || 0), 0);
+      const curClips = edl.tracks.reduce((n, t) => n + t.clips.length, 0);
+      if (savedClips > 0 && curClips === 0 && saved.edl) {
+        dispatch({ type: 'SET_TIMELINE', timeline: saved.edl });
+        if (saved.projectId) setProjectId(saved.projectId);
+        if (saved.projectName) setProjectName(saved.projectName);
+        setRestored(true);
+      }
+    } catch { /* ignore corrupt autosave */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Layer 2: named brain projects ──────────────────────────────────────────────────────────────
+  const loadProjects = useCallback(() => { listTimelines(brandKitId).then((r) => setProjects(r.timelines || [])).catch(() => {}); }, [brandKitId]);
+  useEffect(() => { loadProjects(); }, [loadProjects]);
+  const saveProject = useCallback(async (asNew: boolean) => {
+    setSaveState('saving'); setError(null);
+    try {
+      const name = asNew ? (window.prompt('Name this edit:', projectId ? `${projectName} copy` : projectName) || projectName) : projectName;
+      const meta = await saveTimeline({ id: asNew ? undefined : (projectId || undefined), name, brandKitId, edl, adId: state.activeAdId || null });
+      setProjectId(meta.id); setProjectName(meta.name); setSaveState('saved'); loadProjects();
+      setTimeout(() => setSaveState('idle'), 1500);
+    } catch (e) { setError((e as Error)?.message ?? String(e)); setSaveState('idle'); }
+  }, [projectId, projectName, brandKitId, edl, state.activeAdId, loadProjects]);
+  const openProject = useCallback(async (id: string) => {
+    setError(null); setOpenProjects(false);
+    try {
+      const rec = await getTimeline(id);
+      dispatch({ type: 'SET_TIMELINE', timeline: rec.edl });
+      setProjectId(rec.id); setProjectName(rec.name); setSelectedClipId(null); setRenderUrl(null); setRestored(false);
+    } catch (e) { setError((e as Error)?.message ?? String(e)); }
+  }, [dispatch]);
+  const deleteProject = useCallback(async (id: string) => {
+    try { await deleteTimeline(id); if (projectId === id) { setProjectId(null); setProjectName('Untitled edit'); } loadProjects(); }
+    catch (e) { setError((e as Error)?.message ?? String(e)); }
+  }, [projectId, loadProjects]);
 
   // Source bins + export formats.
   useEffect(() => { listVideoLibrary(brandKitId).then((l) => setClips(l.clips)).catch(() => {}); }, [brandKitId]);
@@ -411,9 +512,10 @@ export const StudioVideoEditorNLE: FC = () => {
     const up = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
-      if (!moved) { // plain click on the ruler → seek both the widget cursor and the preview player
+      if (!moved) { // plain click on the ruler → seek the cursor + the player, and preview-scrub
         timelineState.current?.setTime(anchorTime);
-        try { playerRef.current?.seekTo(Math.round(anchorTime * fps)); } catch { /* player not ready */ }
+        seekPlayer(anchorTime * fps);
+        scrubPreview(anchorTime * fps);
       }
     };
     document.addEventListener('pointermove', move);
@@ -448,7 +550,7 @@ export const StudioVideoEditorNLE: FC = () => {
     try { await addObject({ adId: state.activeAdId, type: 'clip', id }); setAdded(true); } catch { /* keep resilient */ }
   }, [renderUrl, state.activeAdId]);
 
-  const newTimeline = () => { dispatch({ type: 'SET_TIMELINE', timeline: emptyEDL({ fps }) }); setSelectedClipId(null); setRenderUrl(null); };
+  const newTimeline = () => { dispatch({ type: 'SET_TIMELINE', timeline: emptyEDL({ fps }) }); setSelectedClipId(null); setRenderUrl(null); setProjectId(null); setProjectName('Untitled edit'); setRestored(false); };
 
   const addText = useCallback(() => {
     const tTrack = edl.tracks.find((t) => t.kind === 'text') || edl.tracks[edl.tracks.length - 1];
@@ -469,10 +571,46 @@ export const StudioVideoEditorNLE: FC = () => {
       {/* Toolbar */}
       <div className={card + ' px-[12px] py-[10px] flex flex-wrap items-center gap-[10px]'}>
         <span className="text-[14px] font-[700] text-btnText">🎬 Video Editor</span>
-        <span className="text-[11px] text-textItemBlur">{edl.tracks.reduce((n, t) => n + t.clips.length, 0)} clips · {(durationInFrames / fps).toFixed(1)}s</span>
+        <span className="text-[11px] text-textItemBlur">{edl.tracks.reduce((n, t) => n + t.clips.length, 0)} clips</span>
+        {/* Unified transport — the single playback control (drives the player; the timeline cursor follows) */}
+        <div className="flex items-center gap-[3px] ml-[2px]">
+          <button type="button" onClick={toStart} title="To start" className="h-[32px] w-[30px] rounded-[8px] border border-newBorder text-[12px] text-btnText hover:bg-boxHover">⏮</button>
+          <button type="button" onClick={togglePlay} title={playing ? 'Pause' : 'Play'} className="h-[32px] w-[36px] rounded-[8px] bg-ai text-white text-[13px]">{playing ? '⏸' : '▶'}</button>
+          <button type="button" onClick={stopPlayback} title="Stop (to start)" className="h-[32px] w-[30px] rounded-[8px] border border-newBorder text-[12px] text-btnText hover:bg-boxHover">⏹</button>
+          <span className="text-[11px] text-textItemBlur tabular-nums ml-[4px]">{fmtClock(curFrame / fps)} / {fmtClock(durationInFrames / fps)}</span>
+          <button type="button" onClick={() => setScrubOn((v) => !v)} title="Play a short audio preview when you move the playhead"
+            className={'h-[32px] px-[8px] rounded-[8px] border text-[11px] font-[600] ml-[4px] ' + (scrubOn ? 'border-ai text-btnText bg-ai/10' : 'border-newBorder text-textItemBlur hover:text-btnText')}>🔊 Scrub</button>
+        </div>
         <button type="button" onClick={splitAtCursor} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover">✂ Split</button>
         <button type="button" onClick={addText} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover">+ Text</button>
         <button type="button" onClick={newTimeline} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">New</button>
+        {/* Projects — Save (Layer-2 named brain project) + Open picker. Autosave (Layer-1) is silent. */}
+        <span className="text-[11px] text-textItemBlur max-w-[130px] truncate" title={projectName}>{projectName}</span>
+        <button type="button" onClick={() => saveProject(false)} disabled={saveState === 'saving'}
+          className="h-[32px] px-[10px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover disabled:opacity-50">
+          {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved ✓' : '💾 Save'}
+        </button>
+        <div className="relative">
+          <button type="button" onClick={() => { setOpenProjects((v) => !v); loadProjects(); }}
+            className="h-[32px] px-[8px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">Open ▾</button>
+          {openProjects && (
+            <div className="absolute z-30 left-0 top-[36px] w-[260px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[6px] flex flex-col gap-[3px] shadow-lg max-h-[50vh] overflow-y-auto">
+              <button type="button" onClick={() => { setOpenProjects(false); saveProject(true); }}
+                className="text-left px-[8px] py-[6px] rounded-[6px] text-[12px] text-btnText hover:bg-ai/10">＋ Save as a new edit</button>
+              <div className="border-t border-newBorder my-[2px]" />
+              {projects.map((p) => (
+                <div key={p.id} className={'flex items-center gap-[4px] rounded-[6px] px-[6px] py-[5px] ' + (p.id === projectId ? 'bg-ai/10' : 'hover:bg-boxHover')}>
+                  <button type="button" onClick={() => openProject(p.id)} className="flex-1 min-w-0 text-left">
+                    <span className="block text-[12px] text-btnText truncate">{p.name}</span>
+                    <span className="block text-[10px] text-textItemBlur tabular-nums">{p.clips} clip{p.clips === 1 ? '' : 's'} · {p.durationS}s</span>
+                  </button>
+                  <button type="button" onClick={() => deleteProject(p.id)} title="Delete edit" className="text-[11px] text-textItemBlur hover:text-red-400 px-[2px]">✕</button>
+                </div>
+              ))}
+              {projects.length === 0 && <span className="text-[11px] text-textItemBlur px-[8px] py-[6px]">No saved edits yet.</span>}
+            </div>
+          )}
+        </div>
         <span className="ml-auto" />
         <label className="flex items-center gap-[6px] text-[12px] text-textItemBlur">Format
           <select value={format} onChange={(e) => setFormat(e.target.value)} className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText">
@@ -485,6 +623,13 @@ export const StudioVideoEditorNLE: FC = () => {
         </button>
       </div>
       {error && <div className="text-[12px] text-red-400">{error}</div>}
+      {restored && (
+        <div className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
+          <span>↩ Restored your last unsaved edit.</span>
+          <button type="button" onClick={() => setRestored(false)} className="text-textItemBlur hover:text-btnText">Dismiss</button>
+          <button type="button" onClick={() => { newTimeline(); }} className="text-textItemBlur hover:text-btnText underline decoration-dotted">Start fresh</button>
+        </div>
+      )}
 
       {/* Top region: Library (left) · Canvas (center) · Inspector (right) */}
       <div className="flex flex-col lg:flex-row gap-[12px]">
@@ -620,7 +765,7 @@ export const StudioVideoEditorNLE: FC = () => {
               compositionWidth={edl.width}
               compositionHeight={edl.height}
               style={playerStyle}
-              controls
+              clickToPlay={false}
               acknowledgeRemotionLicense
             />
           </div>
@@ -798,6 +943,9 @@ export const StudioVideoEditorNLE: FC = () => {
             maxScaleCount={maxScaleCount}
             getScaleRender={renderScale}
             onScroll={onWidgetScroll}
+            onCursorDragStart={onCursorDragStart}
+            onCursorDrag={onCursorDrag}
+            onCursorDragEnd={onCursorDragEnd}
             onChange={onWidgetChange}
             onClickAction={(_e, { action }: { action: TimelineAction }) => setSelectedClipId(action.id)}
             getActionRender={(action: TimelineAction, row: TimelineRow) => {
