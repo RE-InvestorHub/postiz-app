@@ -1132,9 +1132,9 @@ export function buildStudioCapabilities(
       namespace: 'synthetic',
       label: 'Cast a synthetic avatar with a script → a clip in the Video Library (SPENDS)',
       params: ['synthId', 'script', 'aspectRatio', 'resolution'],
-      handler: async (p: { synthId?: string; script?: string; aspectRatio?: string; resolution?: string } = {}) => {
+      handler: async (p: { synthId?: string; script?: string; aspectRatio?: string; resolution?: string; engine?: string } = {}) => {
         if (!p.synthId || !p.script) return;
-        const r = await synthClient.castAndWait({ synthId: p.synthId, script: p.script, aspectRatio: p.aspectRatio, resolution: p.resolution });
+        const r = await synthClient.castAndWait({ synthId: p.synthId, script: p.script, aspectRatio: p.aspectRatio, resolution: p.resolution, engine: p.engine });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh'));
           window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
@@ -1162,6 +1162,25 @@ export function buildStudioCapabilities(
       handler: async (p: { synthId?: string; voiceId?: string; voiceLabel?: string } = {}) => {
         if (!p.synthId || !p.voiceId) return;
         const r = await synthClient.setSynthVoice(p.synthId, p.voiceId, p.voiceLabel);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        return r;
+      },
+    },
+    {
+      id: 'synthetic.listEngines',
+      namespace: 'synthetic',
+      label: 'List the selectable avatar cast engines (HeyGen + fal.ai)',
+      params: [],
+      handler: async () => synthClient.listAvatarEngines(),
+    },
+    {
+      id: 'synthetic.setEngine',
+      namespace: 'synthetic',
+      label: 'Set a synthetic avatar\'s cast engine — the model selector (no spend)',
+      params: ['synthId', 'engine'],
+      handler: async (p: { synthId?: string; engine?: string } = {}) => {
+        if (!p.synthId || !p.engine) return;
+        const r = await synthClient.setSynthEngine(p.synthId, p.engine);
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
         return r;
       },

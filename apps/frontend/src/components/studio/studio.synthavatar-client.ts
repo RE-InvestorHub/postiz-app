@@ -20,6 +20,13 @@ export interface SoulAnchor {
   thumb: string | null;
 }
 
+export interface AvatarEngine {
+  id: string;
+  label: string;
+  vendor: string;
+  note?: string;
+}
+
 export interface SynthAvatar {
   synth_id: string;
   name: string;
@@ -30,6 +37,7 @@ export interface SynthAvatar {
   voice_label: string;
   brand_kit_id: string;
   aspect_ratio: string;
+  engine: string;
   portrait_path: string | null;
   portrait_cdn_url: string | null;
   portrait_url: string | null;
@@ -80,6 +88,16 @@ export function listSoulAnchors(brandKitId?: string): Promise<SoulAnchor[]> {
   return req<SoulAnchor[]>(`/synthetic-avatar/anchors${qs}`);
 }
 
+/** The selectable cast engines (HeyGen + fal.ai) for the model selector. */
+export function listAvatarEngines(): Promise<AvatarEngine[]> {
+  return req<AvatarEngine[]>('/synthetic-avatar/engines');
+}
+
+/** Set an avatar's default cast engine (the model selector). */
+export function setSynthEngine(synthId: string, engine: string): Promise<SynthAvatar> {
+  return post<SynthAvatar>('/synthetic-avatar/engine', { synthId, engine });
+}
+
 /** The brand's registered synthetic avatars. */
 export function listSynthAvatars(brandKitId?: string, status?: string): Promise<SynthAvatar[]> {
   const p = new URLSearchParams();
@@ -120,6 +138,8 @@ export interface CastPayload {
   script: string;
   aspectRatio?: string;
   resolution?: string;
+  /** Override the avatar's selected engine for this cast (heygen | omnihuman | kling). */
+  engine?: string;
 }
 
 /**

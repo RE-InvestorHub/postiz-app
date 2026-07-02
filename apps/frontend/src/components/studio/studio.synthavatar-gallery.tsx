@@ -13,7 +13,10 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import {
   SynthAvatar,
   CastResult,
+  AvatarEngine,
   listSynthAvatars,
+  listAvatarEngines,
+  setSynthEngine,
   castAndWait,
   reshootPortrait,
   setSynthVoice,
@@ -21,7 +24,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.synthavatar-client';
 import { listVoiceLibrary, VoiceOption } from '@gitroom/frontend/components/studio/studio.voice-client';
 
-const AvatarCard: FC<{ avatar: SynthAvatar; onChanged: () => void }> = ({ avatar, onChanged }) => {
+const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: () => void }> = ({ avatar, engines, onChanged }) => {
   const toaster = useToaster();
   const [script, setScript] = useState('');
   const [casting, setCasting] = useState(false);
@@ -33,9 +36,10 @@ const AvatarCard: FC<{ avatar: SynthAvatar; onChanged: () => void }> = ({ avatar
 
   const doCast = useCallback(async () => {
     if (!script.trim() || casting) return;
+    const engineLabel = engines.find((x) => x.id === avatar.engine)?.label || avatar.engine;
     const ok = typeof window === 'undefined' ? true : window.confirm(
       `Cast "${avatar.name}" saying this line?\n\nThis spends voice + lip-sync credits ` +
-      `(short lines ≤10s use Kling; longer lines use Hedra). The finished clip is saved to your Video Library.`
+      `(engine: ${engineLabel}). The finished clip is saved to your Video Library.`
     );
     if (!ok) return;
     setCasting(true);
@@ -56,7 +60,7 @@ const AvatarCard: FC<{ avatar: SynthAvatar; onChanged: () => void }> = ({ avatar
     } finally {
       setCasting(false);
     }
-  }, [script, casting, avatar, toaster, onChanged]);
+  }, [script, casting, avatar, engines, toaster, onChanged]);
 
   const run = useCallback(async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
@@ -95,6 +99,23 @@ const AvatarCard: FC<{ avatar: SynthAvatar; onChanged: () => void }> = ({ avatar
           <span className="text-[11px] text-textItemBlur truncate">Voice: {avatar.voice_label || avatar.voice_id}</span>
         </div>
       </div>
+
+      {/* Model selector — HeyGen + fal.ai engines only */}
+      <label className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
+        <span className="shrink-0">Model</span>
+        <select
+          value={avatar.engine}
+          disabled={busy || casting}
+          onChange={(e) => run(() => setSynthEngine(avatar.synth_id, e.target.value))}
+          title={engines.find((x) => x.id === avatar.engine)?.note}
+          className="flex-1 min-w-0 h-[30px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText disabled:opacity-50"
+        >
+          {engines.length === 0 && <option value={avatar.engine}>{avatar.engine}</option>}
+          {engines.map((eng) => (
+            <option key={eng.id} value={eng.id}>{eng.label} · {eng.vendor}</option>
+          ))}
+        </select>
+      </label>
 
       {/* Cast */}
       <div className="flex flex-col gap-[8px]">
@@ -157,7 +178,12 @@ const AvatarCard: FC<{ avatar: SynthAvatar; onChanged: () => void }> = ({ avatar
 
 export const StudioSynthAvatarGallery: FC<{ brandKitId: string; reloadSignal?: number }> = ({ brandKitId, reloadSignal }) => {
   const [avatars, setAvatars] = useState<SynthAvatar[] | null>(null);
+  const [engines, setEngines] = useState<AvatarEngine[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listAvatarEngines().then(setEngines).catch(() => setEngines([]));
+  }, []);
 
   const load = useCallback(() => {
     setError(null);
@@ -193,7 +219,7 @@ export const StudioSynthAvatarGallery: FC<{ brandKitId: string; reloadSignal?: n
       <h3 className="text-[13px] font-[600] text-btnText">Synthetic avatars</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-[12px]">
         {avatars.map((a) => (
-          <AvatarCard key={a.synth_id} avatar={a} onChanged={load} />
+          <AvatarCard key={a.synth_id} avatar={a} engines={engines} onChanged={load} />
         ))}
       </div>
     </div>

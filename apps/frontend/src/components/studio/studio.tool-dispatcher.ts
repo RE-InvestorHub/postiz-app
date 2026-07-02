@@ -172,7 +172,9 @@ export function requiresApproval(toolName: string): boolean {
     // are OMITTED (they spend image / voice / lip-sync credits) so they stay GATED.
     'synthetic.listSoulAnchors',
     'synthetic.list',
+    'synthetic.listEngines',
     'synthetic.setVoice',
+    'synthetic.setEngine',
     'synthetic.archive',
     // Script (Audio writer's room) — ALL structured-data edits / advisory reads, NO spend → auto.
     // (Plan 1 renders nothing. Multi-voice render lands in Plan 2 and WILL be gated.)
