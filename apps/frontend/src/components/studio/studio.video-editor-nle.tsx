@@ -119,9 +119,21 @@ export const StudioVideoEditorNLE: FC = () => {
   const [confirmGen, setConfirmGen] = useState<null | 'sfx' | 'music'>(null);
   const [peaks, setPeaks] = useState<Record<string, number[]>>({});
   const [addingLane, setAddingLane] = useState(false);
+  const [scaleWidth, setScaleWidth] = useState(80); // px per second (scale=1) — the zoom level.
 
   const playerRef = useRef<PlayerRef>(null);
   const timelineState = useRef<TimelineState>(null);
+  const widgetWrapRef = useRef<HTMLDivElement>(null);
+  const scrollLeftRef = useRef(0);            // live horizontal scroll (from the widget's onScroll)
+  const pendingScrollRef = useRef<number | null>(null); // scroll to apply AFTER a zoom re-render
+
+  // After a zoom changes scaleWidth, restore the scroll so the anchored time stays under the cursor.
+  useEffect(() => {
+    if (pendingScrollRef.current != null && timelineState.current) {
+      timelineState.current.setScrollLeft(Math.max(0, pendingScrollRef.current));
+      pendingScrollRef.current = null;
+    }
+  }, [scaleWidth]);
 
   // Source bins + export formats.
   useEffect(() => { listVideoLibrary(brandKitId).then((l) => setClips(l.clips)).catch(() => {}); }, [brandKitId]);
@@ -161,6 +173,10 @@ export const StudioVideoEditorNLE: FC = () => {
   // Fit the timeline to exactly its lanes (ruler + one ROW_H per track) so there's no dead space;
   // grows automatically as tracks are added/removed.
   const timelineHeight = RULER_H + edl.tracks.length * ROW_H;
+  // Ruler length (seconds, scale=1): always a comfortable pad past the content, and it can grow to a
+  // 5-minute (300s) ceiling as clips are placed/dragged out — the excess just scrolls off-screen.
+  const TIMELINE_MAX_SEC = 300;
+  const minScaleCount = Math.min(TIMELINE_MAX_SEC, Math.max(40, Math.ceil(durationInFrames / fps) + 20));
 
   const selected = useMemo(() => {
     for (const t of edl.tracks) { const c = t.clips.find((x) => x.id === selectedClipId); if (c) return { clip: c, track: t }; }
@@ -265,6 +281,34 @@ export const StudioVideoEditorNLE: FC = () => {
     const id = `${role || kind}-${Math.random().toString(36).slice(2, 6)}`;
     dispatch({ type: 'TL_ADD_TRACK', track: { id, kind, ...(role ? { role } : {}), clips: [] } });
     setAddingLane(false);
+  };
+
+  // Ruler zoom: click+hold on the time ruler, drag LEFT to zoom in / RIGHT to zoom out. The time under
+  // the initial click stays put (anchored centre) by compensating scroll. A plain click (no drag) seeks.
+  const START_LEFT = 20;
+  const onRulerPointerDown = (e: React.PointerEvent) => {
+    const wrap = widgetWrapRef.current;
+    if (!wrap) return;
+    e.preventDefault();
+    const anchorScreenX = e.clientX - wrap.getBoundingClientRect().left; // px from the widget's left edge
+    const scaleAtDown = scaleWidth;                                       // px/sec at grab
+    const anchorTime = Math.max(0, (anchorScreenX - START_LEFT + scrollLeftRef.current) / scaleAtDown);
+    const startX = e.clientX;
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (Math.abs(dx) > 2) moved = true;
+      const nw = Math.max(16, Math.min(400, scaleAtDown * Math.exp(-dx * 0.006))); // left→in, right→out
+      pendingScrollRef.current = START_LEFT + anchorTime * nw - anchorScreenX;      // keep anchorTime fixed
+      setScaleWidth(nw);
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      if (!moved) timelineState.current?.setTime(anchorTime); // plain click on the ruler → seek there
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
   };
 
   const onExport = useCallback(async () => {
@@ -535,7 +579,7 @@ export const StudioVideoEditorNLE: FC = () => {
       </div>
 
       {/* Timeline — lane labels + multi-track lanes on one ruler */}
-      <div className={card + ' p-[8px] overflow-hidden flex'}>
+      <div className={card + ' p-[8px] flex'}>
         {/* Lane labels + controls (aligned to the widget's rows; top spacer clears its time ruler) */}
         <div className="shrink-0 w-[112px] pr-[6px]" style={{ paddingTop: RULER_H }}>
           {edl.tracks.map((t, i) => (
@@ -559,7 +603,7 @@ export const StudioVideoEditorNLE: FC = () => {
             <button type="button" onClick={() => setAddingLane((v) => !v)} title="Add a track"
               className="h-[20px] w-full rounded-[5px] border border-dashed border-newBorder text-[11px] text-textItemBlur hover:text-btnText hover:border-ai">＋ Track</button>
             {addingLane && (
-              <div className="absolute z-10 left-0 top-[24px] w-[128px] rounded-[6px] border border-newBorder bg-newBgColorInner p-[4px] flex flex-col gap-[2px] shadow-lg">
+              <div className="absolute z-30 left-0 bottom-[26px] w-[128px] rounded-[6px] border border-newBorder bg-newBgColorInner p-[4px] flex flex-col gap-[2px] shadow-lg">
                 {([['video', undefined, 'Video'], ['audio', 'dialogue', 'Dialogue'], ['audio', 'sfx', 'SFX'], ['audio', 'music', 'Music'], ['text', undefined, 'Text']] as Array<[Track['kind'], AudioRole | undefined, string]>).map(([k, r, lbl]) => (
                   <button key={lbl} type="button" onClick={() => addLane(k, r)}
                     className="text-left px-[6px] py-[4px] rounded-[4px] text-[11px] text-btnText hover:bg-ai/10 flex items-center gap-[6px]">
@@ -570,7 +614,10 @@ export const StudioVideoEditorNLE: FC = () => {
             )}
           </div>
         </div>
-        <div className="flex-1 min-w-0" style={{ height: timelineHeight }}>
+        <div ref={widgetWrapRef} className="flex-1 min-w-0 relative" style={{ height: timelineHeight }}>
+          {/* Zoom strip over the time ruler — drag left = zoom in, right = zoom out (anchored at the click). */}
+          <div onPointerDown={onRulerPointerDown} title="Drag left to zoom in, right to zoom out"
+            className="absolute top-0 left-0 right-0 z-20 cursor-ew-resize" style={{ height: RULER_H }} />
           <TimelineWidget
             ref={timelineState}
             editorData={rows}
@@ -581,8 +628,11 @@ export const StudioVideoEditorNLE: FC = () => {
             rowHeight={ROW_H}
             style={{ height: timelineHeight, width: '100%' }}
             scale={1}
-            scaleWidth={80}
-            startLeft={20}
+            scaleWidth={scaleWidth}
+            startLeft={START_LEFT}
+            minScaleCount={minScaleCount}
+            maxScaleCount={TIMELINE_MAX_SEC}
+            onScroll={(p: { scrollLeft: number }) => { scrollLeftRef.current = p.scrollLeft; }}
             onChange={onWidgetChange}
             onClickAction={(_e, { action }: { action: TimelineAction }) => setSelectedClipId(action.id)}
             getActionRender={(action: TimelineAction, row: TimelineRow) => {
