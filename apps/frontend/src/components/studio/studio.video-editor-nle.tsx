@@ -142,16 +142,29 @@ export const StudioVideoEditorNLE: FC = () => {
     }
   }, [pxPerSec]);
 
-  // Track the timeline viewport width so the ruler length can fill it at any zoom.
+  // Track the timeline viewport width so the ruler length can fill it at any zoom. Guarded + rAF-batched:
+  // only commit a meaningful (>=4px) change so a scrollbar toggle can't oscillate into a render loop.
   useEffect(() => {
     const el = widgetWrapRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const apply = () => setViewportW(el.clientWidth || 1200);
+    let raf = 0;
+    const apply = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const w = el.clientWidth || 1200;
+        setViewportW((prev) => (Math.abs(w - prev) >= 4 ? w : prev));
+      });
+    };
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
+
+  // Stable ruler-label renderer (m:ss) — an inline fn here would re-mount the widget every render.
+  const renderScale = useCallback((sec: number) => <span className="tabular-nums">{fmtClock(sec)}</span>, []);
+  // Stable onScroll — records scroll to a ref (no setState, so no re-render/loop).
+  const onWidgetScroll = useCallback((p: { scrollLeft: number }) => { scrollLeftRef.current = p.scrollLeft; }, []);
 
   // Source bins + export formats.
   useEffect(() => { listVideoLibrary(brandKitId).then((l) => setClips(l.clips)).catch(() => {}); }, [brandKitId]);
@@ -653,7 +666,6 @@ export const StudioVideoEditorNLE: FC = () => {
             ref={timelineState}
             editorData={rows}
             effects={EFFECTS}
-            autoScroll
             gridSnap
             dragLine
             rowHeight={ROW_H}
@@ -664,8 +676,8 @@ export const StudioVideoEditorNLE: FC = () => {
             startLeft={START_LEFT}
             minScaleCount={minScaleCount}
             maxScaleCount={maxScaleCount}
-            getScaleRender={(sec: number) => <span className="tabular-nums">{fmtClock(sec)}</span>}
-            onScroll={(p: { scrollLeft: number }) => { scrollLeftRef.current = p.scrollLeft; }}
+            getScaleRender={renderScale}
+            onScroll={onWidgetScroll}
             onChange={onWidgetChange}
             onClickAction={(_e, { action }: { action: TimelineAction }) => setSelectedClipId(action.id)}
             getActionRender={(action: TimelineAction, row: TimelineRow) => {
