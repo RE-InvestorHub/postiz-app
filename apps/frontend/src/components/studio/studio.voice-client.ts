@@ -69,7 +69,8 @@ export function latestVOForScript(scriptId: string): Promise<{ id: string | null
 // ── Plan 2 — multi-voice render + Audio Library + Voice Mirror ────────────────
 
 export interface RenderCost { lines: number; chars: number; credits: number; words: number; estSeconds: number; voicesUsed: string[] }
-export interface AudioLineSpan { lineId: string; beatId?: string; characterId: string | null; characterName?: string; voiceId: string | null; tone?: string; text?: string; start: number; end: number }
+export interface AudioWordSpan { word: string; start: number; end: number }
+export interface AudioLineSpan { lineId: string; beatId?: string; characterId: string | null; characterName?: string; voiceId: string | null; tone?: string; text?: string; start: number; end: number; words?: AudioWordSpan[] }
 export interface AudioTrack {
   id: string; url: string; stage: string; scriptId: string | null; scriptName?: string | null;
   brandKitId: string; provenance?: string | null; durationS?: number | null; voicesUsed?: string[] | null;

@@ -32,7 +32,9 @@ export interface ClipBase {
   from: number;
   /** Length on the timeline, in frames. */
   durationInFrames: number;
-  /** Optional cross-fade out at the clip's tail (frames). The next clip fades in to match. */
+  /** Optional entrance transition at the clip's HEAD (fade/dissolve/slide/wipe/zoomBlur/iris/cube). */
+  transitionIn?: { type: string; durationInFrames: number };
+  /** Optional exit transition at the clip's TAIL (same types). */
   transitionOut?: { type: string; durationInFrames: number };
 }
 
@@ -86,8 +88,12 @@ export interface CaptionClip extends ClipBase {
   kind: 'captions';
   /** Word-level tokens (from ElevenLabs alignment → @remotion/captions). */
   tokens: CaptionToken[];
-  /** Highlight style id (colored | scale | background). */
+  /** Highlight style id: 'pop' (active word scales up — default) | 'flat' (no scale). */
   styleId?: string;
+  /** Active-word highlight background (hex). '' or 'none' = no background pill (just the popped word). */
+  bgColor?: string;
+  /** The dialogue clip these captions were generated from, so the inspector can find + edit them. */
+  fromClipId?: string;
 }
 
 export type Clip = VideoClip | AudioClip | TextClip | CaptionClip;

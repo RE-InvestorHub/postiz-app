@@ -1020,6 +1020,34 @@ export function buildStudioCapabilities(
       },
     },
     {
+      // Plan 9 — generate word-timed pop captions from a Dialogue VO clip. Reads the VO's word timing
+      // from the Audio Library, lays a caption clip on the captions lane. Edit style/bg via patchClip.
+      id: 'editor.addCaptions',
+      namespace: 'editor',
+      label: 'Add word-timed pop captions from a dialogue clip',
+      params: ['fromClipId', 'bgColor', 'styleId'],
+      handler: async (p: { fromClipId?: string; bgColor?: string; styleId?: string } = {}) => {
+        if (!p.fromClipId) return;
+        const st = getState().timeline;
+        const fps = st.fps || 30;
+        let dlg: Clip | undefined;
+        for (const t of st.tracks) { const c = t.clips.find((x) => x.id === p.fromClipId); if (c) { dlg = c; break; } }
+        if (!dlg || dlg.kind !== 'audio') return;
+        const srcId = (dlg as { srcId?: string }).srcId;
+        const lib = await voiceClient.listAudioLibrary(getState().composerBrandKitId ?? 'default').catch(() => ({ tracks: [] }));
+        const track = (lib.tracks || []).find((t) => t.id === srcId);
+        const spans = track?.lineSpans || [];
+        const inSec = ((dlg as { inPoint?: number }).inPoint ?? 0) / fps;
+        const durMs = (dlg.durationInFrames / fps) * 1000;
+        const tokens = spans.flatMap((ls) => (ls.words || []).map((w) => ({ text: String(w.word || '').trim(), startMs: Math.round((w.start - inSec) * 1000), endMs: Math.round((w.end - inSec) * 1000) }))).filter((t) => t.text && t.endMs > 0 && t.startMs < durMs);
+        if (!tokens.length) return;
+        let capTrackId = st.tracks.find((t) => t.kind === 'captions')?.id;
+        if (!capTrackId) { capTrackId = 'captions-1'; dispatch({ type: 'TL_ADD_TRACK', track: { id: capTrackId, kind: 'captions', clips: [] } }); }
+        const id = `cap_${dlg.id}_${Math.random().toString(36).slice(2, 6)}`;
+        dispatch({ type: 'TL_ADD_CLIP', trackId: capTrackId, clip: { kind: 'captions', id, from: dlg.from, durationInFrames: dlg.durationInFrames, tokens, styleId: p.styleId || 'pop', bgColor: p.bgColor ?? '#d82d7e', fromClipId: dlg.id } as Clip });
+      },
+    },
+    {
       // Render the timeline → MP4 via the (free, local) Remotion render service. A render → GATED.
       id: 'editor.render',
       namespace: 'editor',

@@ -24,31 +24,55 @@ const msToFrames = (ms: number, fps: number) => Math.round((ms / 1000) * fps);
 
 type DuckSpan = { start: number; end: number };
 
-/** Opacity for a clip: short edge fade-in + a fade-out matching `transitionOut` (default cut). */
-function useClipOpacity(durationInFrames: number, transitionOut?: { durationInFrames: number }, baseOpacity = 1): number {
+type Trans = { type?: string; durationInFrames?: number };
+type EdgeStyle = { opacity: number; transform: string; filter?: string; clipPath?: string };
+
+// A single transition's contribution at "amount" a (0 = clip fully present, 1 = fully entered/exited).
+// dir 'in' plays the effect resolving TO present; 'out' plays it leaving. Distinct look per type.
+function transDelta(type: string | undefined, a: number, dir: 'in' | 'out') {
+  const d = { opacity: 1, scaleMul: 1, txAdd: 0, blur: 0, clipPath: undefined as string | undefined };
+  switch (type) {
+    case 'fade': case 'dissolve': d.opacity = 1 - a; break;
+    case 'zoomBlur': d.opacity = 1 - a; d.scaleMul = 1 + 0.45 * a; d.blur = 18 * a; break;
+    case 'slide': d.txAdd = (dir === 'in' ? 100 : -100) * a; break;                       // in: from right, out: to left
+    case 'wipe': d.clipPath = dir === 'in' ? `inset(0 0 0 ${100 * a}%)` : `inset(0 ${100 * a}% 0 0)`; break;
+    case 'iris': d.clipPath = `circle(${(1 - a) * 75}% at 50% 50%)`; break;               // circular reveal / close
+    case 'cube': d.opacity = 1 - a * 0.55; d.scaleMul = 1 - 0.18 * a; d.txAdd = (dir === 'in' ? 70 : -70) * a; break;
+    default: d.opacity = 1 - a; break;                                                    // unknown → fade
+  }
+  return d;
+}
+
+/** Combined head + tail transition style for a clip. `cut`/absent edge = a hard cut (no effect). */
+function useEdgeTransition(
+  durationInFrames: number,
+  transitionIn: Trans | undefined,
+  transitionOut: Trans | undefined,
+  baseTransform: { x?: number; y?: number; scale?: number } | undefined,
+  baseOpacity = 1
+): EdgeStyle {
   const frame = useCurrentFrame();
-  const inLen = Math.min(8, Math.floor(durationInFrames * 0.2));
-  const outLen = transitionOut?.durationInFrames
-    ? Math.min(transitionOut.durationInFrames, Math.floor(durationInFrames * 0.5))
-    : Math.min(8, Math.floor(durationInFrames * 0.2));
-  const o = interpolate(
-    frame,
-    [0, inLen, durationInFrames - outLen, durationInFrames],
-    [0, 1, 1, 0],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
-  );
-  return o * baseOpacity;
+  const inLen = transitionIn?.durationInFrames ? Math.min(transitionIn.durationInFrames, Math.floor(durationInFrames * 0.6)) : 0;
+  const outLen = transitionOut?.durationInFrames ? Math.min(transitionOut.durationInFrames, Math.floor(durationInFrames * 0.6)) : 0;
+  const pin = inLen > 0 ? interpolate(frame, [0, inLen], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 1;
+  const pout = outLen > 0 ? interpolate(frame, [durationInFrames - outLen, durationInFrames], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 0;
+
+  const bt = baseTransform || {};
+  let opacity = baseOpacity, scaleMul = 1, txAdd = 0, blur = 0;
+  let clipPath: string | undefined;
+  if (pin < 1) { const d = transDelta(transitionIn?.type, 1 - pin, 'in'); opacity *= d.opacity; scaleMul *= d.scaleMul; txAdd += d.txAdd; blur += d.blur; if (d.clipPath) clipPath = d.clipPath; }
+  if (pout > 0) { const d = transDelta(transitionOut?.type, pout, 'out'); opacity *= d.opacity; scaleMul *= d.scaleMul; txAdd += d.txAdd; blur += d.blur; if (d.clipPath) clipPath = d.clipPath; }
+
+  const scale = (bt.scale ?? 1) * scaleMul;
+  const tx = ((bt.x ?? 0.5) - 0.5) * 100 + txAdd;
+  const ty = ((bt.y ?? 0.5) - 0.5) * 100;
+  return { opacity, transform: `translate(${tx}%, ${ty}%) scale(${scale})`, filter: blur > 0 ? `blur(${blur.toFixed(1)}px)` : undefined, clipPath };
 }
 
 const VideoClipView: React.FC<{ clip: VideoClip }> = ({ clip }) => {
-  const opacity = useClipOpacity(clip.durationInFrames, clip.transitionOut, clip.opacity ?? 1);
-  const t = clip.transform || {};
-  const scale = t.scale ?? 1;
-  // Normalized 0–1 center offsets → percentage translate.
-  const tx = ((t.x ?? 0.5) - 0.5) * 100;
-  const ty = ((t.y ?? 0.5) - 0.5) * 100;
+  const { opacity, transform, filter, clipPath } = useEdgeTransition(clip.durationInFrames, clip.transitionIn, clip.transitionOut, clip.transform, clip.opacity ?? 1);
   return (
-    <AbsoluteFill style={{ opacity, transform: `translate(${tx}%, ${ty}%) scale(${scale})` }}>
+    <AbsoluteFill style={{ opacity, transform, filter, clipPath }}>
       <OffthreadVideo
         src={clip.srcUrl}
         trimBefore={clip.inPoint ?? 0}
@@ -73,10 +97,10 @@ const AudioClipView: React.FC<{ clip: AudioClip; fps: number; duckSpans: DuckSpa
 };
 
 const TextClipView: React.FC<{ clip: TextClip }> = ({ clip }) => {
-  const opacity = useClipOpacity(clip.durationInFrames, clip.transitionOut);
+  const { opacity, transform, filter, clipPath } = useEdgeTransition(clip.durationInFrames, clip.transitionIn, clip.transitionOut, undefined, 1);
   const s = clip.style || {};
   return (
-    <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center' }}>
+    <AbsoluteFill style={{ opacity, transform, filter, clipPath, justifyContent: 'center', alignItems: 'center' }}>
       <div
         style={{
           position: 'absolute',
@@ -98,8 +122,9 @@ const TextClipView: React.FC<{ clip: TextClip }> = ({ clip }) => {
   );
 };
 
-// Self-contained word-by-word highlighted captions: shows a small window of words around the active
-// token, the active word emphasized. (T4 can swap richer styles in via the contract's styleId.)
+// Word-by-word highlighted captions: a small window of words around the active token, the active word
+// "popped" (scaled up) with an optional coloured background pill. styleId 'pop' (default) scales the
+// active word; 'flat' keeps it same-size. bgColor ('' | 'none' → no pill) tints the highlight.
 const CaptionClipView: React.FC<{ clip: CaptionClip; fps: number }> = ({ clip, fps }) => {
   const frame = useCurrentFrame();
   const tokens = clip.tokens || [];
@@ -107,7 +132,8 @@ const CaptionClipView: React.FC<{ clip: CaptionClip; fps: number }> = ({ clip, f
   if (activeIdx < 0) return null;
   const start = Math.max(0, activeIdx - 3);
   const window = tokens.slice(start, start + 7);
-  const scale = clip.styleId === 'scale';
+  const pop = (clip.styleId ?? 'pop') === 'pop';
+  const bg = clip.bgColor && clip.bgColor !== 'none' ? clip.bgColor : null;
   return (
     <AbsoluteFill style={{ justifyContent: 'flex-end', alignItems: 'center', paddingBottom: '14%' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 10, maxWidth: '84%', fontFamily: 'Helvetica, Arial, sans-serif' }}>
@@ -116,10 +142,11 @@ const CaptionClipView: React.FC<{ clip: CaptionClip; fps: number }> = ({ clip, f
           return (
             <span key={start + i} style={{
               color: isActive ? '#ffffff' : 'rgba(255,255,255,0.55)',
-              backgroundColor: isActive && clip.styleId === 'background' ? '#d82d7e' : 'transparent',
-              borderRadius: 8, padding: isActive && clip.styleId === 'background' ? '2px 10px' : 0,
-              fontSize: 60, fontWeight: 800, lineHeight: 1.1,
-              transform: isActive && scale ? 'scale(1.12)' : 'none',
+              backgroundColor: isActive && bg ? bg : 'transparent',
+              borderRadius: 10, padding: isActive && bg ? '2px 14px' : '2px 0',
+              fontSize: 60, fontWeight: 800, lineHeight: 1.15,
+              transform: isActive && pop ? 'scale(1.14)' : 'none',
+              transformOrigin: 'center bottom',
               textShadow: '0 2px 12px rgba(0,0,0,0.7)',
             }}>{t.text.trim()}</span>
           );

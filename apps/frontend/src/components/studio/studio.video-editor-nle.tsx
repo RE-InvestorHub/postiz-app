@@ -19,7 +19,7 @@ import '@xzdarcy/react-timeline-editor/dist/react-timeline-editor.css';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { Timeline as TimelineComposition } from '@gitroom/frontend/components/studio/timeline/timeline.composition';
-import { edlDuration, emptyEDL, dbToLinear, TimelineEDL, Clip, VideoClip, AudioClip, Track, AudioRole } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
+import { edlDuration, emptyEDL, dbToLinear, TimelineEDL, Clip, VideoClip, AudioClip, CaptionClip, Track, AudioRole } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 import { trackOfClip } from '@gitroom/frontend/components/studio/timeline/timeline.reducer';
 import { listVideoLibrary, BrandClip } from '@gitroom/frontend/components/studio/studio.video-client';
 import { enqueueRender, pollRenderJob, fetchFormats, FormatMeta } from '@gitroom/frontend/components/studio/studio.remotion-client';
@@ -84,15 +84,20 @@ const fmtClock = (sec: number): string => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-// Tiny inline waveform for an audio clip's timeline block. Peaks are normalized 0–1 (brain-side).
+// Scalable waveform for an audio clip's timeline block. An SVG with preserveAspectRatio="none" stretches
+// to any clip width at any zoom, so the peaks (normalized 0–1, brain-side) always read as a waveform —
+// not fat solid blocks. Center-mirrored bars.
 const WaveBars: FC<{ peaks: number[]; color: string }> = ({ peaks, color }) => {
-  const sample = peaks.length > 56 ? peaks.filter((_, i) => i % Math.ceil(peaks.length / 56) === 0) : peaks;
+  const n = peaks.length;
+  if (!n) return null;
   return (
-    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', gap: 1, padding: '0 4px', opacity: 0.9 }}>
-      {sample.map((p, i) => (
-        <div key={i} style={{ flex: 1, height: `${Math.max(6, Math.round(p * 100))}%`, background: color, borderRadius: 1 }} />
-      ))}
-    </div>
+    <svg viewBox={`0 0 ${n} 100`} preserveAspectRatio="none"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.85 }}>
+      {peaks.map((p, i) => {
+        const h = Math.max(4, p * 92);
+        return <rect key={i} x={i + 0.15} y={(100 - h) / 2} width={0.7} height={h} rx={0.3} fill={color} />;
+      })}
+    </svg>
   );
 };
 
@@ -213,7 +218,7 @@ export const StudioVideoEditorNLE: FC = () => {
   useEffect(() => {
     const need = new Set<string>();
     for (const t of edl.tracks) if (t.kind === 'audio') for (const c of t.clips) if (c.kind === 'audio' && !(c.srcId in peaks)) need.add(c.srcId);
-    need.forEach((id) => fetchAudioPeaks(id, 300).then((p) => setPeaks((m) => ({ ...m, [id]: p.peaks || [] }))).catch(() => setPeaks((m) => ({ ...m, [id]: [] }))));
+    need.forEach((id) => fetchAudioPeaks(id, 800).then((p) => setPeaks((m) => ({ ...m, [id]: p.peaks || [] }))).catch(() => setPeaks((m) => ({ ...m, [id]: [] }))));
   }, [edl, peaks]);
 
   const durationInFrames = Math.max(1, edlDuration(edl));
@@ -342,6 +347,46 @@ export const StudioVideoEditorNLE: FC = () => {
     const id = `${role || kind}-${Math.random().toString(36).slice(2, 6)}`;
     dispatch({ type: 'TL_ADD_TRACK', track: { id, kind, ...(role ? { role } : {}), clips: [] } });
     setAddingLane(false);
+  };
+
+  // ── Word-timed pop captions from a Dialogue VO clip ────────────────────────────────────────────
+  const CAPTION_BG_DEFAULT = '#d82d7e';
+  const ensureCaptionsLane = (): string => {
+    const existing = edl.tracks.find((t) => t.kind === 'captions');
+    if (existing) return existing.id;
+    const id = 'captions-1';
+    dispatch({ type: 'TL_ADD_TRACK', track: { id, kind: 'captions', clips: [] } });
+    return id;
+  };
+  const captionOf = (clipId: string): { clip: CaptionClip; trackId: string } | null => {
+    for (const t of edl.tracks) if (t.kind === 'captions') {
+      const c = t.clips.find((x) => x.kind === 'captions' && (x as CaptionClip).fromClipId === clipId);
+      if (c) return { clip: c as CaptionClip, trackId: t.id };
+    }
+    return null;
+  };
+  const addCaptionsFromClip = (clip: AudioClip) => {
+    const track = audioTracks.find((t) => t.id === clip.srcId);
+    const spans = track?.lineSpans || [];
+    const inSec = (clip.inPoint ?? 0) / fps;
+    const durMs = (clip.durationInFrames / fps) * 1000;
+    // Flatten the VO's word-level timing → caption tokens, offset into the clip's own timeline.
+    const tokens = spans.flatMap((ls) => (ls.words || []).map((w) => ({
+      text: String(w.word || '').trim(),
+      startMs: Math.round((w.start - inSec) * 1000),
+      endMs: Math.round((w.end - inSec) * 1000),
+    }))).filter((t) => t.text && t.endMs > 0 && t.startMs < durMs);
+    if (!tokens.length) { setError('No word timing on this voice-over — re-render it on the Audio tab, then add captions.'); return; }
+    const trackId = ensureCaptionsLane();
+    const id = `cap_${clip.id}_${Math.random().toString(36).slice(2, 6)}`;
+    dispatch({ type: 'TL_ADD_CLIP', trackId, clip: { kind: 'captions', id, from: clip.from, durationInFrames: clip.durationInFrames, tokens, styleId: 'pop', bgColor: CAPTION_BG_DEFAULT, fromClipId: clip.id } as CaptionClip });
+    setSelectedClipId(id);
+  };
+  const patchCaptionClip = (ref: { clip: CaptionClip; trackId: string }, patch: Partial<CaptionClip>) =>
+    dispatch({ type: 'TL_PATCH_CLIP', trackId: ref.trackId, clipId: ref.clip.id, patch: patch as Partial<Clip> });
+  const removeCaptionClip = (ref: { clip: CaptionClip; trackId: string }) => {
+    dispatch({ type: 'TL_REMOVE_CLIP', trackId: ref.trackId, clipId: ref.clip.id });
+    if (selectedClipId === ref.clip.id) setSelectedClipId(null);
   };
 
   // Ruler zoom: click+hold on the time ruler, drag LEFT to zoom in / RIGHT to zoom out. The time under
@@ -606,12 +651,12 @@ export const StudioVideoEditorNLE: FC = () => {
                     <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Gain {gain > 0 ? '+' : ''}{gain} dB</span>
                       <input type="range" min={-24} max={6} step={1} value={gain} onChange={(e) => patchSelected({ gainDb: Number(e.target.value) } as Partial<Clip>)} /></label>
                     <div className="flex gap-[8px]">
-                      <label className="flex flex-col gap-[3px] flex-1"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Fade in (s)</span>
+                      <label className="flex flex-col gap-[3px] flex-1 min-w-0"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Fade in (s)</span>
                         <input type="number" min={0} step={0.1} value={((ac.fadeInFrames ?? 0) / fps).toFixed(1)} onChange={(e) => patchSelected({ fadeInFrames: secToFrames(Number(e.target.value)) } as Partial<Clip>)}
-                          className="h-[30px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
-                      <label className="flex flex-col gap-[3px] flex-1"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Fade out (s)</span>
+                          className="h-[30px] px-[8px] w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
+                      <label className="flex flex-col gap-[3px] flex-1 min-w-0"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Fade out (s)</span>
                         <input type="number" min={0} step={0.1} value={((ac.fadeOutFrames ?? 0) / fps).toFixed(1)} onChange={(e) => patchSelected({ fadeOutFrames: secToFrames(Number(e.target.value)) } as Partial<Clip>)}
-                          className="h-[30px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
+                          className="h-[30px] px-[8px] w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
                     </div>
                     {selected.track.role === 'music' && (
                       <label className="flex items-center gap-[8px] text-[11px] font-[600] text-btnText">
@@ -619,15 +664,70 @@ export const StudioVideoEditorNLE: FC = () => {
                         Duck under dialogue
                       </label>
                     )}
+                    {selected.track.role === 'dialogue' && (() => {
+                      const cap = captionOf(ac.id);
+                      if (!cap) return (
+                        <button type="button" onClick={() => addCaptionsFromClip(ac)}
+                          className="h-[30px] rounded-[8px] bg-ai text-white text-[12px] font-[600]">＋ Add captions (Pop)</button>
+                      );
+                      const hasBg = !!cap.clip.bgColor && cap.clip.bgColor !== 'none';
+                      return (
+                        <div className="flex flex-col gap-[6px] border-t border-newBorder pt-[8px]">
+                          <span className="text-[10px] font-[600] text-textItemBlur uppercase">Captions (Pop)</span>
+                          <div className="flex items-center gap-[8px] flex-wrap">
+                            <label className="flex items-center gap-[5px] text-[11px] text-btnText">Highlight
+                              <input type="color" value={hasBg ? (cap.clip.bgColor as string) : CAPTION_BG_DEFAULT} onChange={(e) => patchCaptionClip(cap, { bgColor: e.target.value })}
+                                disabled={!hasBg} className="w-[30px] h-[24px] rounded-[4px] bg-transparent border border-newBorder p-0 disabled:opacity-40" />
+                            </label>
+                            <button type="button" onClick={() => patchCaptionClip(cap, { bgColor: hasBg ? 'none' : CAPTION_BG_DEFAULT })}
+                              className="h-[24px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">{hasBg ? 'No background' : 'Add background'}</button>
+                          </div>
+                          <label className="flex items-center gap-[6px] text-[11px] font-[600] text-btnText">
+                            <input type="checkbox" checked={(cap.clip.styleId ?? 'pop') === 'pop'} onChange={(e) => patchCaptionClip(cap, { styleId: e.target.checked ? 'pop' : 'flat' })} />
+                            Bounce the active word
+                          </label>
+                          <button type="button" onClick={() => removeCaptionClip(cap)}
+                            className="h-[28px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[11px] font-[600] hover:bg-[#ff7eb6]/10">Remove captions</button>
+                        </div>
+                      );
+                    })()}
                   </>
                 );
               })()}
+              {selected.clip.kind === 'captions' && (() => {
+                const cc = selected.clip as CaptionClip;
+                const ref = { clip: cc, trackId: selected.track.id };
+                const hasBg = !!cc.bgColor && cc.bgColor !== 'none';
+                return (
+                  <div className="flex flex-col gap-[6px]">
+                    <div className="flex items-center gap-[8px] flex-wrap">
+                      <label className="flex items-center gap-[5px] text-[11px] text-btnText">Highlight
+                        <input type="color" value={hasBg ? (cc.bgColor as string) : CAPTION_BG_DEFAULT} disabled={!hasBg} onChange={(e) => patchCaptionClip(ref, { bgColor: e.target.value })}
+                          className="w-[30px] h-[24px] rounded-[4px] bg-transparent border border-newBorder p-0 disabled:opacity-40" />
+                      </label>
+                      <button type="button" onClick={() => patchCaptionClip(ref, { bgColor: hasBg ? 'none' : CAPTION_BG_DEFAULT })}
+                        className="h-[24px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">{hasBg ? 'No background' : 'Add background'}</button>
+                    </div>
+                    <label className="flex items-center gap-[6px] text-[11px] font-[600] text-btnText">
+                      <input type="checkbox" checked={(cc.styleId ?? 'pop') === 'pop'} onChange={(e) => patchCaptionClip(ref, { styleId: e.target.checked ? 'pop' : 'flat' })} />
+                      Bounce the active word
+                    </label>
+                  </div>
+                );
+              })()}
               {(selected.clip.kind === 'video' || selected.clip.kind === 'text') && (
-                <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Transition out</span>
-                  <select value={selected.clip.transitionOut?.type ?? 'cut'} onChange={(e) => patchSelected({ transitionOut: e.target.value === 'cut' ? undefined : { type: e.target.value, durationInFrames: Math.round(0.4 * fps) } } as Partial<Clip>)}
-                    className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText">
-                    {TRANSITIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select></label>
+                <>
+                  <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Transition in</span>
+                    <select value={selected.clip.transitionIn?.type ?? 'cut'} onChange={(e) => patchSelected({ transitionIn: e.target.value === 'cut' ? undefined : { type: e.target.value, durationInFrames: Math.round(0.4 * fps) } } as Partial<Clip>)}
+                      className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText">
+                      {TRANSITIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select></label>
+                  <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Transition out</span>
+                    <select value={selected.clip.transitionOut?.type ?? 'cut'} onChange={(e) => patchSelected({ transitionOut: e.target.value === 'cut' ? undefined : { type: e.target.value, durationInFrames: Math.round(0.4 * fps) } } as Partial<Clip>)}
+                      className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText">
+                      {TRANSITIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select></label>
+                </>
               )}
               <button type="button" onClick={removeSelected} className="h-[32px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10">Remove clip</button>
             </>
