@@ -171,6 +171,7 @@ export function requiresApproval(toolName: string): boolean {
     // Synthetic avatars — reads + free management are auto-approved. register / cast / reshootPortrait
     // are OMITTED (they spend image / voice / lip-sync credits) so they stay GATED.
     'synthetic.listSoulAnchors',
+    'synthetic.listPortraitOptions',
     'synthetic.list',
     'synthetic.listEngines',
     'synthetic.setVoice',

@@ -14,15 +14,18 @@ import { useToaster } from '@gitroom/react/toaster/toaster';
 import {
   SoulAnchor,
   SynthAvatar,
+  PortraitOption,
   listSoulAnchors,
+  listPortraitOptions,
   registerSynthAvatar,
 } from '@gitroom/frontend/components/studio/studio.synthavatar-client';
 import { listVoiceLibrary, VoiceOption } from '@gitroom/frontend/components/studio/studio.voice-client';
 import { getCredits } from '@gitroom/frontend/components/studio/studio.account-client';
+import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
 
-const STEPS = ['Character', 'Voice', 'Register'];
+const STEPS = ['Character', 'Portrait', 'Voice', 'Register'];
 const ASPECTS = ['9:16', '1:1', '16:9'];
-const EST_CREDITS = 6; // one soul portrait at 2k ≈ a few Higgsfield credits.
+const EST_CREDITS = 6; // generating a portrait ≈ a few image credits (picking a frame is free).
 
 const fieldCls =
   'h-[40px] px-[12px] rounded-[8px] bg-newBgColor border border-newBorder text-[13px] text-btnText w-full';
@@ -45,6 +48,11 @@ export const StudioSynthAvatarOnboarding: FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Portrait step: pick a clean reference-sheet frame / upload a headshot (portraitUrl) OR generate one.
+  const [portraitOptions, setPortraitOptions] = useState<PortraitOption[] | null>(null);
+  const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
+  const [portraitMode, setPortraitMode] = useState<'pick' | 'generate' | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     listSoulAnchors(brandKitId)
@@ -54,6 +62,13 @@ export const StudioSynthAvatarOnboarding: FC<{
       .then((v) => setVoices(v.filter((x) => x.ready)))
       .catch(() => setVoices([]));
   }, [brandKitId]);
+
+  // Load the character's clean portrait candidates when a character is chosen.
+  useEffect(() => {
+    if (!anchorId) { setPortraitOptions(null); return; }
+    setPortraitOptions(null); setPortraitUrl(null); setPortraitMode(null);
+    listPortraitOptions(anchorId).then(setPortraitOptions).catch(() => setPortraitOptions([]));
+  }, [anchorId]);
 
   const anchor = anchors?.find((a) => a.anchorId === anchorId) || null;
   const voice = voices?.find((v) => v.voiceId === voiceId) || null;
@@ -67,20 +82,23 @@ export const StudioSynthAvatarOnboarding: FC<{
   }, []);
 
   const doRegister = useCallback(async () => {
-    if (!anchorId || !voiceId || !attested || busy) return;
-    // Gated spend → confirm with the live Higgsfield balance.
+    if (!anchorId || !voiceId || !attested || !portraitMode || busy) return;
+    const generating = portraitMode === 'generate';
+    // Generating spends an image → confirm with the live balance. Picking/uploading is free.
     let balanceLine = '';
-    try {
-      const c = await getCredits();
-      if (c.higgsfield?.connected && typeof c.higgsfield.credits === 'number') {
-        balanceLine = `\n\nYou have ${c.higgsfield.credits} Higgsfield credits.` +
-          (c.higgsfield.credits < EST_CREDITS ? ' ⚠️ This may be more than your balance.' : '');
-      }
-    } catch { /* show estimate without a balance */ }
+    if (generating) {
+      try {
+        const c = await getCredits();
+        if (c.higgsfield?.connected && typeof c.higgsfield.credits === 'number') {
+          balanceLine = `\n\nYou have ${c.higgsfield.credits} Higgsfield credits.`;
+        }
+      } catch { /* show estimate without a balance */ }
+    }
     const ok = typeof window === 'undefined' ? true : window.confirm(
       `Register "${name.trim() || anchor?.name || 'this character'}" as a talking avatar?\n\n` +
-      `This generates and LOCKS one soul portrait (reused for every cast). Cost: about ` +
-      `${EST_CREDITS} Higgsfield credits.` + balanceLine +
+      (generating
+        ? `This GENERATES and locks one clean portrait (reused for every cast). Cost: about ${EST_CREDITS} image credits.${balanceLine}`
+        : `This locks the portrait you picked (reused for every cast) — free, no generation.`) +
       `\n\nCasting the avatar with a script later spends voice + lip-sync credits separately.`
     );
     if (!ok) return;
@@ -90,6 +108,7 @@ export const StudioSynthAvatarOnboarding: FC<{
     try {
       const av = await registerSynthAvatar({
         anchorId, voiceId, voiceLabel: voice?.label, brandOwned: true,
+        portraitUrl: portraitMode === 'pick' ? (portraitUrl ?? undefined) : undefined,
         name: name.trim() || undefined, aspectRatio: aspect, brandKitId,
       });
       toaster.show(`"${av.name}" is ready — cast it with a script.`, 'success');
@@ -99,7 +118,7 @@ export const StudioSynthAvatarOnboarding: FC<{
     } finally {
       setBusy(false);
     }
-  }, [anchorId, voiceId, attested, busy, name, anchor, voice, aspect, brandKitId, toaster, onCreated]);
+  }, [anchorId, voiceId, attested, portraitMode, portraitUrl, busy, name, anchor, voice, aspect, brandKitId, toaster, onCreated]);
 
   return (
     <div className="flex flex-col gap-[16px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[18px]">
@@ -162,8 +181,66 @@ export const StudioSynthAvatarOnboarding: FC<{
         </div>
       )}
 
-      {/* Step 1: assign a stock voice + name + aspect */}
+      {/* Step 1: portrait — pick a clean reference-sheet frame, upload a headshot, or generate one */}
       {step === 1 && (
+        <div className="flex flex-col gap-[14px]">
+          <p className="text-[13px] text-textItemBlur leading-[1.5]">
+            Choose the portrait that gets animated. Pick one of this character’s clean reference-sheet
+            frames (recommended — free, already chrome-free), upload your own headshot, or generate a fresh one.
+          </p>
+          {portraitOptions == null ? (
+            <span className="text-[12px] text-textItemBlur">Loading portraits…</span>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-[8px]">
+              {portraitOptions.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => { setPortraitUrl(p.url); setPortraitMode('pick'); }}
+                  className={clsx('aspect-square rounded-[8px] overflow-hidden border transition-colors', portraitMode === 'pick' && portraitUrl === p.url ? 'border-ai ring-2 ring-ai/40' : 'border-newBorder hover:border-ai/40')}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="portrait option" className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-[10px]">
+            <label className="h-[36px] px-[12px] rounded-[8px] bg-btnSimple text-btnText text-[12px] font-[600] flex items-center gap-[6px] cursor-pointer">
+              {uploading ? 'Uploading…' : '⬆ Upload a headshot'}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]; e.target.value = '';
+                  if (!f) return;
+                  setUploading(true); setError(null);
+                  uploadFileToBrain(f)
+                    .then((a) => { setPortraitUrl(a.url); setPortraitMode('pick'); })
+                    .catch((err) => setError((err as Error)?.message ?? String(err)))
+                    .finally(() => setUploading(false));
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => { setPortraitMode('generate'); setPortraitUrl(null); }}
+              className={clsx('h-[36px] px-[12px] rounded-[8px] text-[12px] font-[600] border transition-colors', portraitMode === 'generate' ? 'bg-ai text-btnText border-transparent' : 'bg-newBgColor border-newBorder text-textItemBlur hover:text-btnText')}
+            >
+              ✨ Generate a clean one ($)
+            </button>
+            {portraitMode === 'generate' && <span className="text-[11px] text-textItemBlur">Generates a fresh chrome-free headshot at register (small image spend).</span>}
+          </div>
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setStep(0)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
+            <button type="button" disabled={!portraitMode} onClick={() => setStep(2)} className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] disabled:opacity-50">Continue</button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: assign a stock voice + name + aspect */}
+      {step === 2 && (
         <div className="flex flex-col gap-[14px]">
           <div className="flex flex-col gap-[6px]">
             <span className={labelCls}>Avatar name</span>
@@ -200,19 +277,20 @@ export const StudioSynthAvatarOnboarding: FC<{
             </div>
           </div>
           <div className="flex items-center justify-between">
-            <button type="button" onClick={() => setStep(0)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
-            <button type="button" disabled={!voiceId} onClick={() => setStep(2)} className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] disabled:opacity-50">Continue</button>
+            <button type="button" onClick={() => setStep(1)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
+            <button type="button" disabled={!voiceId} onClick={() => setStep(3)} className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] disabled:opacity-50">Continue</button>
           </div>
         </div>
       )}
 
-      {/* Step 2: brand-ownership attestation + register */}
-      {step === 2 && (
+      {/* Step 3: brand-ownership attestation + register */}
+      {step === 3 && (
         <div className="flex flex-col gap-[14px]">
           <div className="flex flex-col gap-[6px] rounded-[8px] border border-newBorder bg-newBgColor p-[14px] text-[12px] text-textItemBlur leading-[1.6]">
             <span><span className="text-btnText font-[600]">Character:</span> {anchor?.name}</span>
             <span><span className="text-btnText font-[600]">Name:</span> {name.trim() || anchor?.name}</span>
             <span><span className="text-btnText font-[600]">Voice:</span> {voice?.label}</span>
+            <span><span className="text-btnText font-[600]">Portrait:</span> {portraitMode === 'generate' ? 'generate a clean one' : 'picked'}</span>
             <span><span className="text-btnText font-[600]">Aspect:</span> {aspect}</span>
           </div>
           <label className="flex items-start gap-[8px] text-[12px] text-textItemBlur leading-[1.45] cursor-pointer">
@@ -220,10 +298,12 @@ export const StudioSynthAvatarOnboarding: FC<{
             <span>This is a brand-owned, fully synthetic character (not a real person). I have the right to use it commercially. This attestation replaces real-person consent for synthetic avatars.</span>
           </label>
           <p className="text-[11px] text-textItemBlur leading-[1.4]">
-            Registering generates and locks one soul portrait — a small Higgsfield spend. You'll confirm the estimate next.
+            {portraitMode === 'generate'
+              ? 'Registering generates and locks one clean portrait — a small image spend. You’ll confirm the estimate next.'
+              : 'Registering locks the portrait you picked — free, no generation.'}
           </p>
           <div className="flex items-center justify-between">
-            <button type="button" onClick={() => setStep(1)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
+            <button type="button" onClick={() => setStep(2)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
             <button type="button" disabled={!attested || busy} onClick={doRegister} className="h-[44px] px-[20px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] disabled:opacity-50">
               {busy ? 'Registering…' : 'Register avatar'}
             </button>

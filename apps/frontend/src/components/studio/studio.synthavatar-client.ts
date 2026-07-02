@@ -27,6 +27,12 @@ export interface AvatarEngine {
   note?: string;
 }
 
+export interface PortraitOption {
+  id: string;
+  path: string;
+  url: string;
+}
+
 export interface SynthAvatar {
   synth_id: string;
   name: string;
@@ -93,6 +99,11 @@ export function listAvatarEngines(): Promise<AvatarEngine[]> {
   return req<AvatarEngine[]>('/synthetic-avatar/engines');
 }
 
+/** A character's clean portrait candidates (its Soul reference-sheet frames) to pick from. */
+export function listPortraitOptions(anchorId: string): Promise<PortraitOption[]> {
+  return req<PortraitOption[]>(`/synthetic-avatar/portrait-options?anchorId=${encodeURIComponent(anchorId)}`);
+}
+
 /** Set an avatar's default cast engine (the model selector). */
 export function setSynthEngine(synthId: string, engine: string): Promise<SynthAvatar> {
   return post<SynthAvatar>('/synthetic-avatar/engine', { synthId, engine });
@@ -119,6 +130,8 @@ export function registerSynthAvatar(payload: {
   voiceId: string;
   voiceLabel?: string;
   brandOwned: boolean;
+  /** Pick a clean reference-sheet frame / uploaded headshot (copied in, free). Omit to generate one. */
+  portraitUrl?: string;
   name?: string;
   aspectRatio?: string;
   brandKitId?: string;

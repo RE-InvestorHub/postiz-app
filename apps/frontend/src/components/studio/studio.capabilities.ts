@@ -1113,15 +1113,22 @@ export function buildStudioCapabilities(
       handler: async (p: { brandKitId?: string; status?: string } = {}) => synthClient.listSynthAvatars(p.brandKitId || getState().composerBrandKitId || 'default', p.status),
     },
     {
+      id: 'synthetic.listPortraitOptions',
+      namespace: 'synthetic',
+      label: 'List a character\'s clean portrait candidates (its Soul reference-sheet frames)',
+      params: ['anchorId'],
+      handler: async (p: { anchorId?: string } = {}) => { if (!p.anchorId) return; return synthClient.listPortraitOptions(p.anchorId); },
+    },
+    {
       id: 'synthetic.register',
       namespace: 'synthetic',
-      label: 'Register a Soul-ready character as a synthetic avatar (locks a portrait — SPENDS)',
-      params: ['anchorId', 'voiceId', 'voiceLabel', 'brandOwned', 'name', 'aspectRatio'],
-      handler: async (p: { anchorId?: string; voiceId?: string; voiceLabel?: string; brandOwned?: boolean; name?: string; aspectRatio?: string } = {}) => {
+      label: 'Register a Soul-ready character as a synthetic avatar (locks a portrait; may SPEND)',
+      params: ['anchorId', 'voiceId', 'voiceLabel', 'brandOwned', 'portraitUrl', 'name', 'aspectRatio'],
+      handler: async (p: { anchorId?: string; voiceId?: string; voiceLabel?: string; brandOwned?: boolean; portraitUrl?: string; name?: string; aspectRatio?: string } = {}) => {
         if (!p.anchorId || !p.voiceId) return;
         const r = await synthClient.registerSynthAvatar({
           anchorId: p.anchorId, voiceId: p.voiceId, voiceLabel: p.voiceLabel, brandOwned: !!p.brandOwned,
-          name: p.name, aspectRatio: p.aspectRatio, brandKitId: getState().composerBrandKitId || 'default',
+          portraitUrl: p.portraitUrl, name: p.name, aspectRatio: p.aspectRatio, brandKitId: getState().composerBrandKitId || 'default',
         });
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
         return r;
