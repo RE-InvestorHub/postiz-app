@@ -45,6 +45,7 @@ import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studi
 import * as scriptClient from '@gitroom/frontend/components/studio/studio.script-client';
 import * as voiceClient from '@gitroom/frontend/components/studio/studio.voice-client';
 import * as timelineClient from '@gitroom/frontend/components/studio/studio.timeline-client';
+import * as synthClient from '@gitroom/frontend/components/studio/studio.synthavatar-client';
 import * as assembleClient from '@gitroom/frontend/components/studio/studio.assemble-client';
 import { listMusicBeds } from '@gitroom/frontend/components/studio/studio.music-client';
 import { enqueueRender } from '@gitroom/frontend/components/studio/studio.remotion-client';
@@ -1090,6 +1091,129 @@ export function buildStudioCapabilities(
         const edl = getState().timeline;
         const r = await enqueueRender({ compositionId: 'Timeline', format: p.format || edl.format || 'reels', props: { tracks: edl.tracks, fps: edl.fps } as never });
         if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh'));
+        return r;
+      },
+    },
+    // --- Synthetic talking avatars: cast a Soul-locked brand character as a talking-head ---
+    // Manual UI and the agent resolve the SAME transport (studio.synthavatar-client). register / cast /
+    // reshootPortrait SPEND → GATED (omitted from AUTO_APPROVE); list / listSoulAnchors / setVoice /
+    // archive are free → auto-approved.
+    {
+      id: 'synthetic.listSoulAnchors',
+      namespace: 'synthetic',
+      label: 'List the brand\'s Soul-ready characters (castable as synthetic avatars)',
+      params: ['brandKitId'],
+      handler: async (p: { brandKitId?: string } = {}) => synthClient.listSoulAnchors(p.brandKitId || getState().composerBrandKitId || 'default'),
+    },
+    {
+      id: 'synthetic.list',
+      namespace: 'synthetic',
+      label: 'List the brand\'s registered synthetic avatars',
+      params: ['brandKitId', 'status'],
+      handler: async (p: { brandKitId?: string; status?: string } = {}) => synthClient.listSynthAvatars(p.brandKitId || getState().composerBrandKitId || 'default', p.status),
+    },
+    {
+      id: 'synthetic.listPortraitOptions',
+      namespace: 'synthetic',
+      label: 'List a character\'s clean portrait candidates (its Soul reference-sheet frames)',
+      params: ['anchorId'],
+      handler: async (p: { anchorId?: string } = {}) => { if (!p.anchorId) return; return synthClient.listPortraitOptions(p.anchorId); },
+    },
+    {
+      id: 'synthetic.register',
+      namespace: 'synthetic',
+      label: 'Register a Soul-ready character as a synthetic avatar (locks a portrait; may SPEND)',
+      params: ['anchorId', 'voiceId', 'voiceLabel', 'brandOwned', 'portraitUrl', 'name', 'aspectRatio'],
+      handler: async (p: { anchorId?: string; voiceId?: string; voiceLabel?: string; brandOwned?: boolean; portraitUrl?: string; name?: string; aspectRatio?: string } = {}) => {
+        if (!p.anchorId || !p.voiceId) return;
+        const r = await synthClient.registerSynthAvatar({
+          anchorId: p.anchorId, voiceId: p.voiceId, voiceLabel: p.voiceLabel, brandOwned: !!p.brandOwned,
+          portraitUrl: p.portraitUrl, name: p.name, aspectRatio: p.aspectRatio, brandKitId: getState().composerBrandKitId || 'default',
+        });
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        return r;
+      },
+    },
+    {
+      id: 'synthetic.cast',
+      namespace: 'synthetic',
+      label: 'Cast a synthetic avatar with a script → a clip in the Video Library (SPENDS)',
+      params: ['synthId', 'script', 'aspectRatio', 'resolution'],
+      handler: async (p: { synthId?: string; script?: string; aspectRatio?: string; resolution?: string; engine?: string } = {}) => {
+        if (!p.synthId || !p.script) return;
+        const r = await synthClient.castAndWait({ synthId: p.synthId, script: p.script, aspectRatio: p.aspectRatio, resolution: p.resolution, engine: p.engine });
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh'));
+          window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        }
+        return r;
+      },
+    },
+    {
+      id: 'synthetic.reshootPortrait',
+      namespace: 'synthetic',
+      label: 'Regenerate + relock a synthetic avatar\'s soul portrait (SPENDS)',
+      params: ['synthId', 'aspectRatio'],
+      handler: async (p: { synthId?: string; aspectRatio?: string } = {}) => {
+        if (!p.synthId) return;
+        const r = await synthClient.reshootPortrait(p.synthId, p.aspectRatio);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        return r;
+      },
+    },
+    {
+      id: 'synthetic.setVoice',
+      namespace: 'synthetic',
+      label: 'Reassign a synthetic avatar\'s stock voice (no spend)',
+      params: ['synthId', 'voiceId', 'voiceLabel'],
+      handler: async (p: { synthId?: string; voiceId?: string; voiceLabel?: string } = {}) => {
+        if (!p.synthId || !p.voiceId) return;
+        const r = await synthClient.setSynthVoice(p.synthId, p.voiceId, p.voiceLabel);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        return r;
+      },
+    },
+    {
+      id: 'synthetic.listEngines',
+      namespace: 'synthetic',
+      label: 'List the selectable avatar cast engines (HeyGen + fal.ai)',
+      params: [],
+      handler: async () => synthClient.listAvatarEngines(),
+    },
+    {
+      id: 'synthetic.setEngine',
+      namespace: 'synthetic',
+      label: 'Set a synthetic avatar\'s cast engine — the model selector (no spend)',
+      params: ['synthId', 'engine'],
+      handler: async (p: { synthId?: string; engine?: string } = {}) => {
+        if (!p.synthId || !p.engine) return;
+        const r = await synthClient.setSynthEngine(p.synthId, p.engine);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        return r;
+      },
+    },
+    {
+      id: 'synthetic.archive',
+      namespace: 'synthetic',
+      label: 'Archive a synthetic avatar (no spend)',
+      params: ['synthId'],
+      handler: async (p: { synthId?: string } = {}) => {
+        if (!p.synthId) return;
+        const r = await synthClient.archiveSynthAvatar(p.synthId);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
+        return r;
+      },
+    },
+    {
+      // Irreversible removal → GATED (omitted from AUTO_APPROVE) even though it doesn't spend.
+      id: 'synthetic.delete',
+      namespace: 'synthetic',
+      label: 'Permanently delete a synthetic avatar (irreversible)',
+      params: ['synthId'],
+      handler: async (p: { synthId?: string } = {}) => {
+        if (!p.synthId) return;
+        const r = await synthClient.deleteSynthAvatar(p.synthId);
+        if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
         return r;
       },
     },

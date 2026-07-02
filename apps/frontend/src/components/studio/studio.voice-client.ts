@@ -19,6 +19,8 @@ export interface VoiceOption {
   cloneId?: string;
   tier?: string;
   ready: boolean;
+  /** A hosted sample MP3 (ElevenLabs voices) — free to play for auditioning. */
+  previewUrl?: string | null;
 }
 
 export interface GeneratedVO {
