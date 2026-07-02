@@ -1,9 +1,16 @@
 'use client';
 
-// Video Editor — the multi-track NLE (Plan 3). Layout (user-approved): a source-bin LIBRARY (left)
-// + a @remotion/player CANVAS of the composed edit (center) + an INSPECTOR (right, on clip-select),
-// over a full-width multi-track TIMELINE (bottom, @xzdarcy/react-timeline-editor). The edit is the
-// store's `timeline` EDL — the single, serializable, agent-drivable document. Postiz tokens only.
+// Video Editor — the multi-track NLE (Plan 3) + audio lanes / mix (Plan 9). Layout (user-approved):
+// a source-bin LIBRARY (left, now tabbed Video · Dialogue · SFX · Music) + a @remotion/player CANVAS of
+// the composed edit (center) + an INSPECTOR (right, on clip-select), over a full-width multi-track
+// TIMELINE (bottom, @xzdarcy/react-timeline-editor) with a lane-label column. The edit is the store's
+// `timeline` EDL — the single, serializable, agent-drivable document. Postiz tokens only; magenta
+// `bg-ai` reserved for the credit-spending (AI SFX / AI music) actions.
+//
+// Audio mixing note: the @remotion/player renders the SAME Timeline composition as the render service,
+// and that composition (Plan 9 T2) already applies each audio clip's gain/fade and ducks music under
+// the dialogue lane's speech spans. So the player preview mixes IDENTICALLY to the export — there is no
+// separate Web Audio graph (which would double the audio and risk drifting from the render).
 
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Player, PlayerRef } from '@remotion/player';
@@ -12,26 +19,38 @@ import '@xzdarcy/react-timeline-editor/dist/react-timeline-editor.css';
 import { useToaster } from '@gitroom/react/toaster/toaster';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { Timeline as TimelineComposition } from '@gitroom/frontend/components/studio/timeline/timeline.composition';
-import { edlDuration, emptyEDL, TimelineEDL, Clip, VideoClip } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
+import { edlDuration, emptyEDL, dbToLinear, TimelineEDL, Clip, VideoClip, AudioClip, CaptionClip, Track, AudioRole } from '@gitroom/frontend/components/studio/timeline/timeline.contract';
 import { trackOfClip } from '@gitroom/frontend/components/studio/timeline/timeline.reducer';
 import { listVideoLibrary, BrandClip } from '@gitroom/frontend/components/studio/studio.video-client';
 import { enqueueRender, pollRenderJob, fetchFormats, FormatMeta } from '@gitroom/frontend/components/studio/studio.remotion-client';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
+import { listAudioLibrary, AudioTrack } from '@gitroom/frontend/components/studio/studio.voice-client';
+import {
+  listSfxLibrary, listMusicBeds, searchJamendo, pickJamendo, generateSfx, generateMusic, fetchAudioPeaks,
+  SfxItem, MusicBed, JamendoTrack,
+} from '@gitroom/frontend/components/studio/studio.assemble-client';
 
 const EFFECTS = { default: { id: 'default', name: 'clip' } };
 const TRANSITIONS = ['cut', 'fade', 'dissolve', 'slide', 'wipe', 'zoomBlur', 'iris', 'cube'];
+// Same event the Audio tab fires after a render/assemble; the bin re-reads /audio/library on it.
+const AUDIO_LIB_REFRESH = 'reinvestorhub:audio-library-refresh';
+
+// Clip fill by lane — video/text keep the Plan-3 colors; audio lanes get one hue each.
+const LANE_COLOR: Record<string, string> = {
+  video: '#d82d7e', dialogue: '#612bd3', sfx: '#e0932b', music: '#2ea86a', text: '#0ea5a4', captions: '#0ea5a4',
+};
+const laneColorOf = (t?: Track): string =>
+  !t ? '#888' : t.kind === 'audio' ? (LANE_COLOR[t.role || 'dialogue'] || '#612bd3') : (LANE_COLOR[t.kind] || '#888');
+const laneLabelOf = (t: Track): string =>
+  t.kind === 'video' ? 'Video' : t.kind === 'text' ? 'Text' : t.kind === 'captions' ? 'Captions'
+    : (t.role ? t.role[0].toUpperCase() + t.role.slice(1) : 'Audio');
 
 // EDL → widget rows (frames → seconds). The widget edits start/end in seconds.
 function edlToRows(edl: TimelineEDL): TimelineRow[] {
   const fps = edl.fps || 30;
   return edl.tracks.map((t) => ({
     id: t.id,
-    actions: t.clips.map((c) => ({
-      id: c.id,
-      start: c.from / fps,
-      end: (c.from + c.durationInFrames) / fps,
-      effectId: 'default',
-    })),
+    actions: t.clips.map((c) => ({ id: c.id, start: c.from / fps, end: (c.from + c.durationInFrames) / fps, effectId: 'default' })),
   }));
 }
 
@@ -56,6 +75,31 @@ function rowsToEdl(rows: TimelineRow[], prev: TimelineEDL): TimelineEDL {
 }
 
 const card = 'rounded-[8px] border border-newBorder bg-newBgColor';
+const ROW_H = 30;
+const RULER_H = 32; // the widget's time-ruler height — the label column clears it with this top pad.
+
+// Ruler labels as a minute counter (m:ss) — 30→"0:30", 60→"1:00", 120→"2:00", … (seconds in → clock out).
+const fmtClock = (sec: number): string => {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// Scalable waveform for an audio clip's timeline block. An SVG with preserveAspectRatio="none" stretches
+// to any clip width at any zoom, so the peaks (normalized 0–1, brain-side) always read as a waveform —
+// not fat solid blocks. Center-mirrored bars.
+const WaveBars: FC<{ peaks: number[]; color: string }> = ({ peaks, color }) => {
+  const n = peaks.length;
+  if (!n) return null;
+  return (
+    <svg viewBox={`0 0 ${n} 100`} preserveAspectRatio="none"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.85 }}>
+      {peaks.map((p, i) => {
+        const h = Math.max(4, p * 92);
+        return <rect key={i} x={i + 0.15} y={(100 - h) / 2} width={0.7} height={h} rx={0.3} fill={color} />;
+      })}
+    </svg>
+  );
+};
 
 export const StudioVideoEditorNLE: FC = () => {
   const { state, dispatch } = useStudio();
@@ -73,30 +117,163 @@ export const StudioVideoEditorNLE: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
 
+  // Audio bin (Plan 9).
+  const [bin, setBin] = useState<'video' | 'dialogue' | 'sfx' | 'music'>('video');
+  const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
+  const [sfx, setSfx] = useState<SfxItem[]>([]);
+  const [beds, setBeds] = useState<MusicBed[]>([]);
+  const [jamQ, setJamQ] = useState('');
+  const [jam, setJam] = useState<{ configured: boolean; tracks: JamendoTrack[]; note?: string } | null>(null);
+  const [jamBusy, setJamBusy] = useState(false);
+  const [genText, setGenText] = useState('');
+  const [genBusy, setGenBusy] = useState(false);
+  const [confirmGen, setConfirmGen] = useState<null | 'sfx' | 'music'>(null);
+  const [peaks, setPeaks] = useState<Record<string, number[]>>({});
+  const [addingLane, setAddingLane] = useState(false);
+  const [pxPerSec, setPxPerSec] = useState(80); // continuous zoom (px per second on the ruler).
+  const [viewportW, setViewportW] = useState(1200); // measured timeline viewport width (for ruler length).
+
   const playerRef = useRef<PlayerRef>(null);
   const timelineState = useRef<TimelineState>(null);
+  const widgetWrapRef = useRef<HTMLDivElement>(null);
+  const scrollLeftRef = useRef(0);            // live horizontal scroll (from the widget's onScroll)
+  const pendingScrollRef = useRef<number | null>(null); // scroll to apply AFTER a zoom re-render
 
-  // Load the brand's clips (source bin) + the export formats.
+  // After a zoom changes the scale, restore the scroll so the anchored time stays under the cursor.
+  useEffect(() => {
+    if (pendingScrollRef.current != null && timelineState.current) {
+      timelineState.current.setScrollLeft(Math.max(0, pendingScrollRef.current));
+      pendingScrollRef.current = null;
+    }
+  }, [pxPerSec]);
+
+  // Track the timeline viewport width so the ruler length can fill it at any zoom. Guarded + rAF-batched:
+  // only commit a meaningful (>=4px) change so a scrollbar toggle can't oscillate into a render loop.
+  useEffect(() => {
+    const el = widgetWrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let raf = 0;
+    const apply = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const w = el.clientWidth || 1200;
+        setViewportW((prev) => (Math.abs(w - prev) >= 4 ? w : prev));
+      });
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, []);
+
+  // Drive the timeline playhead from the preview player: as @remotion/player plays or seeks, move the
+  // widget cursor to the same time (frame → seconds). Both are imperative refs → no React re-render.
+  useEffect(() => {
+    let raf = 0;
+    let player: PlayerRef | null = null;
+    const onFrame = (e: { detail?: { frame?: number } }) => {
+      try { timelineState.current?.setTime((e.detail?.frame ?? 0) / fps); } catch { /* widget not ready */ }
+    };
+    const attach = () => {
+      player = playerRef.current;
+      if (player) player.addEventListener('frameupdate', onFrame);
+      else raf = requestAnimationFrame(attach); // player mounts a tick later
+    };
+    attach();
+    return () => { cancelAnimationFrame(raf); try { player?.removeEventListener('frameupdate', onFrame); } catch { /* unmounted */ } };
+  }, [fps]);
+
+  // Stable ruler-label renderer (m:ss) — an inline fn here would re-mount the widget every render.
+  const renderScale = useCallback((sec: number) => <span className="tabular-nums">{fmtClock(sec)}</span>, []);
+  // Stable onScroll — records scroll to a ref (no setState, so no re-render/loop).
+  const onWidgetScroll = useCallback((p: { scrollLeft: number }) => { scrollLeftRef.current = p.scrollLeft; }, []);
+
+  // Source bins + export formats.
   useEffect(() => { listVideoLibrary(brandKitId).then((l) => setClips(l.clips)).catch(() => {}); }, [brandKitId]);
   useEffect(() => { fetchFormats().then((f) => f && setFormats(f)).catch(() => {}); }, []);
-  // Pick up clips the Director/gap-fill generated while the editor is open.
-  useEffect(() => {
-    const onRefresh = () => listVideoLibrary(brandKitId).then((l) => setClips(l.clips)).catch(() => {});
-    if (typeof window !== 'undefined') window.addEventListener('reinvestorhub:video-refresh', onRefresh);
-    return () => { if (typeof window !== 'undefined') window.removeEventListener('reinvestorhub:video-refresh', onRefresh); };
+  const loadAudio = useCallback(() => {
+    listAudioLibrary(brandKitId).then((r) => setAudioTracks((r.tracks || []).filter((t) => t.stage === 'rendered' || t.stage === 'voiceover'))).catch(() => {});
   }, [brandKitId]);
+  useEffect(() => { loadAudio(); }, [loadAudio]);
+  useEffect(() => { listSfxLibrary().then((r) => setSfx(r.sfx || [])).catch(() => {}); }, []);
+  useEffect(() => { listMusicBeds().then((r) => setBeds(r.beds || [])).catch(() => {}); }, []);
+  // Pick up clips + rendered VO produced elsewhere while the editor is open.
+  useEffect(() => {
+    const onVideo = () => listVideoLibrary(brandKitId).then((l) => setClips(l.clips)).catch(() => {});
+    const onAudio = () => loadAudio();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('reinvestorhub:video-refresh', onVideo);
+      window.addEventListener(AUDIO_LIB_REFRESH, onAudio);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('reinvestorhub:video-refresh', onVideo);
+        window.removeEventListener(AUDIO_LIB_REFRESH, onAudio);
+      }
+    };
+  }, [brandKitId, loadAudio]);
+
+  // Fetch waveform peaks for any audio clip on the timeline we haven't fetched yet (cache by srcId;
+  // a stored empty array marks "tried" so we don't refetch on failure).
+  useEffect(() => {
+    const need = new Set<string>();
+    for (const t of edl.tracks) if (t.kind === 'audio') for (const c of t.clips) if (c.kind === 'audio' && !(c.srcId in peaks)) need.add(c.srcId);
+    need.forEach((id) => fetchAudioPeaks(id, 800).then((p) => setPeaks((m) => ({ ...m, [id]: p.peaks || [] }))).catch(() => setPeaks((m) => ({ ...m, [id]: [] }))));
+  }, [edl, peaks]);
 
   const durationInFrames = Math.max(1, edlDuration(edl));
   const rows = useMemo(() => edlToRows(edl), [edl]);
+  // Fit the timeline to exactly its lanes (ruler + one ROW_H per track) so there's no dead space;
+  // grows automatically as tracks are added/removed.
+  const timelineHeight = RULER_H + edl.tracks.length * ROW_H;
+  // Adaptive ruler (readable at any zoom): the zoom is continuous (pxPerSec), but the LABEL interval
+  // snaps up a base-60 "1-2-5" ladder so a label lands roughly every ~82px — never a crowded smear.
+  // Each labelled tick shows SPLIT minor sub-ticks. Total length caps at 5 minutes (300s).
+  const TIMELINE_MAX_SEC = 300;
+  const ZOOM_LADDER = [1, 2, 5, 10, 15, 30, 60, 120, 300]; // seconds per labelled tick
+  const TICK_MIN_PX = 82;
+  const SPLIT = 5;
+  const contentSec = Math.ceil(durationInFrames / fps);
+  const rulerScale = ZOOM_LADDER.find((L) => L * pxPerSec >= TICK_MIN_PX) ?? TIMELINE_MAX_SEC; // sec/label
+  const rulerScaleWidth = rulerScale * pxPerSec;                     // px between labels (≥ TICK_MIN_PX)
+  const maxScaleCount = Math.max(1, Math.ceil(TIMELINE_MAX_SEC / rulerScale));  // # labels to cover 5 min
+  const minScaleCount = Math.min(
+    maxScaleCount,
+    Math.max(Math.ceil((contentSec + 20) / rulerScale), Math.ceil(viewportW / rulerScaleWidth) + 1)
+  );
+  // Fully zoomed out shows the whole 5 min across the viewport (no dead space); deep-in ≈ frame level.
+  const minPxPerSec = Math.max(0.4, viewportW / TIMELINE_MAX_SEC);
 
   const selected = useMemo(() => {
-    for (const t of edl.tracks) { const c = t.clips.find((x) => x.id === selectedClipId); if (c) return { clip: c, trackId: t.id }; }
+    for (const t of edl.tracks) { const c = t.clips.find((x) => x.id === selectedClipId); if (c) return { clip: c, track: t }; }
     return null;
   }, [edl, selectedClipId]);
 
-  // Add a library clip to the video track (V1) — the reducer appends it at the track end (robust to
-  // rapid clicks, since `from` is computed from fresh state, not the render closure).
-  const addClipToTimeline = useCallback((c: BrandClip) => {
+  const playheadFrame = useCallback(() => Math.max(0, Math.round((timelineState.current?.getTime?.() ?? 0) * fps)), [fps]);
+
+  // Resolve (or create) the audio lane for a role, returning its track id.
+  const ensureLane = useCallback((role: AudioRole): string => {
+    const existing = edl.tracks.find((t) => t.kind === 'audio' && t.role === role);
+    if (existing) return existing.id;
+    const id = `a-${role}`;
+    dispatch({ type: 'TL_ADD_TRACK', track: { id, kind: 'audio', role, clips: [] } });
+    return id;
+  }, [edl, dispatch]);
+
+  // Place an audio asset on its role lane at the playhead; select it.
+  const placeAudio = useCallback((role: AudioRole, a: { srcId: string; srcUrl: string; durationS?: number; spans?: { startMs: number; endMs: number }[] }) => {
+    const trackId = ensureLane(role);
+    const id = `${role[0]}_${a.srcId}_${Math.random().toString(36).slice(2, 7)}`;
+    const clip: AudioClip = {
+      kind: 'audio', id, srcId: a.srcId, srcUrl: a.srcUrl,
+      from: playheadFrame(), durationInFrames: Math.max(15, Math.round((a.durationS || 3) * fps)), inPoint: 0,
+      gainDb: 0, ...(a.spans && a.spans.length ? { spans: a.spans } : {}), ...(role === 'music' ? { duck: false } : {}),
+    };
+    dispatch({ type: 'TL_ADD_CLIP', trackId, clip });
+    setSelectedClipId(id);
+  }, [ensureLane, playheadFrame, fps, dispatch]);
+
+  const addVideoClip = useCallback((c: BrandClip) => {
     const vTrack = edl.tracks.find((t) => t.kind === 'video') || edl.tracks[0];
     const clip: VideoClip = {
       kind: 'video', id: `c_${c.id}_${Math.random().toString(36).slice(2, 7)}`, srcId: c.id, srcUrl: c.url,
@@ -105,27 +282,143 @@ export const StudioVideoEditorNLE: FC = () => {
     dispatch({ type: 'TL_APPEND_CLIP', trackId: vTrack.id, clip });
   }, [edl, fps, dispatch]);
 
+  const addDialogue = (t: AudioTrack) => placeAudio('dialogue', {
+    srcId: t.id, srcUrl: t.url, durationS: t.durationS || undefined,
+    spans: (t.lineSpans || []).map((s) => ({ startMs: Math.round(s.start * 1000), endMs: Math.round(s.end * 1000) })),
+  });
+  const addSfx = (s: SfxItem) => placeAudio('sfx', { srcId: s.id, srcUrl: s.url || '', durationS: s.durationS });
+  const addBed = (b: MusicBed) => placeAudio('music', { srcId: b.id, srcUrl: b.url, durationS: b.durationS });
+  const addJamendo = async (j: JamendoTrack) => {
+    setJamBusy(true); setError(null);
+    try { const picked = await pickJamendo(j.jamendoId); placeAudio('music', { srcId: picked.id, srcUrl: picked.url, durationS: picked.durationS }); }
+    catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setJamBusy(false); }
+  };
+  const runJamendo = async () => {
+    if (!jamQ.trim()) return;
+    setJamBusy(true); setError(null);
+    try { setJam(await searchJamendo({ query: jamQ.trim(), limit: 12 })); }
+    catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setJamBusy(false); }
+  };
+  // Gated AI generate (SPENDS). Confirmed inline; capability stays gated for the agent (T4).
+  const runGen = async (kind: 'sfx' | 'music') => {
+    setConfirmGen(null); if (!genText.trim()) return;
+    setGenBusy(true); setError(null);
+    try {
+      if (kind === 'sfx') { const r = await generateSfx({ text: genText.trim() }); placeAudio('sfx', { srcId: r.id, srcUrl: r.url, durationS: 3 }); }
+      else { const r = await generateMusic({ prompt: genText.trim(), lengthMs: 12000 }); placeAudio('music', { srcId: r.id, srcUrl: r.url, durationS: r.durationS }); }
+      setGenText('');
+    } catch (e) { setError((e as Error)?.message ?? String(e)); } finally { setGenBusy(false); }
+  };
+
   const onWidgetChange = useCallback((next: TimelineRow[]) => {
     dispatch({ type: 'SET_TIMELINE', timeline: rowsToEdl(next, state.timeline) });
-    return false; // we own the data; don't let the widget keep an internal copy
+    return false;
   }, [dispatch, state.timeline]);
 
   const splitAtCursor = useCallback(() => {
     if (!selected) { setError('Select a clip to split.'); return; }
     const sec = timelineState.current?.getTime?.() ?? 0;
-    dispatch({ type: 'TL_SPLIT_CLIP', trackId: selected.trackId, clipId: selected.clip.id, atFrame: Math.round(sec * fps) });
+    dispatch({ type: 'TL_SPLIT_CLIP', trackId: selected.track.id, clipId: selected.clip.id, atFrame: Math.round(sec * fps) });
   }, [selected, fps, dispatch]);
 
   const removeSelected = useCallback(() => {
     if (!selected) return;
-    dispatch({ type: 'TL_REMOVE_CLIP', trackId: selected.trackId, clipId: selected.clip.id });
+    dispatch({ type: 'TL_REMOVE_CLIP', trackId: selected.track.id, clipId: selected.clip.id });
     setSelectedClipId(null);
   }, [selected, dispatch]);
 
   const patchSelected = useCallback((patch: Partial<Clip>) => {
     if (!selected) return;
-    dispatch({ type: 'TL_PATCH_CLIP', trackId: selected.trackId, clipId: selected.clip.id, patch });
+    dispatch({ type: 'TL_PATCH_CLIP', trackId: selected.track.id, clipId: selected.clip.id, patch });
   }, [selected, dispatch]);
+
+  const toggleMute = (t: Track) => dispatch({ type: 'SET_TIMELINE', timeline: { ...edl, tracks: edl.tracks.map((x) => (x.id === t.id ? { ...x, muted: !x.muted } : x)) } });
+
+  // Vertical reorder: swap a track with its neighbour (order = lane order + video/text visual stacking).
+  const moveTrack = (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= edl.tracks.length) return;
+    const tracks = edl.tracks.slice();
+    [tracks[index], tracks[j]] = [tracks[j], tracks[index]];
+    dispatch({ type: 'SET_TIMELINE', timeline: { ...edl, tracks } });
+  };
+  // Add an extra lane beyond the default five (e.g. a 2nd music/SFX lane or a PiP video track).
+  const addLane = (kind: Track['kind'], role?: AudioRole) => {
+    const id = `${role || kind}-${Math.random().toString(36).slice(2, 6)}`;
+    dispatch({ type: 'TL_ADD_TRACK', track: { id, kind, ...(role ? { role } : {}), clips: [] } });
+    setAddingLane(false);
+  };
+
+  // ── Word-timed pop captions from a Dialogue VO clip ────────────────────────────────────────────
+  const CAPTION_BG_DEFAULT = '#d82d7e';
+  const ensureCaptionsLane = (): string => {
+    const existing = edl.tracks.find((t) => t.kind === 'captions');
+    if (existing) return existing.id;
+    const id = 'captions-1';
+    dispatch({ type: 'TL_ADD_TRACK', track: { id, kind: 'captions', clips: [] } });
+    return id;
+  };
+  const captionOf = (clipId: string): { clip: CaptionClip; trackId: string } | null => {
+    for (const t of edl.tracks) if (t.kind === 'captions') {
+      const c = t.clips.find((x) => x.kind === 'captions' && (x as CaptionClip).fromClipId === clipId);
+      if (c) return { clip: c as CaptionClip, trackId: t.id };
+    }
+    return null;
+  };
+  const addCaptionsFromClip = (clip: AudioClip) => {
+    const track = audioTracks.find((t) => t.id === clip.srcId);
+    const spans = track?.lineSpans || [];
+    const inSec = (clip.inPoint ?? 0) / fps;
+    const durMs = (clip.durationInFrames / fps) * 1000;
+    // Flatten the VO's word-level timing → caption tokens, offset into the clip's own timeline.
+    const tokens = spans.flatMap((ls) => (ls.words || []).map((w) => ({
+      text: String(w.word || '').trim(),
+      startMs: Math.round((w.start - inSec) * 1000),
+      endMs: Math.round((w.end - inSec) * 1000),
+    }))).filter((t) => t.text && t.endMs > 0 && t.startMs < durMs);
+    if (!tokens.length) { setError('No word timing on this voice-over — re-render it on the Audio tab, then add captions.'); return; }
+    const trackId = ensureCaptionsLane();
+    const id = `cap_${clip.id}_${Math.random().toString(36).slice(2, 6)}`;
+    dispatch({ type: 'TL_ADD_CLIP', trackId, clip: { kind: 'captions', id, from: clip.from, durationInFrames: clip.durationInFrames, tokens, styleId: 'pop', bgColor: CAPTION_BG_DEFAULT, fromClipId: clip.id } as CaptionClip });
+    setSelectedClipId(id);
+  };
+  const patchCaptionClip = (ref: { clip: CaptionClip; trackId: string }, patch: Partial<CaptionClip>) =>
+    dispatch({ type: 'TL_PATCH_CLIP', trackId: ref.trackId, clipId: ref.clip.id, patch: patch as Partial<Clip> });
+  const removeCaptionClip = (ref: { clip: CaptionClip; trackId: string }) => {
+    dispatch({ type: 'TL_REMOVE_CLIP', trackId: ref.trackId, clipId: ref.clip.id });
+    if (selectedClipId === ref.clip.id) setSelectedClipId(null);
+  };
+
+  // Ruler zoom: click+hold on the time ruler, drag LEFT to zoom in / RIGHT to zoom out. The time under
+  // the initial click stays put (anchored centre) by compensating scroll. A plain click (no drag) seeks.
+  const START_LEFT = 20;
+  const onRulerPointerDown = (e: React.PointerEvent) => {
+    const wrap = widgetWrapRef.current;
+    if (!wrap) return;
+    e.preventDefault();
+    const anchorScreenX = e.clientX - wrap.getBoundingClientRect().left; // px from the widget's left edge
+    const zoomAtDown = pxPerSec;                                          // px/sec at grab
+    const anchorTime = Math.max(0, (anchorScreenX - START_LEFT + scrollLeftRef.current) / zoomAtDown);
+    const startX = e.clientX;
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      if (Math.abs(dx) > 2) moved = true;
+      const nz = Math.max(minPxPerSec, Math.min(240, zoomAtDown * Math.exp(-dx * 0.006))); // left→in, right→out
+      pendingScrollRef.current = START_LEFT + anchorTime * nz - anchorScreenX;      // keep anchorTime fixed
+      setPxPerSec(nz);
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      if (!moved) { // plain click on the ruler → seek both the widget cursor and the preview player
+        timelineState.current?.setTime(anchorTime);
+        try { playerRef.current?.seekTo(Math.round(anchorTime * fps)); } catch { /* player not ready */ }
+      }
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  };
 
   const onExport = useCallback(async () => {
     if (durationInFrames < 2) { setError('Add at least one clip to the timeline first.'); return; }
@@ -141,7 +434,11 @@ export const StudioVideoEditorNLE: FC = () => {
       if (!job || job.status !== 'done' || !job.outputUrl) throw new Error(job?.error || 'Render did not complete.');
       setRenderUrl(job.outputUrl);
       toaster.show('Timeline rendered.', 'success');
-    } catch (e) { setError((e as Error)?.message ?? String(e)); }
+    } catch (e) {
+      // User-facing message only; keep the raw error in the console for troubleshooting.
+      console.error('[VideoEditor] export failed:', e);
+      setError('Export failed — the render service couldn\'t finish this timeline. See the browser console for details.');
+    }
     finally { setRendering(false); }
   }, [durationInFrames, format, edl, fps, toaster]);
 
@@ -153,15 +450,19 @@ export const StudioVideoEditorNLE: FC = () => {
 
   const newTimeline = () => { dispatch({ type: 'SET_TIMELINE', timeline: emptyEDL({ fps }) }); setSelectedClipId(null); setRenderUrl(null); };
 
-  // Append a text overlay to the text track at the playhead (default 2s).
   const addText = useCallback(() => {
     const tTrack = edl.tracks.find((t) => t.kind === 'text') || edl.tracks[edl.tracks.length - 1];
-    const at = Math.round((timelineState.current?.getTime?.() ?? 0) * fps);
+    const at = playheadFrame();
     dispatch({ type: 'TL_ADD_CLIP', trackId: tTrack.id, clip: { kind: 'text', id: `tx_${Math.random().toString(36).slice(2, 7)}`, from: at, durationInFrames: 2 * fps, text: 'New text' } });
-  }, [edl, fps, dispatch]);
+  }, [edl, fps, dispatch, playheadFrame]);
 
-  // Player scale — fit the composition into the canvas box.
   const playerStyle = useMemo(() => ({ width: '100%', height: '100%' }), []);
+  const secToFrames = (s: number) => Math.max(0, Math.round(s * fps));
+
+  const binTabs: Array<{ k: typeof bin; label: string }> = [
+    { k: 'video', label: 'Video' }, { k: 'dialogue', label: 'Dialogue' }, { k: 'sfx', label: 'SFX' }, { k: 'music', label: 'Music' },
+  ];
+  const rowBtn = 'w-full text-left px-[8px] py-[7px] rounded-[6px] border border-newBorder hover:border-ai bg-newBgColorInner text-[11px] text-btnText flex items-center gap-[6px]';
 
   return (
     <div className="flex flex-col gap-[12px]">
@@ -188,20 +489,123 @@ export const StudioVideoEditorNLE: FC = () => {
       {/* Top region: Library (left) · Canvas (center) · Inspector (right) */}
       <div className="flex flex-col lg:flex-row gap-[12px]">
         {/* Library / source bin */}
-        <div className={card + ' lg:w-[230px] shrink-0 p-[12px] flex flex-col gap-[8px]'}>
+        <div className={card + ' lg:w-[248px] shrink-0 p-[12px] flex flex-col gap-[8px]'}>
           <span className="text-[13px] font-[600] text-btnText">Library</span>
-          <span className="text-[10px] text-textItemBlur">Click + to add a clip to the timeline.</span>
-          <div className="grid grid-cols-2 gap-[8px] overflow-y-auto max-h-[38vh] pr-[2px]">
-            {clips.map((c) => (
-              <button key={c.id} type="button" onClick={() => addClipToTimeline(c)} title="Add to timeline"
-                className="relative aspect-square rounded-[6px] overflow-hidden border border-newBorder hover:border-ai bg-black group">
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                <video src={c.url} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
-                <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 text-white text-[22px] font-[800] opacity-0 group-hover:opacity-100">＋</span>
+          <div className="flex gap-[4px]">
+            {binTabs.map((t) => (
+              <button key={t.k} type="button" onClick={() => setBin(t.k)}
+                className={'flex-1 h-[26px] rounded-[6px] text-[11px] font-[600] border ' + (bin === t.k ? 'border-ai text-btnText bg-ai/10' : 'border-newBorder text-textItemBlur hover:text-btnText')}>
+                {t.label}
               </button>
             ))}
-            {clips.length === 0 && <span className="col-span-2 text-[11px] text-textItemBlur py-[10px]">No clips yet. Generate some on the Video tab.</span>}
           </div>
+
+          {bin === 'video' && (
+            <>
+              <span className="text-[10px] text-textItemBlur">Click + to add a clip to the video track.</span>
+              <div className="grid grid-cols-2 gap-[8px] overflow-y-auto max-h-[38vh] pr-[2px]">
+                {clips.map((c) => (
+                  <button key={c.id} type="button" onClick={() => addVideoClip(c)} title="Add to timeline"
+                    className="relative aspect-square rounded-[6px] overflow-hidden border border-newBorder hover:border-ai bg-black group">
+                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                    <video src={c.url} muted preload="metadata" className="w-full h-full object-cover pointer-events-none" />
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 text-white text-[22px] font-[800] opacity-0 group-hover:opacity-100">＋</span>
+                  </button>
+                ))}
+                {clips.length === 0 && <span className="col-span-2 text-[11px] text-textItemBlur py-[10px]">No clips yet. Generate some on the Video tab.</span>}
+              </div>
+            </>
+          )}
+
+          {bin === 'dialogue' && (
+            <>
+              <span className="text-[10px] text-textItemBlur">Rendered voice-overs. Adds to the Dialogue lane at the playhead (drives the music duck).</span>
+              <div className="flex flex-col gap-[6px] overflow-y-auto max-h-[38vh] pr-[2px]">
+                {audioTracks.map((t) => (
+                  <button key={t.id} type="button" onClick={() => addDialogue(t)} className={rowBtn} title="Add to Dialogue lane">
+                    <span style={{ width: 8, height: 8, borderRadius: 8, background: LANE_COLOR.dialogue, flexShrink: 0 }} />
+                    <span className="truncate flex-1">{t.scriptName || t.text || t.id}</span>
+                    <span className="text-textItemBlur tabular-nums">{t.durationS ? `${t.durationS.toFixed(1)}s` : ''}</span>
+                  </button>
+                ))}
+                {audioTracks.length === 0 && <span className="text-[11px] text-textItemBlur py-[10px]">No voice-overs yet. Render one on the Audio tab.</span>}
+              </div>
+            </>
+          )}
+
+          {bin === 'sfx' && (
+            <>
+              <span className="text-[10px] text-textItemBlur">One-shots for the SFX lane. Place at the playhead, then nudge to a cut.</span>
+              <div className="flex flex-col gap-[6px] overflow-y-auto max-h-[30vh] pr-[2px]">
+                {sfx.map((s) => (
+                  <button key={s.id} type="button" onClick={() => addSfx(s)} className={rowBtn} title="Add to SFX lane">
+                    <span style={{ width: 8, height: 8, borderRadius: 8, background: LANE_COLOR.sfx, flexShrink: 0 }} />
+                    <span className="truncate flex-1">{s.label}</span>
+                    <span className="text-textItemBlur tabular-nums">{s.durationS ? `${s.durationS.toFixed(1)}s` : ''}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col gap-[5px] border-t border-newBorder pt-[8px]">
+                <span className="text-[10px] font-[600] text-textItemBlur uppercase">Generate SFX (AI)</span>
+                <input value={bin === 'sfx' ? genText : ''} onChange={(e) => setGenText(e.target.value)} placeholder="e.g. glass shatter, whoosh"
+                  className="h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText" />
+                <button type="button" disabled={genBusy || !genText.trim()} onClick={() => setConfirmGen('sfx')}
+                  className="h-[30px] rounded-[6px] bg-ai text-white text-[11px] font-[700] disabled:opacity-50">{genBusy ? 'Generating…' : '⚡ Generate SFX (~200 cr)'}</button>
+              </div>
+            </>
+          )}
+
+          {bin === 'music' && (
+            <>
+              <span className="text-[10px] text-textItemBlur">Beds for the Music lane. Toggle Duck in the inspector to dip under speech.</span>
+              <div className="flex flex-col gap-[6px] overflow-y-auto max-h-[22vh] pr-[2px]">
+                {beds.map((b) => (
+                  <button key={b.id} type="button" onClick={() => addBed(b)} className={rowBtn} title="Add local bed to Music lane">
+                    <span style={{ width: 8, height: 8, borderRadius: 8, background: LANE_COLOR.music, flexShrink: 0 }} />
+                    <span className="truncate flex-1">{b.mood} · {b.bpm} bpm</span>
+                    <span className="text-textItemBlur tabular-nums">{b.durationS}s</span>
+                  </button>
+                ))}
+              </div>
+              {/* Jamendo search */}
+              <div className="flex flex-col gap-[5px] border-t border-newBorder pt-[8px]">
+                <span className="text-[10px] font-[600] text-textItemBlur uppercase">Jamendo catalog</span>
+                <div className="flex gap-[5px]">
+                  <input value={jamQ} onChange={(e) => setJamQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && runJamendo()} placeholder="search music"
+                    className="h-[30px] flex-1 px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText" />
+                  <button type="button" disabled={jamBusy || !jamQ.trim()} onClick={runJamendo} className="h-[30px] px-[10px] rounded-[6px] border border-newBorder text-[11px] text-btnText disabled:opacity-50">Go</button>
+                </div>
+                {jam && !jam.configured && <span className="text-[10px] text-amber-400">{jam.note || 'Add JAMENDO_CLIENT_ID to search Jamendo.'}</span>}
+                <div className="flex flex-col gap-[5px] overflow-y-auto max-h-[16vh]">
+                  {(jam?.tracks || []).map((j) => (
+                    <button key={j.jamendoId} type="button" disabled={jamBusy} onClick={() => addJamendo(j)} className={rowBtn} title={j.commercialUse ? 'Add to Music lane' : 'CC track — not ad-cleared; license separately for paid ads'}>
+                      <span className="truncate flex-1">{j.name} · {j.artist}</span>
+                      {!j.commercialUse && <span className="text-[9px] text-amber-400">CC</span>}
+                      <span className="text-textItemBlur tabular-nums">{j.durationS}s</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* AI music */}
+              <div className="flex flex-col gap-[5px] border-t border-newBorder pt-[8px]">
+                <span className="text-[10px] font-[600] text-textItemBlur uppercase">Generate music (AI)</span>
+                <input value={bin === 'music' ? genText : ''} onChange={(e) => setGenText(e.target.value)} placeholder="e.g. calm lofi, 12s"
+                  className="h-[30px] px-[8px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText" />
+                <button type="button" disabled={genBusy || !genText.trim()} onClick={() => setConfirmGen('music')}
+                  className="h-[30px] rounded-[6px] bg-ai text-white text-[11px] font-[700] disabled:opacity-50">{genBusy ? 'Generating…' : '⚡ Generate music (~180 cr)'}</button>
+              </div>
+            </>
+          )}
+
+          {confirmGen && (
+            <div className="flex flex-col gap-[6px] rounded-[8px] border border-ai/40 bg-ai/10 p-[8px] text-[11px] text-btnText">
+              <span>This spends ElevenLabs credits ({confirmGen === 'sfx' ? '~200' : '~180'} cr). Continue?</span>
+              <div className="flex gap-[6px]">
+                <button type="button" onClick={() => runGen(confirmGen)} className="h-[28px] px-[10px] rounded-[6px] bg-ai text-white font-[700]">Generate</button>
+                <button type="button" onClick={() => setConfirmGen(null)} className="h-[28px] px-[10px] rounded-[6px] border border-newBorder text-textItemBlur">Cancel</button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Canvas — @remotion/player of the composed edit */}
@@ -229,21 +633,102 @@ export const StudioVideoEditorNLE: FC = () => {
             <span className="text-[11px] text-textItemBlur">Select a clip in the timeline to edit it.</span>
           ) : (
             <>
-              <span className="text-[11px] text-textItemBlur truncate">{selected.clip.kind} · {selected.clip.id}</span>
+              <span className="text-[11px] text-textItemBlur truncate">{selected.clip.kind === 'audio' ? laneLabelOf(selected.track) : selected.clip.kind} · {selected.clip.id}</span>
               {selected.clip.kind === 'text' && (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Text</span>
                   <input value={(selected.clip as { text?: string }).text ?? ''} onChange={(e) => patchSelected({ text: e.target.value } as Partial<Clip>)}
                     className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
               )}
-              {(selected.clip.kind === 'video' || selected.clip.kind === 'audio') && (
+              {selected.clip.kind === 'video' && (
                 <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Volume {Math.round(((selected.clip as VideoClip).volume ?? 1) * 100)}%</span>
                   <input type="range" min={0} max={1} step={0.05} value={(selected.clip as VideoClip).volume ?? 1} onChange={(e) => patchSelected({ volume: Number(e.target.value) } as Partial<Clip>)} /></label>
               )}
-              <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Transition out</span>
-                <select value={selected.clip.transitionOut?.type ?? 'cut'} onChange={(e) => patchSelected({ transitionOut: e.target.value === 'cut' ? undefined : { type: e.target.value, durationInFrames: Math.round(0.4 * fps) } } as Partial<Clip>)}
-                  className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText">
-                  {TRANSITIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select></label>
+              {selected.clip.kind === 'audio' && (() => {
+                const ac = selected.clip as AudioClip;
+                const gain = ac.gainDb ?? 0;
+                return (
+                  <>
+                    <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Gain {gain > 0 ? '+' : ''}{gain} dB</span>
+                      <input type="range" min={-24} max={6} step={1} value={gain} onChange={(e) => patchSelected({ gainDb: Number(e.target.value) } as Partial<Clip>)} /></label>
+                    <div className="flex gap-[8px]">
+                      <label className="flex flex-col gap-[3px] flex-1 min-w-0"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Fade in (s)</span>
+                        <input type="number" min={0} step={0.1} value={((ac.fadeInFrames ?? 0) / fps).toFixed(1)} onChange={(e) => patchSelected({ fadeInFrames: secToFrames(Number(e.target.value)) } as Partial<Clip>)}
+                          className="h-[30px] px-[8px] w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
+                      <label className="flex flex-col gap-[3px] flex-1 min-w-0"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Fade out (s)</span>
+                        <input type="number" min={0} step={0.1} value={((ac.fadeOutFrames ?? 0) / fps).toFixed(1)} onChange={(e) => patchSelected({ fadeOutFrames: secToFrames(Number(e.target.value)) } as Partial<Clip>)}
+                          className="h-[30px] px-[8px] w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText" /></label>
+                    </div>
+                    {selected.track.role === 'music' && (
+                      <label className="flex items-center gap-[8px] text-[11px] font-[600] text-btnText">
+                        <input type="checkbox" checked={!!ac.duck} onChange={(e) => patchSelected({ duck: e.target.checked } as Partial<Clip>)} />
+                        Duck under dialogue
+                      </label>
+                    )}
+                    {selected.track.role === 'dialogue' && (() => {
+                      const cap = captionOf(ac.id);
+                      if (!cap) return (
+                        <button type="button" onClick={() => addCaptionsFromClip(ac)}
+                          className="h-[30px] rounded-[8px] bg-ai text-white text-[12px] font-[600]">＋ Add captions (Pop)</button>
+                      );
+                      const hasBg = !!cap.clip.bgColor && cap.clip.bgColor !== 'none';
+                      return (
+                        <div className="flex flex-col gap-[6px] border-t border-newBorder pt-[8px]">
+                          <span className="text-[10px] font-[600] text-textItemBlur uppercase">Captions (Pop)</span>
+                          <div className="flex items-center gap-[8px] flex-wrap">
+                            <label className="flex items-center gap-[5px] text-[11px] text-btnText">Highlight
+                              <input type="color" value={hasBg ? (cap.clip.bgColor as string) : CAPTION_BG_DEFAULT} onChange={(e) => patchCaptionClip(cap, { bgColor: e.target.value })}
+                                disabled={!hasBg} className="w-[30px] h-[24px] rounded-[4px] bg-transparent border border-newBorder p-0 disabled:opacity-40" />
+                            </label>
+                            <button type="button" onClick={() => patchCaptionClip(cap, { bgColor: hasBg ? 'none' : CAPTION_BG_DEFAULT })}
+                              className="h-[24px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">{hasBg ? 'No background' : 'Add background'}</button>
+                          </div>
+                          <label className="flex items-center gap-[6px] text-[11px] font-[600] text-btnText">
+                            <input type="checkbox" checked={(cap.clip.styleId ?? 'pop') === 'pop'} onChange={(e) => patchCaptionClip(cap, { styleId: e.target.checked ? 'pop' : 'flat' })} />
+                            Bounce the active word
+                          </label>
+                          <button type="button" onClick={() => removeCaptionClip(cap)}
+                            className="h-[28px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[11px] font-[600] hover:bg-[#ff7eb6]/10">Remove captions</button>
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })()}
+              {selected.clip.kind === 'captions' && (() => {
+                const cc = selected.clip as CaptionClip;
+                const ref = { clip: cc, trackId: selected.track.id };
+                const hasBg = !!cc.bgColor && cc.bgColor !== 'none';
+                return (
+                  <div className="flex flex-col gap-[6px]">
+                    <div className="flex items-center gap-[8px] flex-wrap">
+                      <label className="flex items-center gap-[5px] text-[11px] text-btnText">Highlight
+                        <input type="color" value={hasBg ? (cc.bgColor as string) : CAPTION_BG_DEFAULT} disabled={!hasBg} onChange={(e) => patchCaptionClip(ref, { bgColor: e.target.value })}
+                          className="w-[30px] h-[24px] rounded-[4px] bg-transparent border border-newBorder p-0 disabled:opacity-40" />
+                      </label>
+                      <button type="button" onClick={() => patchCaptionClip(ref, { bgColor: hasBg ? 'none' : CAPTION_BG_DEFAULT })}
+                        className="h-[24px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-textItemBlur hover:text-btnText">{hasBg ? 'No background' : 'Add background'}</button>
+                    </div>
+                    <label className="flex items-center gap-[6px] text-[11px] font-[600] text-btnText">
+                      <input type="checkbox" checked={(cc.styleId ?? 'pop') === 'pop'} onChange={(e) => patchCaptionClip(ref, { styleId: e.target.checked ? 'pop' : 'flat' })} />
+                      Bounce the active word
+                    </label>
+                  </div>
+                );
+              })()}
+              {(selected.clip.kind === 'video' || selected.clip.kind === 'text') && (
+                <>
+                  <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Transition in</span>
+                    <select value={selected.clip.transitionIn?.type ?? 'cut'} onChange={(e) => patchSelected({ transitionIn: e.target.value === 'cut' ? undefined : { type: e.target.value, durationInFrames: Math.round(0.4 * fps) } } as Partial<Clip>)}
+                      className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText">
+                      {TRANSITIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select></label>
+                  <label className="flex flex-col gap-[3px]"><span className="text-[10px] font-[600] text-textItemBlur uppercase">Transition out</span>
+                    <select value={selected.clip.transitionOut?.type ?? 'cut'} onChange={(e) => patchSelected({ transitionOut: e.target.value === 'cut' ? undefined : { type: e.target.value, durationInFrames: Math.round(0.4 * fps) } } as Partial<Clip>)}
+                      className="h-[32px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText">
+                      {TRANSITIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select></label>
+                </>
+              )}
               <button type="button" onClick={removeSelected} className="h-[32px] rounded-[8px] border border-[#ff7eb6]/40 text-[#ff7eb6] text-[12px] font-[600] hover:bg-[#ff7eb6]/10">Remove clip</button>
             </>
           )}
@@ -257,34 +742,82 @@ export const StudioVideoEditorNLE: FC = () => {
         </div>
       </div>
 
-      {/* Timeline — multi-track lanes */}
-      <div className={card + ' p-[8px] overflow-hidden'}>
-        <TimelineWidget
-          ref={timelineState}
-          editorData={rows}
-          effects={EFFECTS}
-          autoScroll
-          gridSnap
-          dragLine
-          rowHeight={40}
-          scale={1}
-          scaleWidth={80}
-          startLeft={20}
-          onChange={onWidgetChange}
-          onClickAction={(_e, { action }: { action: TimelineAction }) => setSelectedClipId(action.id)}
-          getActionRender={(action: TimelineAction, row: TimelineRow) => {
-            const isSel = action.id === selectedClipId;
-            const track = edl.tracks.find((t) => t.id === row.id);
-            const clip = track?.clips.find((c) => c.id === action.id);
-            const label = clip ? (clip.kind === 'text' ? `T: ${(clip as { text?: string }).text ?? ''}` : clip.kind) : row.id;
-            const color = track?.kind === 'audio' ? '#612bd3' : track?.kind === 'text' || track?.kind === 'captions' ? '#0ea5a4' : '#d82d7e';
-            return (
-              <div style={{ height: '100%', borderRadius: 6, background: color, opacity: isSel ? 1 : 0.82, border: isSel ? '2px solid #fff' : '1px solid rgba(0,0,0,0.3)', color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 6px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                {label}
+      {/* Timeline — lane labels + multi-track lanes on one ruler */}
+      <div className={card + ' p-[8px] flex'}>
+        {/* Lane labels + controls (aligned to the widget's rows; top spacer clears its time ruler) */}
+        <div className="shrink-0 w-[112px] pr-[6px]" style={{ paddingTop: RULER_H }}>
+          {edl.tracks.map((t, i) => (
+            <div key={t.id} style={{ height: ROW_H }} className="flex items-center gap-[3px] text-[10px] font-[600]">
+              <span style={{ width: 6, height: 6, borderRadius: 6, background: laneColorOf(t), flexShrink: 0 }} />
+              <span className="text-btnText truncate flex-1">{laneLabelOf(t)}</span>
+              <span className="flex flex-col leading-[7px]">
+                <button type="button" onClick={() => moveTrack(i, -1)} disabled={i === 0} title="Move up"
+                  className="text-[8px] text-textItemBlur hover:text-btnText disabled:opacity-25">▲</button>
+                <button type="button" onClick={() => moveTrack(i, 1)} disabled={i === edl.tracks.length - 1} title="Move down"
+                  className="text-[8px] text-textItemBlur hover:text-btnText disabled:opacity-25">▼</button>
+              </span>
+              {t.kind === 'audio' && (
+                <button type="button" onClick={() => toggleMute(t)} title={t.muted ? 'Unmute' : 'Mute'}
+                  className={'text-[9px] leading-none px-[2px] rounded-[3px] ' + (t.muted ? 'text-red-400' : 'text-textItemBlur hover:text-btnText')}>{t.muted ? '🔇' : '🔊'}</button>
+              )}
+            </div>
+          ))}
+          {/* Add an extra lane beyond the default five */}
+          <div className="relative mt-[4px]">
+            <button type="button" onClick={() => setAddingLane((v) => !v)} title="Add a track"
+              className="h-[20px] w-full rounded-[5px] border border-dashed border-newBorder text-[11px] text-textItemBlur hover:text-btnText hover:border-ai">＋ Track</button>
+            {addingLane && (
+              <div className="absolute z-30 left-0 bottom-[26px] w-[128px] rounded-[6px] border border-newBorder bg-newBgColorInner p-[4px] flex flex-col gap-[2px] shadow-lg">
+                {([['video', undefined, 'Video'], ['audio', 'dialogue', 'Dialogue'], ['audio', 'sfx', 'SFX'], ['audio', 'music', 'Music'], ['text', undefined, 'Text']] as Array<[Track['kind'], AudioRole | undefined, string]>).map(([k, r, lbl]) => (
+                  <button key={lbl} type="button" onClick={() => addLane(k, r)}
+                    className="text-left px-[6px] py-[4px] rounded-[4px] text-[11px] text-btnText hover:bg-ai/10 flex items-center gap-[6px]">
+                    <span style={{ width: 6, height: 6, borderRadius: 6, background: LANE_COLOR[r || k] }} />{lbl}
+                  </button>
+                ))}
               </div>
-            );
-          }}
-        />
+            )}
+          </div>
+        </div>
+        <div ref={widgetWrapRef} className="flex-1 min-w-0 relative" style={{ height: timelineHeight }}>
+          {/* Zoom strip over the time ruler — drag left = zoom in, right = zoom out (anchored at the click). */}
+          <div onPointerDown={onRulerPointerDown} title="Drag left to zoom in, right to zoom out"
+            className="absolute top-0 left-0 right-0 z-20 cursor-ew-resize" style={{ height: RULER_H }} />
+          <TimelineWidget
+            ref={timelineState}
+            editorData={rows}
+            effects={EFFECTS}
+            gridSnap
+            dragLine
+            rowHeight={ROW_H}
+            style={{ height: timelineHeight, width: '100%' }}
+            scale={rulerScale}
+            scaleWidth={rulerScaleWidth}
+            scaleSplitCount={SPLIT}
+            startLeft={START_LEFT}
+            minScaleCount={minScaleCount}
+            maxScaleCount={maxScaleCount}
+            getScaleRender={renderScale}
+            onScroll={onWidgetScroll}
+            onChange={onWidgetChange}
+            onClickAction={(_e, { action }: { action: TimelineAction }) => setSelectedClipId(action.id)}
+            getActionRender={(action: TimelineAction, row: TimelineRow) => {
+              const isSel = action.id === selectedClipId;
+              const track = edl.tracks.find((t) => t.id === row.id);
+              const clip = track?.clips.find((c) => c.id === action.id);
+              const color = laneColorOf(track);
+              const isAudio = clip?.kind === 'audio';
+              const wave = isAudio ? peaks[(clip as AudioClip).srcId] : undefined;
+              const label = clip ? (clip.kind === 'text' ? `T: ${(clip as { text?: string }).text ?? ''}` : isAudio ? '' : clip.kind) : row.id;
+              return (
+                <div style={{ position: 'relative', height: '100%', borderRadius: 6, background: isAudio ? `${color}26` : color, opacity: isSel ? 1 : 0.9, border: isSel ? '2px solid #fff' : `1px solid ${isAudio ? color : 'rgba(0,0,0,0.3)'}`, color: '#fff', fontSize: 10, fontWeight: 700, padding: '2px 6px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  {isAudio && wave && wave.length > 0 && <WaveBars peaks={wave} color={color} />}
+                  {isAudio && (clip as AudioClip).duck && <span style={{ position: 'absolute', top: 1, right: 3, fontSize: 8 }}>duck</span>}
+                  <span style={{ position: 'relative' }}>{label}</span>
+                </div>
+              );
+            }}
+          />
+        </div>
       </div>
     </div>
   );
