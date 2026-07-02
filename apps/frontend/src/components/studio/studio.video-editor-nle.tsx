@@ -161,6 +161,23 @@ export const StudioVideoEditorNLE: FC = () => {
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
 
+  // Drive the timeline playhead from the preview player: as @remotion/player plays or seeks, move the
+  // widget cursor to the same time (frame → seconds). Both are imperative refs → no React re-render.
+  useEffect(() => {
+    let raf = 0;
+    let player: PlayerRef | null = null;
+    const onFrame = (e: { detail?: { frame?: number } }) => {
+      try { timelineState.current?.setTime((e.detail?.frame ?? 0) / fps); } catch { /* widget not ready */ }
+    };
+    const attach = () => {
+      player = playerRef.current;
+      if (player) player.addEventListener('frameupdate', onFrame);
+      else raf = requestAnimationFrame(attach); // player mounts a tick later
+    };
+    attach();
+    return () => { cancelAnimationFrame(raf); try { player?.removeEventListener('frameupdate', onFrame); } catch { /* unmounted */ } };
+  }, [fps]);
+
   // Stable ruler-label renderer (m:ss) — an inline fn here would re-mount the widget every render.
   const renderScale = useCallback((sec: number) => <span className="tabular-nums">{fmtClock(sec)}</span>, []);
   // Stable onScroll — records scroll to a ref (no setState, so no re-render/loop).
@@ -349,7 +366,10 @@ export const StudioVideoEditorNLE: FC = () => {
     const up = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
-      if (!moved) timelineState.current?.setTime(anchorTime); // plain click on the ruler → seek there
+      if (!moved) { // plain click on the ruler → seek both the widget cursor and the preview player
+        timelineState.current?.setTime(anchorTime);
+        try { playerRef.current?.seekTo(Math.round(anchorTime * fps)); } catch { /* player not ready */ }
+      }
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
