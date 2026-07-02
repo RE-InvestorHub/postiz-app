@@ -132,9 +132,16 @@ export const StudioVideoEditorNLE: FC = () => {
   const [addingLane, setAddingLane] = useState(false);
   const [pxPerSec, setPxPerSec] = useState(80); // continuous zoom (px per second on the ruler).
   const [viewportW, setViewportW] = useState(1200); // measured timeline viewport width (for ruler length).
+  // Unified transport (drives the single @remotion/player; the timeline cursor is a two-way slave).
+  const [playing, setPlaying] = useState(false);
+  const [curFrame, setCurFrame] = useState(0);   // throttled, for the m:ss readout
+  const [scrubOn, setScrubOn] = useState(true);  // release-preview scrub audio on/off
 
   const playerRef = useRef<PlayerRef>(null);
   const timelineState = useRef<TimelineState>(null);
+  const draggingCursorRef = useRef(false);        // true while the user drags the playhead (don't fight it)
+  const scrubTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readoutFrameRef = useRef(0);              // last frame we pushed to the readout (throttle)
   const widgetWrapRef = useRef<HTMLDivElement>(null);
   const scrollLeftRef = useRef(0);            // live horizontal scroll (from the widget's onScroll)
   const pendingScrollRef = useRef<number | null>(null); // scroll to apply AFTER a zoom re-render
@@ -166,22 +173,55 @@ export const StudioVideoEditorNLE: FC = () => {
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
 
-  // Drive the timeline playhead from the preview player: as @remotion/player plays or seeks, move the
-  // widget cursor to the same time (frame → seconds). Both are imperative refs → no React re-render.
+  // The player is the single playback clock. As it plays/seeks, move the widget cursor to match (unless
+  // the user is dragging the cursor) and keep a throttled frame for the m:ss readout + the play/pause
+  // state for the transport. Cursor motion is imperative (no re-render); the readout updates ~4×/s.
   useEffect(() => {
     let raf = 0;
     let player: PlayerRef | null = null;
     const onFrame = (e: { detail?: { frame?: number } }) => {
-      try { timelineState.current?.setTime((e.detail?.frame ?? 0) / fps); } catch { /* widget not ready */ }
+      const f = e.detail?.frame ?? 0;
+      if (!draggingCursorRef.current) { try { timelineState.current?.setTime(f / fps); } catch { /* not ready */ } }
+      if (Math.abs(f - readoutFrameRef.current) >= Math.max(1, Math.round(fps / 4))) { readoutFrameRef.current = f; setCurFrame(f); }
     };
+    const onPlay = () => setPlaying(true);
+    const onStop = () => setPlaying(false);
     const attach = () => {
       player = playerRef.current;
-      if (player) player.addEventListener('frameupdate', onFrame);
-      else raf = requestAnimationFrame(attach); // player mounts a tick later
+      if (player) {
+        player.addEventListener('frameupdate', onFrame);
+        player.addEventListener('play', onPlay);
+        player.addEventListener('pause', onStop);
+        player.addEventListener('ended', onStop);
+      } else raf = requestAnimationFrame(attach); // player mounts a tick later
     };
     attach();
-    return () => { cancelAnimationFrame(raf); try { player?.removeEventListener('frameupdate', onFrame); } catch { /* unmounted */ } };
+    return () => {
+      cancelAnimationFrame(raf);
+      try { player?.removeEventListener('frameupdate', onFrame); player?.removeEventListener('play', onPlay); player?.removeEventListener('pause', onStop); player?.removeEventListener('ended', onStop); } catch { /* unmounted */ }
+    };
   }, [fps]);
+
+  // ── Transport (drives the player) ──────────────────────────────────────────────────────────────
+  const seekPlayer = useCallback((frame: number) => { try { playerRef.current?.seekTo(Math.max(0, Math.round(frame))); } catch { /* not ready */ } }, []);
+  const togglePlay = useCallback(() => { const p = playerRef.current; if (!p) return; if (playing) p.pause(); else p.play(); }, [playing]);
+  const stopPlayback = useCallback(() => { const p = playerRef.current; if (!p) return; try { p.pause(); p.seekTo(0); } catch { /* not ready */ } }, []);
+  const toStart = useCallback(() => seekPlayer(0), [seekPlayer]);
+
+  // Release-preview scrub: after the playhead lands, play a short audible burst from there, then park.
+  const scrubPreview = useCallback((frame: number) => {
+    const p = playerRef.current;
+    if (!p || !scrubOn || playing) return;
+    if (scrubTimerRef.current) clearTimeout(scrubTimerRef.current);
+    try { p.seekTo(Math.max(0, Math.round(frame))); p.play(); } catch { return; }
+    scrubTimerRef.current = setTimeout(() => { try { p.pause(); p.seekTo(Math.max(0, Math.round(frame))); } catch { /* gone */ } }, 420);
+  }, [scrubOn, playing]);
+
+  // Two-way sync: dragging/clicking the timeline cursor seeks the player (the missing half — otherwise
+  // play resumes at the old position). During a drag we suppress the frameupdate→setTime feedback.
+  const onCursorDragStart = useCallback(() => { draggingCursorRef.current = true; }, []);
+  const onCursorDrag = useCallback((time: number) => { seekPlayer(time * fps); }, [seekPlayer, fps]);
+  const onCursorDragEnd = useCallback((time: number) => { draggingCursorRef.current = false; seekPlayer(time * fps); scrubPreview(time * fps); }, [seekPlayer, scrubPreview, fps]);
 
   // Stable ruler-label renderer (m:ss) — an inline fn here would re-mount the widget every render.
   const renderScale = useCallback((sec: number) => <span className="tabular-nums">{fmtClock(sec)}</span>, []);
@@ -411,9 +451,10 @@ export const StudioVideoEditorNLE: FC = () => {
     const up = () => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
-      if (!moved) { // plain click on the ruler → seek both the widget cursor and the preview player
+      if (!moved) { // plain click on the ruler → seek the cursor + the player, and preview-scrub
         timelineState.current?.setTime(anchorTime);
-        try { playerRef.current?.seekTo(Math.round(anchorTime * fps)); } catch { /* player not ready */ }
+        seekPlayer(anchorTime * fps);
+        scrubPreview(anchorTime * fps);
       }
     };
     document.addEventListener('pointermove', move);
@@ -469,7 +510,16 @@ export const StudioVideoEditorNLE: FC = () => {
       {/* Toolbar */}
       <div className={card + ' px-[12px] py-[10px] flex flex-wrap items-center gap-[10px]'}>
         <span className="text-[14px] font-[700] text-btnText">🎬 Video Editor</span>
-        <span className="text-[11px] text-textItemBlur">{edl.tracks.reduce((n, t) => n + t.clips.length, 0)} clips · {(durationInFrames / fps).toFixed(1)}s</span>
+        <span className="text-[11px] text-textItemBlur">{edl.tracks.reduce((n, t) => n + t.clips.length, 0)} clips</span>
+        {/* Unified transport — the single playback control (drives the player; the timeline cursor follows) */}
+        <div className="flex items-center gap-[3px] ml-[2px]">
+          <button type="button" onClick={toStart} title="To start" className="h-[32px] w-[30px] rounded-[8px] border border-newBorder text-[12px] text-btnText hover:bg-boxHover">⏮</button>
+          <button type="button" onClick={togglePlay} title={playing ? 'Pause' : 'Play'} className="h-[32px] w-[36px] rounded-[8px] bg-ai text-white text-[13px]">{playing ? '⏸' : '▶'}</button>
+          <button type="button" onClick={stopPlayback} title="Stop (to start)" className="h-[32px] w-[30px] rounded-[8px] border border-newBorder text-[12px] text-btnText hover:bg-boxHover">⏹</button>
+          <span className="text-[11px] text-textItemBlur tabular-nums ml-[4px]">{fmtClock(curFrame / fps)} / {fmtClock(durationInFrames / fps)}</span>
+          <button type="button" onClick={() => setScrubOn((v) => !v)} title="Play a short audio preview when you move the playhead"
+            className={'h-[32px] px-[8px] rounded-[8px] border text-[11px] font-[600] ml-[4px] ' + (scrubOn ? 'border-ai text-btnText bg-ai/10' : 'border-newBorder text-textItemBlur hover:text-btnText')}>🔊 Scrub</button>
+        </div>
         <button type="button" onClick={splitAtCursor} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover">✂ Split</button>
         <button type="button" onClick={addText} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText hover:bg-boxHover">+ Text</button>
         <button type="button" onClick={newTimeline} className="h-[32px] px-[12px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText">New</button>
@@ -620,7 +670,7 @@ export const StudioVideoEditorNLE: FC = () => {
               compositionWidth={edl.width}
               compositionHeight={edl.height}
               style={playerStyle}
-              controls
+              clickToPlay={false}
               acknowledgeRemotionLicense
             />
           </div>
@@ -798,6 +848,9 @@ export const StudioVideoEditorNLE: FC = () => {
             maxScaleCount={maxScaleCount}
             getScaleRender={renderScale}
             onScroll={onWidgetScroll}
+            onCursorDragStart={onCursorDragStart}
+            onCursorDrag={onCursorDrag}
+            onCursorDragEnd={onCursorDragEnd}
             onChange={onWidgetChange}
             onClickAction={(_e, { action }: { action: TimelineAction }) => setSelectedClipId(action.id)}
             getActionRender={(action: TimelineAction, row: TimelineRow) => {
