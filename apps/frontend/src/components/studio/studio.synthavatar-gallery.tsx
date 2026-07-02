@@ -14,7 +14,7 @@ import {
   SynthAvatar,
   CastResult,
   listSynthAvatars,
-  castSynthAvatar,
+  castAndWait,
   reshootPortrait,
   setSynthVoice,
   archiveSynthAvatar,
@@ -42,7 +42,7 @@ const AvatarCard: FC<{ avatar: SynthAvatar; onChanged: () => void }> = ({ avatar
     setError(null);
     setClip(null);
     try {
-      const r = await castSynthAvatar({ synthId: avatar.synth_id, script: script.trim() });
+      const r = await castAndWait({ synthId: avatar.synth_id, script: script.trim() });
       setClip(r);
       toaster.show(
         r.stub

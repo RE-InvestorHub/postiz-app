@@ -109,14 +109,46 @@ export function registerSynthAvatar(payload: {
   return post<SynthAvatar>('/synthetic-avatar/register', payload);
 }
 
-/** Cast an avatar with a script → a lip-synced clip in the Video Library. SPENDS voice + lip-sync. */
-export function castSynthAvatar(payload: {
+export interface CastJob {
+  status: 'casting' | 'done' | 'error';
+  result?: CastResult;
+  error?: string;
+}
+
+export interface CastPayload {
   synthId: string;
   script: string;
   aspectRatio?: string;
   resolution?: string;
-}): Promise<CastResult> {
-  return post<CastResult>('/synthetic-avatar/cast', payload);
+}
+
+/**
+ * Start a cast job. SPENDS voice + lip-sync. Returns a jobId immediately — TTS + lip-sync (Hedra)
+ * can take minutes, longer than the proxy request timeout, so casting is async. Poll castStatus,
+ * or use castAndWait for a single call that resolves to the finished clip.
+ */
+export function castSynthAvatar(payload: CastPayload): Promise<{ jobId: string; status: string }> {
+  return post<{ jobId: string; status: string }>('/synthetic-avatar/cast', payload);
+}
+
+/** Poll a cast job. */
+export function castStatus(jobId: string): Promise<CastJob> {
+  return req<CastJob>(`/synthetic-avatar/cast/status?jobId=${encodeURIComponent(jobId)}`);
+}
+
+/** Start a cast and poll until the clip is ready (or it errors). Resolves to the finished clip. */
+export async function castAndWait(payload: CastPayload, opts: { intervalMs?: number; timeoutMs?: number } = {}): Promise<CastResult> {
+  const { intervalMs = 3000, timeoutMs = 10 * 60 * 1000 } = opts;
+  const { jobId } = await castSynthAvatar(payload);
+  const deadline = Date.now() + timeoutMs;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    const job = await castStatus(jobId);
+    if (job.status === 'done' && job.result) return job.result;
+    if (job.status === 'error') throw new Error(job.error || 'Cast failed');
+    if (Date.now() > deadline) throw new Error('Cast timed out');
+  }
 }
 
 /** Regenerate + relock the portrait. SPENDS one image. */

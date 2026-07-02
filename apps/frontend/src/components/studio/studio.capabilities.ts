@@ -1134,7 +1134,7 @@ export function buildStudioCapabilities(
       params: ['synthId', 'script', 'aspectRatio', 'resolution'],
       handler: async (p: { synthId?: string; script?: string; aspectRatio?: string; resolution?: string } = {}) => {
         if (!p.synthId || !p.script) return;
-        const r = await synthClient.castSynthAvatar({ synthId: p.synthId, script: p.script, aspectRatio: p.aspectRatio, resolution: p.resolution });
+        const r = await synthClient.castAndWait({ synthId: p.synthId, script: p.script, aspectRatio: p.aspectRatio, resolution: p.resolution });
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh'));
           window.dispatchEvent(new CustomEvent('reinvestorhub:synthavatar-refresh'));
