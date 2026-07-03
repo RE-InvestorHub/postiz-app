@@ -17,7 +17,14 @@ import {
   listClones,
   setCloneStatus,
   revokeClone,
+  castCloneAndWait,
 } from '@gitroom/frontend/components/studio/studio.clone-client';
+
+const CAST_ENGINES = [
+  { id: 'heygen', label: 'HeyGen Avatar IV' },
+  { id: 'omnihuman', label: 'OmniHuman 1.5' },
+  { id: 'kling', label: 'Kling v2 Pro' },
+];
 import { CloneRecord, CloneStatus } from '@gitroom/frontend/components/studio/studio.types';
 
 const STATUS_BADGE: Record<CloneStatus, string> = {
@@ -42,6 +49,26 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [script, setScript] = useState('');
+  const [castEngine, setCastEngine] = useState('heygen');
+  const [casting, setCasting] = useState(false);
+  const [castMsg, setCastMsg] = useState<string | null>(null);
+
+  const doCast = useCallback(async () => {
+    if (!script.trim()) return;
+    setCasting(true);
+    setCastMsg(null);
+    setError(null);
+    try {
+      const job = await castCloneAndWait({ cloneId: clone.clone_id, script: script.trim(), engine: castEngine });
+      if (job.status === 'done') { setCastMsg(job.result?.stub ? 'Cast complete (stub clip).' : 'Cast complete — clip added to the Video Library.'); setScript(''); }
+      else setError(job.error || 'Cast failed');
+    } catch (e) {
+      setError((e as Error)?.message ?? String(e));
+    } finally {
+      setCasting(false);
+    }
+  }, [script, castEngine, clone.clone_id]);
 
   const thumb = clone.visual_identity?.reference_images?.[0];
   const voiceTier = clone.voice?.clone_tier;
@@ -127,6 +154,28 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
           <span className={exp.tone === 'danger' ? 'text-red-400' : 'text-amber-400'}>{exp.text}</span>
         )}
       </div>
+
+      {/* Cast — only when the Soul is ready + the clone is active (parity with synthetic avatars). */}
+      {clone.status === 'active' && clone.visual_identity?.soul_id && clone.prep_status !== 'training' && (
+        <div className="flex flex-col gap-[8px] rounded-[8px] border border-newBorder bg-newBgColor p-[10px]">
+          <label className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
+            <span className="shrink-0">Model</span>
+            <select value={castEngine} onChange={(e) => setCastEngine(e.target.value)} disabled={casting}
+              className="flex-1 min-w-0 h-[30px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText disabled:opacity-50">
+              {CAST_ENGINES.map((eng) => <option key={eng.id} value={eng.id}>{eng.label}</option>)}
+            </select>
+          </label>
+          <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={2}
+            placeholder={clone.voice?.voice_id ? 'Type a line for this avatar to say…' : 'Assign a voice first (create with a voice, or clone one)'}
+            disabled={casting || !clone.voice?.voice_id}
+            className="w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText p-[10px] resize-y leading-[1.4] disabled:opacity-50" />
+          <button type="button" disabled={!script.trim() || casting || !clone.voice?.voice_id} onClick={doCast}
+            className="h-[36px] px-[14px] rounded-[8px] bg-ai text-btnText font-[600] text-[12px] disabled:opacity-50">
+            {casting ? 'Casting…' : 'Cast into video'}
+          </button>
+          {castMsg && <span className="text-[11px] text-textItemBlur">{castMsg}</span>}
+        </div>
+      )}
 
       {error && <span className="text-[11px] text-red-400">{error}</span>}
 

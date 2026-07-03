@@ -137,6 +137,32 @@ export function lipsyncKling(payload: Record<string, unknown>): Promise<unknown>
   return post('/clone/lipsync/kling', payload);
 }
 
+export interface CloneCastJob {
+  status: 'casting' | 'done' | 'error';
+  result?: { clipAssetId?: string; publicUrl?: string; engine?: string; stub?: boolean; durationS?: number };
+  error?: string;
+}
+
+/** Cast a Soul-ready clone as a talking-head (TTS + lip-sync → Video Library). Async → returns a jobId. */
+export function castClone(payload: { cloneId: string; script: string; engine?: string; aspectRatio?: string }): Promise<{ jobId: string; status: string }> {
+  return post('/clone/cast', payload);
+}
+
+export function cloneCastStatus(jobId: string): Promise<CloneCastJob> {
+  return req<CloneCastJob>(`/clone/cast/status?jobId=${encodeURIComponent(jobId)}`);
+}
+
+/** Cast + poll to completion (up to ~6 min). */
+export async function castCloneAndWait(payload: { cloneId: string; script: string; engine?: string }): Promise<CloneCastJob> {
+  const { jobId } = await castClone(payload);
+  for (let i = 0; i < 120; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const s = await cloneCastStatus(jobId);
+    if (s.status === 'done' || s.status === 'error') return s;
+  }
+  return { status: 'error', error: 'cast timed out' };
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle (library management)
 // ---------------------------------------------------------------------------
