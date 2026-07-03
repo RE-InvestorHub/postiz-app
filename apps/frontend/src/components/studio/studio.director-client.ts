@@ -6,7 +6,8 @@ const BRAIN_BASE =
 function base(): string { return BRAIN_BASE.replace(/\/+$/, ''); }
 
 export interface DirectorPreset { id: string; label: string; fragment: string; brandAware?: boolean }
-export interface DirectorComponent { id: string; name: string; type: string }
+// source distinguishes a synthetic previs anchor from a READY human clone (consent + ai_clone).
+export interface DirectorComponent { id: string; name: string; type: string; source?: 'synthetic' | 'clone' }
 export interface DirectorDimension {
   id: string; label: string; hint: string;
   component: string | null;
@@ -62,10 +63,12 @@ export function captureComponent(imageId: string, kind: string, name: string, br
  * renderMode/aspectRatio/anchorId; this maps them to the endpoint.
  */
 export async function renderDirectorShot(brandKitId: string, spec: Record<string, unknown>): Promise<{ id: string; url: string; mode: string; layers: unknown }> {
-  const { renderMode, aspectRatio, anchorId, brandKitId: _b, ...dims } = spec as any;
+  const { renderMode, aspectRatio, anchorId, cloneId, brandKitId: _b, ...dims } = spec as any;
   const { jobId } = await req<{ jobId: string }>('/director/render', {
     method: 'POST',
-    body: JSON.stringify({ spec: dims, brandKitId, mode: renderMode === 'single' ? 'single' : 'layered', aspectRatio: aspectRatio || '4:5', anchorId: anchorId || null }),
+    // cloneId (a consented human clone) routes the brain's ai_clone + consent render path; anchorId is
+    // a synthetic previs anchor. They are mutually exclusive.
+    body: JSON.stringify({ spec: dims, brandKitId, mode: renderMode === 'single' ? 'single' : 'layered', aspectRatio: aspectRatio || '4:5', anchorId: anchorId || null, cloneId: cloneId || null }),
   });
   // Poll for completion (each request is fast; the render proceeds server-side).
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -102,7 +105,7 @@ export interface VideoMotion { movement?: string; action?: string; speed?: strin
 export async function renderDirectorClip(
   brandKitId: string,
   spec: Record<string, unknown>,
-  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string | null; anchorId?: string | null; onProgress?: (j: RenderJobProgress) => void } = {}
+  opts: { motion?: VideoMotion; model?: string; aspectRatio?: string; durationS?: number; firstFrameUrl?: string | null; anchorId?: string | null; cloneId?: string | null; onProgress?: (j: RenderJobProgress) => void } = {}
 ): Promise<{ id: string; url: string }> {
   const { jobId } = await req<{ jobId: string }>('/director/render-clip', {
     method: 'POST',
@@ -112,6 +115,8 @@ export async function renderDirectorClip(
       firstFrameUrl: opts.firstFrameUrl || null,
       // Plan 7: an anchored clip image-to-videos from a Soul-locked identity still of this character.
       ...(opts.anchorId ? { anchorId: opts.anchorId } : {}),
+      // cloneId → the consented human-clone render path (ai_clone + consent gate). Mutually exclusive.
+      ...(opts.cloneId ? { cloneId: opts.cloneId } : {}),
     }),
   });
   return pollRenderResult(jobId, 200, opts.onProgress) as Promise<{ id: string; url: string }>;

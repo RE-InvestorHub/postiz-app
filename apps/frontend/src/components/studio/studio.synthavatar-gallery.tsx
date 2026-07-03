@@ -23,6 +23,7 @@ import {
   deleteSynthAvatar,
 } from '@gitroom/frontend/components/studio/studio.synthavatar-client';
 import { listVoiceLibrary, VoiceOption } from '@gitroom/frontend/components/studio/studio.voice-client';
+import { AvatarReadyCard } from '@gitroom/frontend/components/studio/studio.avatar-ready-card';
 
 const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: () => void; selectMode?: boolean; isSelected?: boolean; onToggleSelect?: () => void }> = ({ avatar, engines, onChanged, selectMode, isSelected, onToggleSelect }) => {
   const toaster = useToaster();
@@ -82,121 +83,75 @@ const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: 
   }, [voices]);
 
   return (
-    <div className={clsx('relative flex flex-col gap-[12px] rounded-[8px] border bg-newBgColorInner p-[14px]', selectMode && isSelected ? 'border-ai' : 'border-newBorder')}>
-      {selectMode && (
-        <button
-          type="button"
-          onClick={onToggleSelect}
-          aria-label={isSelected ? 'Deselect avatar' : 'Select avatar'}
-          className={clsx('absolute inset-0 z-10 rounded-[8px] border-2 flex items-start justify-end p-[8px] transition-colors', isSelected ? 'border-ai bg-ai/10' : 'border-transparent bg-black/30 hover:bg-black/20')}
-        >
-          <span className={clsx('w-[20px] h-[20px] rounded-[6px] border-2 flex items-center justify-center text-[11px] leading-none', isSelected ? 'bg-ai border-ai text-btnText' : 'bg-newBgColor border-newBorder')}>
-            {isSelected ? '✓' : ''}
-          </span>
-        </button>
-      )}
-      <div className="flex items-start gap-[12px]">
-        <div className="w-[56px] h-[56px] shrink-0 rounded-[8px] bg-newBgColor border border-newBorder overflow-hidden flex items-center justify-center text-textItemBlur text-[11px]">
-          {avatar.portrait_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={avatar.portrait_url} alt={avatar.name} className="w-full h-full object-cover" />
-          ) : 'No image'}
-        </div>
-        <div className="flex flex-col gap-[3px] min-w-0 flex-1">
-          <div className="flex items-center gap-[8px]">
-            <span className="text-[14px] font-[600] text-btnText truncate">{avatar.name}</span>
-            <span className="shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em] bg-ai text-btnText">Synthetic</span>
-          </div>
-          <span className="text-[11px] text-textItemBlur">🔒 Soul-locked · {avatar.aspect_ratio}</span>
-          <span className="text-[11px] text-textItemBlur truncate">Voice: {avatar.voice_label || avatar.voice_id}</span>
-        </div>
-      </div>
-
-      {/* Model selector — HeyGen + fal.ai engines only */}
-      <label className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
-        <span className="shrink-0">Model</span>
-        <select
-          value={avatar.engine}
-          disabled={busy || casting}
-          onChange={(e) => run(() => setSynthEngine(avatar.synth_id, e.target.value))}
-          title={engines.find((x) => x.id === avatar.engine)?.note}
-          className="flex-1 min-w-0 h-[30px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText disabled:opacity-50"
-        >
-          {engines.length === 0 && <option value={avatar.engine}>{avatar.engine}</option>}
-          {engines.map((eng) => (
-            <option key={eng.id} value={eng.id}>{eng.label} · {eng.vendor}</option>
-          ))}
-        </select>
-      </label>
-
-      {/* Cast */}
-      <div className="flex flex-col gap-[8px]">
-        <textarea
-          value={script}
-          onChange={(e) => setScript(e.target.value)}
-          placeholder="Type a line for this avatar to say…"
-          rows={2}
-          className="w-full min-w-0 rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText p-[10px] resize-y leading-[1.4]"
-        />
-        <button
-          type="button"
-          disabled={!script.trim() || casting}
-          onClick={doCast}
-          className="h-[38px] px-[14px] rounded-[8px] bg-ai text-btnText font-[600] text-[12px] disabled:opacity-50"
-        >
-          {casting ? 'Casting… (this can take a minute)' : '🎬 Cast with this script'}
-        </button>
-      </div>
-
-      {clip && !clip.stub && clip.clipUrl && (
+    <AvatarReadyCard
+      kind="synthetic"
+      name={avatar.name}
+      thumbUrl={avatar.portrait_url}
+      selectMode={selectMode}
+      isSelected={isSelected}
+      onToggleSelect={onToggleSelect}
+      badges={<span className="shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em] bg-ai text-btnText">Synthetic</span>}
+      subheading={<span className="text-[11px] text-textItemBlur">🔒 Soul-locked · {avatar.aspect_ratio}</span>}
+      meta={<span className="text-[11px] text-textItemBlur truncate">Voice: {avatar.voice_label || avatar.voice_id}</span>}
+      castable
+      engines={engines.map((e) => ({ id: e.id, label: `${e.label} · ${e.vendor}` }))}
+      engineValue={avatar.engine}
+      onEngineChange={(id) => run(() => setSynthEngine(avatar.synth_id, id))}
+      engineDisabled={busy || casting}
+      script={script}
+      onScriptChange={setScript}
+      casting={casting}
+      castLabel="🎬 Cast with this script"
+      castingLabel="Casting…"
+      onCast={doCast}
+      belowCast={clip && !clip.stub && clip.clipUrl ? (
         <div className="flex flex-col gap-[4px]">
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video src={clip.clipUrl} controls className="w-full rounded-[8px] border border-newBorder bg-black" />
           <span className="text-[11px] text-textItemBlur">Saved to the Video Library ({clip.engine}).</span>
         </div>
-      )}
-
-      {error && <span className="text-[11px] text-red-400">{error}</span>}
-
-      {/* Manage */}
-      {pickingVoice ? (
-        <div className="flex flex-col gap-[6px] max-h-[180px] overflow-y-auto pr-[4px]">
-          {voices == null ? (
-            <span className="text-[11px] text-textItemBlur">Loading voices…</span>
-          ) : voices.map((v) => (
+      ) : null}
+      error={error}
+      actions={
+        pickingVoice ? (
+          <div className="flex flex-col gap-[6px] max-h-[180px] overflow-y-auto pr-[4px]">
+            {voices == null ? (
+              <span className="text-[11px] text-textItemBlur">Loading voices…</span>
+            ) : voices.map((v) => (
+              <button
+                key={v.voiceId}
+                type="button"
+                disabled={busy}
+                onClick={() => run(() => setSynthVoice(avatar.synth_id, v.voiceId, v.label)).then(() => setPickingVoice(false))}
+                className={clsx('flex items-center justify-between rounded-[8px] border p-[8px] text-left', v.voiceId === avatar.voice_id ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColor hover:border-ai/40')}
+              >
+                <span className="text-[12px] text-btnText truncate">{v.label}</span>
+                {v.voiceId === avatar.voice_id && <span className="text-ai text-[11px]">current</span>}
+              </button>
+            ))}
+            <button type="button" onClick={() => setPickingVoice(false)} className="h-[32px] rounded-[8px] bg-btnSimple text-btnText text-[11px]">Cancel</button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-[8px] text-[11px]">
+            <button type="button" disabled={busy} onClick={openVoicePicker} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText disabled:opacity-50">Change voice</button>
+            <button type="button" disabled={busy} onClick={doReshoot} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText disabled:opacity-50">Re-shoot portrait</button>
             <button
-              key={v.voiceId}
               type="button"
               disabled={busy}
-              onClick={() => run(() => setSynthVoice(avatar.synth_id, v.voiceId, v.label)).then(() => setPickingVoice(false))}
-              className={clsx('flex items-center justify-between rounded-[8px] border p-[8px] text-left', v.voiceId === avatar.voice_id ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColor hover:border-ai/40')}
+              onClick={() => {
+                const ok = typeof window === 'undefined' ? true : window.confirm(
+                  `Permanently delete "${avatar.name}"?\n\nThis removes the avatar and its portrait. Any clips already cast and saved to the Video Library are kept. This cannot be undone.`
+                );
+                if (ok) run(() => deleteSynthAvatar(avatar.synth_id));
+              }}
+              className="h-[32px] px-[10px] rounded-[8px] border border-red-500/60 text-red-400 disabled:opacity-50"
             >
-              <span className="text-[12px] text-btnText truncate">{v.label}</span>
-              {v.voiceId === avatar.voice_id && <span className="text-ai text-[11px]">current</span>}
+              Delete
             </button>
-          ))}
-          <button type="button" onClick={() => setPickingVoice(false)} className="h-[32px] rounded-[8px] bg-btnSimple text-btnText text-[11px]">Cancel</button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-[8px] text-[11px]">
-          <button type="button" disabled={busy} onClick={openVoicePicker} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText disabled:opacity-50">Change voice</button>
-          <button type="button" disabled={busy} onClick={doReshoot} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText disabled:opacity-50">Re-shoot portrait</button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              const ok = typeof window === 'undefined' ? true : window.confirm(
-                `Permanently delete "${avatar.name}"?\n\nThis removes the avatar and its portrait. Any clips already cast and saved to the Video Library are kept. This cannot be undone.`
-              );
-              if (ok) run(() => deleteSynthAvatar(avatar.synth_id));
-            }}
-            className="h-[32px] px-[10px] rounded-[8px] border border-red-500/60 text-red-400 disabled:opacity-50"
-          >
-            Delete
-          </button>
-        </div>
-      )}
-    </div>
+          </div>
+        )
+      }
+    />
   );
 };
 
