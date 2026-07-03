@@ -168,8 +168,12 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
         if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})${lk}`);
       } else if (v.startsWith('c:')) {
         const c = d.components.find((x) => x.id === v.slice(2));
+        // A real-person avatar (clone) is NOT a synthetic anchor — never hand it to the agent as an
+        // anchorId. Identity-locked clone renders go through the ⚡ Generate button (consent + ai_clone).
         if (c) lines.push((d.component === 'character'
-          ? `- ${d.label}: reuse saved character "${c.name}" (anchorId: ${c.id})`
+          ? (c.source === 'clone'
+              ? `- ${d.label}: real-person avatar "${c.name}" — consented; render it identity-locked via the ⚡ Generate button, not this chat`
+              : `- ${d.label}: reuse saved character "${c.name}" (anchorId: ${c.id})`)
           : `- ${d.label}: reuse saved "${c.name}"`) + lk);
       }
     }
@@ -190,7 +194,14 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
       const v = sel[d.id];
       if (!v || v === 'auto') continue;
       if (v.startsWith('p:')) { const p = d.presets.find((x) => x.id === v.slice(2)); if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})`); }
-      else if (v.startsWith('c:')) { const c = d.components.find((x) => x.id === v.slice(2)); if (c) lines.push(`- ${d.label}: reuse saved "${c.name}"${d.component === 'character' ? ` (anchorId: ${c.id})` : ''}`); }
+      else if (v.startsWith('c:')) {
+        const c = d.components.find((x) => x.id === v.slice(2));
+        if (c) lines.push(d.component === 'character'
+          ? (c.source === 'clone'
+              ? `- ${d.label}: real-person avatar "${c.name}" — consented; render it identity-locked via the ⚡ Generate button, not this chat`
+              : `- ${d.label}: reuse saved character "${c.name}" (anchorId: ${c.id})`)
+          : `- ${d.label}: reuse saved "${c.name}"`);
+      }
     }
     const motionLine = `Motion: camera ${movement}${action.trim() ? `, action "${action.trim()}"` : ''}, ${speed}.`;
     const seed =
@@ -205,21 +216,24 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
 
   // Build a fragment-keyed spec (+ the character anchorId) from the dropdown picks — the same shape
   // the agent produces, but direct (used by the Video context's gated generate).
-  const buildSpec = (): { spec: Record<string, string>; anchorId: string | null } => {
+  const buildSpec = (): { spec: Record<string, string>; anchorId: string | null; cloneId: string | null } => {
     const spec: Record<string, string> = {};
     let anchorId: string | null = null;
+    let cloneId: string | null = null;
     for (const d of dims) {
       const v = sel[d.id];
       if (!v || v === 'auto') continue;
       if (v.startsWith('p:')) { const p = d.presets.find((x) => x.id === v.slice(2)); if (p) spec[d.id] = p.fragment; }
       else if (v.startsWith('c:')) {
         const c = d.components.find((x) => x.id === v.slice(2));
-        if (c) { spec[d.id] = c.name; if (d.component === 'character') anchorId = c.id; }
+        // A clone (real person) routes cloneId → the consent/ai_clone render path; a synthetic anchor
+        // routes anchorId. Mutually exclusive.
+        if (c) { spec[d.id] = c.name; if (d.component === 'character') { if (c.source === 'clone') cloneId = c.id; else anchorId = c.id; } }
       }
     }
     // The free-text box rides along as `description` — the brain prompt-builders weave it in.
     if (description.trim()) spec.description = description.trim();
-    return { spec, anchorId };
+    return { spec, anchorId, cloneId };
   };
 
   const fireVideoRefresh = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:video-refresh')); };
@@ -233,9 +247,10 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     const motion = { movement, action: action.trim(), speed };
     setGenerating(true);
     try {
-      const { spec, anchorId } = buildSpec();
+      const { spec, anchorId, cloneId } = buildSpec();
       await renderDirectorClip(brandKitId, spec, { motion, model: videoModel, aspectRatio: aspect, durationS,
         anchorId: anchored ? anchorId : null,
+        cloneId: anchored ? cloneId : null,
         onProgress: (job) => { if (job.stage) setGenStage(job.stage === 'still' ? 'rendering character…' : 'animating…'); } });
       realProg.current = true; setGenProgress(1); setGenStage('done'); // flash 100% before the button resets
       await new Promise((r) => setTimeout(r, 450));
@@ -253,8 +268,8 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
     setGenerating(true);
     fireImagesGenerating(true);
     try {
-      const { spec, anchorId } = buildSpec();
-      const r = await renderDirectorShot(brandKitId, { ...spec, renderMode, aspectRatio: aspect, anchorId });
+      const { spec, anchorId, cloneId } = buildSpec();
+      const r = await renderDirectorShot(brandKitId, { ...spec, renderMode, aspectRatio: aspect, anchorId, cloneId });
       realProg.current = true; setGenProgress(1); // flash 100% on completion
       await new Promise((res) => setTimeout(res, 350));
       fireImagesRefresh(r.id);
@@ -300,21 +315,41 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
                   </label>,
                 ];
                 if (d.components.length > 0) {
+                  const selId = isChar ? sel[d.id].slice(2) : null;
+                  const selComp = selId ? d.components.find((c) => c.id === selId) : null;
+                  const selIsClone = selComp?.source === 'clone';
+                  // Split saved synthetic characters from real-person avatars (clones). A clone locks
+                  // identity via a Soul trained + managed in the Avatars tab (never from here).
+                  const synthComps = d.components.filter((c) => c.source !== 'clone');
+                  const cloneComps = d.components.filter((c) => c.source === 'clone');
                   cells.push(
                     <label key={`${d.id}-character`} className="flex flex-col gap-[3px]">
                       <span className="flex items-center gap-[4px]">
-                        <span className="text-[11px] font-[600] text-btnText flex-1" title="Reuse one of your saved characters (locks identity; train a Soul for an exact match)">Character</span>
-                        {/* Soul training is an IMAGE-gen identity lock — Images tab only (video can't use a Soul). */}
-                        {isChar && !isVideo && (
-                          <SoulControl anchorId={sel[d.id].slice(2)} name={d.components.find((c) => c.id === sel[d.id].slice(2))?.name} />
+                        <span className="text-[11px] font-[600] text-btnText flex-1" title="Reuse a saved synthetic character, or a real-person avatar (consented). Locks identity via its Soul.">Character</span>
+                        {/* Soul training/management is an IMAGE-gen identity lock, shown for SYNTHETIC
+                            anchors only (Images tab). A clone's Soul is owned by the Avatars tab. */}
+                        {isChar && !isVideo && !selIsClone && (
+                          <SoulControl anchorId={selId!} name={selComp?.name} />
                         )}
                         {isChar && lockBtn(true)}
                       </span>
                       <select className={selectCls} value={isChar ? sel[d.id] : ''}
                         onChange={(e) => setSel((s) => ({ ...s, [d.id]: e.target.value || 'auto' }))}>
                         <option value="">— No saved character —</option>
-                        {d.components.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
+                        {synthComps.length > 0 && (
+                          <optgroup label="Saved characters">
+                            {synthComps.map((c) => <option key={c.id} value={`c:${c.id}`}>★ {c.name}</option>)}
+                          </optgroup>
+                        )}
+                        {cloneComps.length > 0 && (
+                          <optgroup label="Your avatars (real person — consent)">
+                            {cloneComps.map((c) => <option key={c.id} value={`c:${c.id}`}>👤 {c.name}</option>)}
+                          </optgroup>
+                        )}
                       </select>
+                      {selIsClone && (
+                        <span className="text-[10px] text-ai leading-snug">👤 Real-person avatar — this render uses a consented likeness and is labeled AI-generated (ai_clone).</span>
+                      )}
                     </label>
                   );
                 }
