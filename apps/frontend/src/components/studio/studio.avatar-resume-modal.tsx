@@ -1,17 +1,20 @@
 'use client';
 
-// Resume-an-avatar modal (real-clone only). One dropdown lists prior creations:
+// Resume-an-avatar modal (real-clone only). Lists prior creations as selectable rows:
 //   • in-progress drafts (resume exactly where you left off), and
 //   • recorded consents with no draft yet (continue from that verified consent).
-// Continue opens the wizard at the Likeness step with the consent durably stitched; any photos/voice
-// already attached stay attached until the avatar is created. Abandon/Delete cleans one up here.
+// Per row: Continue opens the wizard at the Likeness step with the consent stitched (any attached
+// photos/voice stay attached). Check rows + "Delete selected" to PURGE runs — for a draft that means
+// the draft + its consent + its uploaded likeness/voice assets; for a bare consent, the consent.
+// (A consent tied to a live avatar is refused server-side.)
 
 import { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import clsx from 'clsx';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioModal } from '@gitroom/frontend/components/studio/studio.modal';
 import {
   listAvatarDrafts,
-  deleteAvatarDraft,
+  purgeAvatarDraft,
   listConsentRecords,
   deleteConsent,
   getConsentRecord,
@@ -37,15 +40,15 @@ function consentDraftFromRecord(r: FullConsentRecord): AvatarConsentDraft {
   };
 }
 
-type Option =
-  | { kind: 'draft'; id: string; label: string; draft: AvatarDraft }
-  | { kind: 'consent'; id: string; label: string; consent: ConsentSummary };
+type Row =
+  | { key: string; kind: 'draft'; person: string; sub: string; draft: AvatarDraft }
+  | { key: string; kind: 'consent'; person: string; sub: string; consent: ConsentSummary };
 
 export const StudioAvatarResumeModal: FC<{ brandKitId: string; onClose: () => void; onResumed?: () => void }> = ({ brandKitId, onClose, onResumed }) => {
   const { dispatch } = useStudio();
   const [drafts, setDrafts] = useState<AvatarDraft[]>([]);
   const [consents, setConsents] = useState<ConsentSummary[]>([]);
-  const [selected, setSelected] = useState<string>('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,22 +71,28 @@ export const StudioAvatarResumeModal: FC<{ brandKitId: string; onClose: () => vo
     [consents, draftConsentIds],
   );
 
-  const options: Option[] = useMemo(() => [
-    ...drafts.map((d) => ({
-      kind: 'draft' as const,
-      id: `draft:${d.draft_id}`,
-      label: `${d.person || 'Untitled'} — ${STEP_LABELS[d.step] || `Step ${d.step}`} · ${d.likeness.length} photo(s)`,
+  const rows: Row[] = useMemo(() => [
+    ...drafts.map((d): Row => ({
+      key: `draft:${d.draft_id}`,
+      kind: 'draft',
+      person: d.person || 'Untitled avatar',
+      sub: `In progress · ${STEP_LABELS[d.step] || `Step ${d.step}`} · ${d.likeness.length} photo(s)`,
       draft: d,
     })),
-    ...standaloneConsents.map((c) => ({
-      kind: 'consent' as const,
-      id: `consent:${c.consent_id}`,
-      label: `${c.person || c.consent_id} — consent only (${c.status})`,
+    ...standaloneConsents.map((c): Row => ({
+      key: `consent:${c.consent_id}`,
+      kind: 'consent',
+      person: c.person || c.consent_id,
+      sub: `Consent only · ${c.status}`,
       consent: c,
     })),
   ], [drafts, standaloneConsents]);
 
-  const selectedOption = options.find((o) => o.id === selected) || null;
+  const toggle = (key: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   const resumeDraft = (d: AvatarDraft) => {
     dispatch({
@@ -125,20 +134,25 @@ export const StudioAvatarResumeModal: FC<{ brandKitId: string; onClose: () => vo
     }
   };
 
-  const onContinue = () => {
-    if (!selectedOption) return;
-    if (selectedOption.kind === 'draft') resumeDraft(selectedOption.draft);
-    else void continueFromConsent(selectedOption.consent);
+  const onContinue = (row: Row) => {
+    if (row.kind === 'draft') resumeDraft(row.draft);
+    else void continueFromConsent(row.consent);
   };
 
-  const removeSelected = async () => {
-    if (!selectedOption) return;
+  const deleteSelected = async () => {
+    if (selected.size === 0) return;
+    const n = selected.size;
+    if (typeof window !== 'undefined' && !window.confirm(`Delete ${n} run${n > 1 ? 's' : ''}? For each, this removes the consent record and any uploaded photos/voice from that run. This cannot be undone.`)) return;
     setBusy(true);
     setError(null);
     try {
-      if (selectedOption.kind === 'draft') await deleteAvatarDraft(selectedOption.draft.draft_id);
-      else await deleteConsent(selectedOption.consent.consent_id);
-      setSelected('');
+      const chosen = rows.filter((r) => selected.has(r.key));
+      const results = await Promise.allSettled(chosen.map((r) =>
+        r.kind === 'draft' ? purgeAvatarDraft(r.draft.draft_id) : deleteConsent(r.consent.consent_id),
+      ));
+      const failed = results.filter((x) => x.status === 'rejected');
+      if (failed.length) setError(`${failed.length} of ${n} could not be deleted (a consent tied to a live avatar is protected).`);
+      setSelected(new Set());
       await load();
     } catch (e) {
       setError((e as Error)?.message ?? String(e));
@@ -147,11 +161,29 @@ export const StudioAvatarResumeModal: FC<{ brandKitId: string; onClose: () => vo
     }
   };
 
-  const empty = options.length === 0;
+  const empty = rows.length === 0;
 
   return (
-    <StudioModal title="Resume an avatar" subtitle="Pick up a run you started, or continue from a recorded consent." onClose={onClose} width={520}>
-      <div className="flex flex-col gap-[14px]">
+    <StudioModal
+      title="Resume an avatar"
+      subtitle="Pick up a run you started or continue from a recorded consent — or select runs to clean up."
+      onClose={onClose}
+      width={560}
+      footer={!empty ? (
+        <div className="flex items-center justify-between gap-[8px]">
+          <span className="text-[11px] text-textItemBlur">{selected.size > 0 ? `${selected.size} selected` : 'Check rows to delete'}</span>
+          <button
+            type="button"
+            disabled={selected.size === 0 || busy}
+            onClick={deleteSelected}
+            className="h-[38px] px-[14px] rounded-[8px] bg-red-500/90 text-white text-[12px] font-[600] hover:opacity-90 disabled:opacity-40"
+          >
+            {busy ? 'Working…' : `Delete selected${selected.size ? ` (${selected.size})` : ''}`}
+          </button>
+        </div>
+      ) : undefined}
+    >
+      <div className="flex flex-col gap-[12px]">
         {error && <span className="text-[12px] text-red-400">{error}</span>}
         {empty ? (
           <p className="text-[13px] text-textItemBlur leading-[1.5]">
@@ -159,47 +191,38 @@ export const StudioAvatarResumeModal: FC<{ brandKitId: string; onClose: () => vo
           </p>
         ) : (
           <>
-            <label className="flex flex-col gap-[6px]">
-              <span className="text-[12px] font-[600] text-btnText">Previous creation</span>
-              <select
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                className="h-[40px] px-[12px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[13px] text-btnText"
-              >
-                <option value="">Select a run or consent…</option>
-                {options.some((o) => o.kind === 'draft') && (
-                  <optgroup label="In progress">
-                    {options.filter((o) => o.kind === 'draft').map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-                  </optgroup>
-                )}
-                {options.some((o) => o.kind === 'consent') && (
-                  <optgroup label="Recorded consents">
-                    {options.filter((o) => o.kind === 'consent').map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-                  </optgroup>
-                )}
-              </select>
-            </label>
             <p className="text-[11px] text-textItemBlur leading-[1.5]">
-              Continue opens the wizard at the <span className="text-btnText">Likeness</span> step with the consent stitched.
-              Any photos or voice already attached stay attached until you create the avatar.
+              Continue opens the wizard at the <span className="text-btnText">Likeness</span> step with the consent stitched;
+              attached photos/voice stay attached until you create the avatar.
             </p>
-            <div className="flex items-center justify-between gap-[8px]">
-              <button
-                type="button"
-                disabled={!selectedOption || busy}
-                onClick={removeSelected}
-                className="h-[38px] px-[14px] rounded-[8px] bg-btnSimple text-textItemBlur text-[12px] hover:text-red-400 disabled:opacity-40"
-              >
-                {selectedOption?.kind === 'consent' ? 'Delete consent' : 'Abandon'}
-              </button>
-              <button
-                type="button"
-                disabled={!selectedOption || busy}
-                onClick={onContinue}
-                className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] disabled:opacity-40"
-              >
-                {busy ? 'Opening…' : 'Continue'}
-              </button>
+            <div className="flex flex-col gap-[6px]">
+              {rows.map((row) => {
+                const isSel = selected.has(row.key);
+                return (
+                  <div key={row.key} className={clsx('flex items-center gap-[10px] rounded-[8px] border px-[12px] py-[8px]', isSel ? 'border-red-400/60 bg-red-500/5' : 'border-newBorder bg-newBgColor')}>
+                    <button
+                      type="button"
+                      onClick={() => toggle(row.key)}
+                      aria-label={isSel ? 'Deselect' : 'Select for deletion'}
+                      className={clsx('shrink-0 w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center text-[10px] leading-none', isSel ? 'bg-red-500 border-red-500 text-white' : 'bg-newBgColorInner border-newBorder')}
+                    >
+                      {isSel ? '✓' : ''}
+                    </button>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-[13px] font-[600] text-btnText truncate">{row.person}</span>
+                      <span className="text-[11px] text-textItemBlur truncate">{row.sub}</span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onContinue(row)}
+                      className="shrink-0 h-[32px] px-[12px] rounded-[8px] bg-ai text-btnText text-[12px] font-[600] hover:opacity-90 disabled:opacity-50"
+                    >
+                      Continue
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}

@@ -223,9 +223,14 @@ export function saveAvatarDraft(input: SaveDraftInput): Promise<AvatarDraft> {
   return post<AvatarDraft>('/avatar/drafts/save', input);
 }
 
-/** Abandon a draft. */
+/** Abandon a draft (keeps its consent + uploaded assets). */
 export function deleteAvatarDraft(draftId: string): Promise<{ deleted: boolean; draft_id: string }> {
   return post('/avatar/drafts/delete', { draftId });
+}
+
+/** Purge a whole run: the draft + its consent record + its uploaded likeness/voice assets. */
+export function purgeAvatarDraft(draftId: string): Promise<{ deleted: boolean; draft_id: string; assetsDeleted: number; consentDeleted: boolean }> {
+  return post('/avatar/drafts/purge', { draftId });
 }
 
 /** Hard-delete a consent record (cleanup). Server refuses if a live clone references it. */
