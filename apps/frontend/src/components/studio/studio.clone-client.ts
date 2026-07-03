@@ -128,14 +128,9 @@ export function driveClone(payload: Record<string, unknown>): Promise<unknown> {
   return post('/clone/drive', payload);
 }
 
-/** Kling lip-sync (≤10s clips). */
+/** Kling lip-sync (≤10s clips). Long-form routing now goes through HeyGen via driveClone. */
 export function lipsyncKling(payload: Record<string, unknown>): Promise<unknown> {
   return post('/clone/lipsync/kling', payload);
-}
-
-/** Hedra lip-sync (long-form). */
-export function lipsyncHedra(payload: Record<string, unknown>): Promise<unknown> {
-  return post('/clone/lipsync/hedra', payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +145,11 @@ export function setCloneStatus(cloneId: string, status: CloneStatus, reason?: st
 /** Revoke a clone (status → revoked). Revoked clones are no longer castable. */
 export function revokeClone(cloneId: string, reason?: string): Promise<CloneRecord> {
   return post<CloneRecord>('/clone/revoke', { cloneId, reason });
+}
+
+/** Hard-delete a clone (Avatars bulk delete). Consent record is left intact. */
+export function deleteClone(cloneId: string): Promise<{ deleted: boolean; clone_id: string }> {
+  return post('/clone/delete', { cloneId });
 }
 
 /** Helper for callers that build a consent payload from the wizard draft. */
@@ -167,4 +167,100 @@ export function consentPayloadFromDraft(draft: AvatarConsentDraft, consentId: st
     },
     verification: { status: 'pending', method: 'signed_doc' },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Onboarding drafts (resumable wizard state) + consent cleanup
+// ---------------------------------------------------------------------------
+
+export interface DraftAssetRef { assetId: string; url: string; filename: string }
+
+/** A saved-in-progress avatar wizard run (NOT a clone). */
+export interface AvatarDraft {
+  draft_id: string;
+  person: string;
+  step: number;
+  tier: CloneTier;
+  wants_voice: boolean;
+  consent_type: string;
+  consent_id: string | null;
+  consent: AvatarConsentDraft | null;
+  likeness: DraftAssetRef[];
+  voice: DraftAssetRef[];
+  brand_kit_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Fields the wizard sends on auto-save (camelCase; the brain merges onto the stored draft). */
+export interface SaveDraftInput {
+  draftId?: string;
+  person?: string;
+  step?: number;
+  tier?: CloneTier;
+  wantsVoice?: boolean;
+  consentType?: string;
+  consentId?: string | null;
+  consent?: AvatarConsentDraft | null;
+  likeness?: DraftAssetRef[];
+  voice?: DraftAssetRef[];
+  brandKitId?: string;
+}
+
+/** In-progress drafts for the active brand, newest first. */
+export function listAvatarDrafts(brandKitId?: string): Promise<AvatarDraft[]> {
+  const qs = brandKitId ? `?brandKitId=${encodeURIComponent(brandKitId)}` : '';
+  return req<{ drafts: AvatarDraft[] }>(`/avatar/drafts${qs}`).then((r) => r.drafts || []);
+}
+
+/** Load one draft to resume it. */
+export function getAvatarDraft(draftId: string): Promise<AvatarDraft> {
+  return req<AvatarDraft>(`/avatar/drafts/get/${encodeURIComponent(draftId)}`);
+}
+
+/** Auto-save (upsert) the wizard's current state. Returns the saved draft (with its draft_id). */
+export function saveAvatarDraft(input: SaveDraftInput): Promise<AvatarDraft> {
+  return post<AvatarDraft>('/avatar/drafts/save', input);
+}
+
+/** Abandon a draft (keeps its consent + uploaded assets). */
+export function deleteAvatarDraft(draftId: string): Promise<{ deleted: boolean; draft_id: string }> {
+  return post('/avatar/drafts/delete', { draftId });
+}
+
+/** Purge a whole run: the draft + its consent record + its uploaded likeness/voice assets. */
+export function purgeAvatarDraft(draftId: string): Promise<{ deleted: boolean; draft_id: string; assetsDeleted: number; consentDeleted: boolean }> {
+  return post('/avatar/drafts/purge', { draftId });
+}
+
+/** Hard-delete a consent record (cleanup). Server refuses if a live clone references it. */
+export function deleteConsent(consentId: string, force = false): Promise<{ deleted: boolean; consent_id: string }> {
+  return post('/clone/consent/delete', { consentId, force });
+}
+
+export interface ConsentSummary {
+  consent_id: string;
+  person: string;
+  status: string;
+  channels: string[];
+  revoked: boolean;
+  created_at: string | null;
+}
+
+/** List consent records for the cleanup UI, newest first. */
+export function listConsentRecords(): Promise<ConsentSummary[]> {
+  return req<{ records: ConsentSummary[] }>('/clone/consent/list').then((r) => r.records || []);
+}
+
+/** Full stored consent record — used to reconstruct the wizard's consent form when resuming. */
+export interface FullConsentRecord {
+  consent_id: string;
+  person: string;
+  document_ref: string;
+  scope?: { visual_likeness?: boolean; voice?: boolean; channels?: string[]; duration?: string; commercial_use?: boolean };
+  verification?: { status?: string };
+}
+
+export function getConsentRecord(consentId: string): Promise<FullConsentRecord> {
+  return req<FullConsentRecord>(`/clone/consent/${encodeURIComponent(consentId)}`);
 }

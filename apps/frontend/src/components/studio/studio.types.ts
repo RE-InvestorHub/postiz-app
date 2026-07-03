@@ -59,6 +59,8 @@ export interface AvatarOnboardingState {
   open: boolean;
   step: number; // 0..3 (consent → likeness → voice → review)
   consent: AvatarConsentDraft;
+  /** Server-side draft id — the wizard auto-saves progress here so a run can be resumed. */
+  draftId?: string;
   /** Set after the brain records consent (POST /clone/consent/record). */
   consentId?: string;
   /** Uploaded likeness asset ids (step 2). */
