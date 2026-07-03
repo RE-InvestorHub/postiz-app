@@ -10,10 +10,11 @@
 //
 // Postiz tokens only; magenta bg-ai accent for primary actions (AI feature).
 
-import { FC, useCallback, useState } from 'react';
+import { FC, useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
+import { listBrandImages, BrandImage } from '@gitroom/frontend/components/studio/studio.image-client';
 import {
   recordConsent,
   verifyConsent,
@@ -86,6 +87,97 @@ const WizardUploader: FC<{
               </span>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Library picker — choose existing brand-library images as likeness references,
+// so a likeness can be built with NO OS file dialog (uploads are optional). Maps
+// a BrandImage to the same UploadedAsset shape the uploader produces.
+// ---------------------------------------------------------------------------
+const LibraryPicker: FC<{
+  brandKitId: string;
+  selectedIds: Set<string>;
+  onToggle: (a: UploadedAsset) => void;
+}> = ({ brandKitId, selectedIds, onToggle }) => {
+  const [open, setOpen] = useState(false);
+  const [images, setImages] = useState<BrandImage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setImages(await listBrandImages(brandKitId));
+    } catch (e) {
+      setError((e as Error)?.message ?? String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [brandKitId]);
+
+  // Load (and refresh) the library whenever the panel is opened or the brand changes.
+  useEffect(() => {
+    if (open) void load();
+  }, [open, load]);
+
+  const toAsset = (img: BrandImage): UploadedAsset => ({
+    assetId: img.id,
+    url: img.url,
+    kind: 'image',
+    filename: img.url.split('/').pop()?.split('?')[0] || 'library-image',
+    provenance: 'user_upload',
+  });
+
+  return (
+    <div className="flex flex-col gap-[10px]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="h-[36px] px-[14px] self-start rounded-[8px] border border-newBorder bg-newBgColorInner text-[12px] font-[600] text-btnText hover:border-ai/50 transition-colors"
+      >
+        {open ? 'Hide image library' : 'Choose from image library'}
+      </button>
+      {open && (
+        <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[10px]">
+          {loading && <span className="text-[11px] text-textItemBlur">Loading library…</span>}
+          {error && <span className="text-[11px] text-red-400">{error}</span>}
+          {!loading && !error && images.length === 0 && (
+            <span className="text-[11px] text-textItemBlur">
+              No images in this brand’s library yet — upload some above, or generate them in the Images tab.
+            </span>
+          )}
+          {images.length > 0 && (
+            <div className="grid grid-cols-4 sm:grid-cols-5 gap-[6px] max-h-[240px] overflow-y-auto">
+              {images.map((img) => {
+                const sel = selectedIds.has(img.id);
+                return (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => onToggle(toAsset(img))}
+                    title={sel ? 'Selected — click to remove' : 'Click to add as likeness'}
+                    className={clsx(
+                      'relative aspect-square rounded-[6px] overflow-hidden border-2 transition-colors',
+                      sel ? 'border-ai' : 'border-transparent hover:border-newBorder'
+                    )}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    {sel && (
+                      <span className="absolute top-[3px] right-[3px] w-[16px] h-[16px] rounded-full bg-ai text-btnText text-[10px] font-[700] flex items-center justify-center leading-none">
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -273,10 +365,21 @@ export const StudioAvatarOnboarding: FC = () => {
       {step === 1 && (
         <div className="flex flex-col gap-[14px]">
           <p className="text-[13px] text-textItemBlur leading-[1.5]">
-            Upload likeness reference — 20+ recent, varied-angle photos (or footage) give the best
-            Soul ID result. At least one is required to continue.
+            Add likeness reference — 20+ recent, varied-angle photos (or footage) give the best
+            Soul ID result. Upload new files or choose from your image library. At least one is required to continue.
           </p>
-          <WizardUploader acceptMime="image/*,video/*" hint="Images or video — varied angles, good lighting" assets={likeness} onUploaded={(a) => setLikeness((prev) => [...prev, a])} />
+          <WizardUploader acceptMime="image/*,video/*" hint="Images or video — varied angles, good lighting" assets={likeness} onUploaded={(a) => setLikeness((prev) => (prev.some((x) => x.assetId === a.assetId) ? prev : [...prev, a]))} />
+          <LibraryPicker
+            brandKitId={state.composerBrandKitId || 'default'}
+            selectedIds={new Set(likeness.map((a) => a.assetId))}
+            onToggle={(a) =>
+              setLikeness((prev) =>
+                prev.some((x) => x.assetId === a.assetId)
+                  ? prev.filter((x) => x.assetId !== a.assetId)
+                  : [...prev, a]
+              )
+            }
+          />
           <div className="flex items-center justify-between">
             <button type="button" onClick={() => goto(0)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
             <button type="button" disabled={likeness.length === 0} onClick={() => goto(2)} className="h-[40px] px-[18px] rounded-[8px] bg-ai text-btnText font-[600] text-[13px] disabled:opacity-50">Continue</button>
