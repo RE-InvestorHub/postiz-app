@@ -45,6 +45,14 @@ const BG_PRESETS: (AvatarBackground & { label: string })[] = [
   { label: 'Green screen', type: 'color', color: '#00b140' },
 ];
 
+// Common social formats. Defaults to Instagram Reels (9:16), like a HeyGen social project.
+const FORMATS = [
+  { id: '9:16', label: 'Instagram Reels · 9:16', css: '9 / 16' },
+  { id: '4:5', label: 'Instagram Feed · 4:5', css: '4 / 5' },
+  { id: '1:1', label: 'Square · 1:1', css: '1 / 1' },
+  { id: '16:9', label: 'Landscape · 16:9', css: '16 / 9' },
+];
+
 function bgStyle(bg: BgChoice): React.CSSProperties {
   if (!bg) return {};
   if (bg.type === 'image') return { backgroundImage: `url(${assetUrl(bg.previewUrl || bg.imageUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center' };
@@ -77,6 +85,7 @@ export const StudioAvatarCanvas: FC<{
   const engineOpts = isHuman ? HUMAN_ENGINES : engines.map((e) => ({ id: e.id, label: `${e.label} · ${e.vendor}` }));
 
   const [engine, setEngine] = useState<string>(isHuman ? 'heygen' : (synth.engine || 'heygen'));
+  const [format, setFormat] = useState('9:16'); // default Instagram Reels
   const [source, setSource] = useState<'script' | 'record' | 'library'>('script');
   const [script, setScript] = useState('');
   const [audio, setAudio] = useState<PickedAudio | null>(null);
@@ -98,7 +107,7 @@ export const StudioAvatarCanvas: FC<{
   // Reset when the selected avatar changes.
   useEffect(() => {
     setSource('script'); setScript(''); setAudio(null); setClipUrl(null); setMsg(null); setError(null);
-    setBg(null); setMatteUrl(null);
+    setBg(null); setMatteUrl(null); setFormat('9:16');
     setEngine(isHuman ? 'heygen' : (synth.engine || 'heygen'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -146,17 +155,17 @@ export const StudioAvatarCanvas: FC<{
       const scriptParams = source === 'script' ? { script: script.trim() } : {};
       const bgParam = bg ? { background: { type: bg.type, color: bg.color, colors: bg.colors, imageAssetId: bg.imageAssetId, imageUrl: bg.imageUrl } } : {};
       if (isHuman) {
-        const job = await castCloneAndWait({ cloneId: id, engine, ...scriptParams, ...audioParams, ...bgParam });
+        const job = await castCloneAndWait({ cloneId: id, engine, aspectRatio: format, ...scriptParams, ...audioParams, ...bgParam });
         if (job.status === 'done') { setClipUrl(assetUrl(job.result?.publicUrl)); setMsg(job.result?.stub ? 'Cast complete (stub clip).' : 'Clip added to the Video Library.'); }
         else { setError(job.error || 'Cast failed'); }
       } else {
-        const r = await castAndWait({ synthId: id, engine, ...scriptParams, ...audioParams, ...bgParam });
+        const r = await castAndWait({ synthId: id, engine, aspectRatio: format, ...scriptParams, ...audioParams, ...bgParam });
         setClipUrl(assetUrl(r.clipUrl)); setMsg(r.stub ? 'Cast complete (stub clip).' : 'Clip added to the Video Library.');
       }
       onChanged();
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setCasting(false); }
-  }, [source, audio, script, bg, isHuman, id, engine, onChanged]);
+  }, [source, audio, script, bg, format, isHuman, id, engine, onChanged]);
 
   const runLifecycle = useCallback(async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
@@ -308,24 +317,34 @@ export const StudioAvatarCanvas: FC<{
                 </select>
               )}
               {matting && <span className="text-[11px] text-ai inline-flex items-center gap-[6px]"><span className="inline-block w-[11px] h-[11px] rounded-full border-2 border-ai border-t-transparent animate-spin" />preparing…</span>}
+              {/* Social format — defaults to Instagram Reels 9:16 */}
+              <label className="ml-auto flex items-center gap-[6px] text-[11px] text-textItemBlur">
+                <span className="shrink-0">Format</span>
+                <select value={format} onChange={(e) => setFormat(e.target.value)} className="h-[26px] px-[6px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText">
+                  {FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </select>
+              </label>
             </div>
 
-            {/* Big canvas */}
-            <div className="flex-1 min-h-[360px] rounded-[8px] border border-newBorder bg-newBgColor overflow-hidden flex items-center justify-center">
-              {clipUrl ? (
-                // eslint-disable-next-line jsx-a11y/media-has-caption
-                <video src={clipUrl} controls autoPlay className="w-full h-full object-contain bg-black" />
-              ) : bg && matteUrl ? (
-                <div className="relative w-full h-full" style={bgStyle(bg)}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={matteUrl} alt={name} className="absolute inset-0 w-full h-full object-contain" />
-                </div>
-              ) : portraitUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={portraitUrl} alt={name} className="w-full h-full object-contain" />
-              ) : (
-                <span className="text-[12px] text-textItemBlur">No portrait</span>
-              )}
+            {/* Big canvas — framed to the chosen social format */}
+            <div className="flex-1 min-h-[360px] rounded-[8px] border border-newBorder bg-newBgColorInner flex items-center justify-center p-[10px]">
+              <div className="h-[500px] max-h-[68vh] max-w-full rounded-[8px] overflow-hidden bg-newBgColor flex items-center justify-center"
+                style={{ aspectRatio: (FORMATS.find((f) => f.id === format) || FORMATS[0]).css }}>
+                {clipUrl ? (
+                  // eslint-disable-next-line jsx-a11y/media-has-caption
+                  <video src={clipUrl} controls autoPlay className="w-full h-full object-contain bg-black" />
+                ) : bg && matteUrl ? (
+                  <div className="relative w-full h-full" style={bgStyle(bg)}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={matteUrl} alt={name} className="absolute inset-0 w-full h-full object-contain" />
+                  </div>
+                ) : portraitUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={portraitUrl} alt={name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-[12px] text-textItemBlur">No portrait</span>
+                )}
+              </div>
             </div>
             <span className="text-[11px] text-textItemBlur leading-[1.4]">
               {clipUrl ? 'Latest cast — also saved to the Video Library.' : bg ? 'Preview — the backdrop is baked into the clip when you cast.' : 'The rendered clip will play here after you cast.'}
