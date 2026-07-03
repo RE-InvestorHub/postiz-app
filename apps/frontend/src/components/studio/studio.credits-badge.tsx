@@ -1,6 +1,6 @@
 'use client';
 
-// Credits badge — live Higgsfield + Hedra + ElevenLabs balances in the Project bar so you can see
+// Credits badge — live Higgsfield + HeyGen + ElevenLabs balances in the Project bar so you can see
 // how many credits you have before any paid generation. Read-only (GET /account/credits). The
 // ElevenLabs (audio) leg needs the API key to carry the `user_read` scope; without it the chip
 // shows "—" with a tooltip explaining how to enable it.
@@ -14,7 +14,7 @@ import { getCredits, CreditsResponse } from '@gitroom/frontend/components/studio
 
 // Below these, the chip goes amber as a heads-up (tune as plans change).
 const LOW_HIGGSFIELD = 30;
-const LOW_HEDRA = 200;
+const LOW_HEYGEN = 50; // HeyGen avatar credits; an Avatar IV clip runs a handful of credits.
 const LOW_ELEVEN = 5000; // ElevenLabs credits = characters; a multi-voice render can be a few hundred.
 
 export const StudioCreditsBadge: FC = () => {
@@ -41,7 +41,7 @@ export const StudioCreditsBadge: FC = () => {
   }, [load]);
 
   const hf = data?.higgsfield;
-  const hd = data?.hedra;
+  const hg = data?.heygen;
   const el = data?.elevenLabs;
 
   const chip = (
@@ -69,7 +69,7 @@ export const StudioCreditsBadge: FC = () => {
 
   return (
     <div className="ml-auto flex items-center gap-[12px] rounded-[8px] border border-newBorder bg-newBgColorInner px-[10px] py-[6px]"
-      title="Generation credits — Higgsfield (images/video), Hedra (talking-head video), ElevenLabs (audio: TTS / multi-voice render / Voice Mirror)">
+      title="Generation credits — Higgsfield (images/video), HeyGen (avatar / lip-sync video), ElevenLabs (audio: TTS / multi-voice render / Voice Mirror)">
       {chip(
         '⚡ Higgsfield',
         hf?.connected,
@@ -79,11 +79,11 @@ export const StudioCreditsBadge: FC = () => {
       )}
       <span className="text-newBorder" aria-hidden="true">|</span>
       {chip(
-        '🎬 Hedra',
-        hd?.connected,
-        hd?.remaining,
-        LOW_HEDRA,
-        hd?.connected ? `Hedra: ${hd.remaining} credits${hd.expiring ? ` · ${hd.expiring} expiring` : ''}` : `Hedra not connected${hd?.error ? `: ${hd.error}` : ''}`,
+        '👤 HeyGen',
+        hg?.connected,
+        hg?.remaining,
+        LOW_HEYGEN,
+        hg?.connected ? `HeyGen: ${hg.remaining?.toLocaleString()} avatar credits${typeof hg.api === 'number' ? ` · ${hg.api.toLocaleString()} API` : ''} — avatar / lip-sync video` : `HeyGen not connected${hg?.error ? `: ${hg.error}` : ''}`,
       )}
       <span className="text-newBorder" aria-hidden="true">|</span>
       {chip(

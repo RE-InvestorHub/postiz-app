@@ -11,8 +11,9 @@ export interface ProviderCredits {
   // Higgsfield
   credits?: number;
   plan?: string | null;
-  // Hedra + ElevenLabs share `remaining`
+  // HeyGen + ElevenLabs share `remaining` (HeyGen: the avatar credit budget)
   remaining?: number;
+  api?: number | null; // HeyGen: paid API portion of the quota
   expiring?: number | null;
   // ElevenLabs (audio — TTS / multi-voice render / Voice Mirror)
   limit?: number;
@@ -22,11 +23,11 @@ export interface ProviderCredits {
 
 export interface CreditsResponse {
   higgsfield: ProviderCredits;
-  hedra: ProviderCredits;
+  heygen: ProviderCredits;
   elevenLabs?: ProviderCredits;
 }
 
-/** Read-only credit balances (Higgsfield + Hedra). Never throws on a provider error — the
+/** Read-only credit balances (Higgsfield + HeyGen + ElevenLabs). Never throws on a provider error — the
  *  brain returns {connected:false} per provider; only a transport failure rejects. */
 export async function getCredits(): Promise<CreditsResponse> {
   const res = await fetch(`${base()}/account/credits`, { headers: { 'content-type': 'application/json' } });
