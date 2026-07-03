@@ -94,7 +94,18 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
               {clone.status}
             </span>
           </div>
-          <span className="text-[11px] text-textItemBlur font-mono truncate">{clone.clone_id}</span>
+          {clone.prep_status === 'training' ? (
+            <span className="inline-flex items-center gap-[6px] text-[11px] text-ai font-[600]">
+              <span className="inline-block w-[11px] h-[11px] rounded-full border-2 border-ai border-t-transparent animate-spin" aria-hidden="true" />
+              Preparing avatar — training the Soul…
+            </span>
+          ) : clone.prep_status === 'failed' ? (
+            <span className="text-[11px] text-red-400">Soul training failed{clone.prep_error ? ` — ${clone.prep_error}` : ''}</span>
+          ) : clone.visual_identity?.soul_id ? (
+            <span className="text-[11px] text-textItemBlur">🔒 Soul-locked · {clone.soul_model || 'soul-2'}</span>
+          ) : (
+            <span className="text-[11px] text-textItemBlur font-mono truncate">{clone.clone_id}</span>
+          )}
           <div className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
             {voiceTier && <span className="px-[6px] py-[1px] rounded-[5px] bg-newBgColor border border-newBorder uppercase">{voiceTier} voice</span>}
             {clone.consent_type && <span>{clone.consent_type} consent</span>}
@@ -203,6 +214,15 @@ export const StudioAvatarLibrary: FC<{
   useEffect(() => {
     load();
   }, [load]);
+
+  // Poll while any avatar is still training its Soul, so the card flips training → ready on its own
+  // (navigate-away-safe: the job runs server-side). Stops once nothing is training.
+  const anyTraining = (state.avatars || []).some((c) => c.prep_status === 'training');
+  useEffect(() => {
+    if (!anyTraining) return;
+    const t = setInterval(() => { void load(); }, 8000);
+    return () => clearInterval(t);
+  }, [anyTraining, load]);
 
   const openOnboarding = () =>
     dispatch({ type: 'SET_AVATAR_ONBOARDING', onboarding: freshAvatarOnboarding() });

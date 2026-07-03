@@ -102,6 +102,10 @@ export function createClone(payload: {
   skipVoice?: boolean;
   /** 'ivc' = instant (immediate), 'pvc' = professional (verification + training). */
   cloneTier?: CloneTier;
+  /** A STOCK voice id to assign (no cloning) — the full-parity default. */
+  voiceId?: string;
+  /** Kick off async Higgsfield Soul training from the real photos (spinner → ready). */
+  trainSoul?: boolean;
   styleTokens?: Record<string, string>;
   notes?: string;
 }): Promise<CloneRecord> {
