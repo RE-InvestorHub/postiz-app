@@ -156,7 +156,7 @@ export const StudioAvatarPanel: FC = () => {
 
       <div className="flex flex-col md:flex-row gap-[14px]">
         {/* Left rail — selection */}
-        <div className="md:w-[300px] shrink-0 flex flex-col gap-[8px]">
+        <div className="md:w-[220px] shrink-0 flex flex-col gap-[8px]">
           {selectMode && <p className="text-[12px] text-textItemBlur">Select avatars to remove, then hit Delete.</p>}
           {loading ? (
             <div className="text-[13px] text-textItemBlur p-[14px]">Loading your avatars…</div>

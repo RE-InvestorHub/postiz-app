@@ -157,6 +157,8 @@ export interface CastPayload {
   resolution?: string;
   /** Override the avatar's selected engine for this cast (heygen | omnihuman | kling). */
   engine?: string;
+  /** Swap the backdrop — composite the matted avatar onto it before lip-sync. */
+  background?: { type: 'color' | 'gradient' | 'image'; color?: string; colors?: string[]; imageAssetId?: string; imageUrl?: string };
 }
 
 /**
