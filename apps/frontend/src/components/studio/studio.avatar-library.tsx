@@ -37,7 +37,7 @@ function expiryNote(expires?: string): { text: string; tone: 'warn' | 'danger' }
   return null;
 }
 
-const Avatar: FC<{ clone: CloneRecord; onChanged: () => void }> = ({ clone, onChanged }) => {
+const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boolean; isSelected?: boolean; onToggleSelect?: () => void }> = ({ clone, onChanged, selectMode, isSelected, onToggleSelect }) => {
   const [busy, setBusy] = useState(false);
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [reason, setReason] = useState('');
@@ -64,7 +64,19 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void }> = ({ clone, onCh
   );
 
   return (
-    <div className="flex flex-col gap-[12px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[14px]">
+    <div className={clsx('relative flex flex-col gap-[12px] rounded-[8px] border bg-newBgColorInner p-[14px]', selectMode && isSelected ? 'border-ai' : 'border-newBorder')}>
+      {selectMode && (
+        <button
+          type="button"
+          onClick={onToggleSelect}
+          aria-label={isSelected ? 'Deselect avatar' : 'Select avatar'}
+          className={clsx('absolute inset-0 z-10 rounded-[8px] border-2 flex items-start justify-end p-[8px] transition-colors', isSelected ? 'border-ai bg-ai/10' : 'border-transparent bg-black/30 hover:bg-black/20')}
+        >
+          <span className={clsx('w-[20px] h-[20px] rounded-[6px] border-2 flex items-center justify-center text-[11px] leading-none', isSelected ? 'bg-ai border-ai text-btnText' : 'bg-newBgColor border-newBorder')}>
+            {isSelected ? '✓' : ''}
+          </span>
+        </button>
+      )}
       <div className="flex items-start gap-[12px]">
         <div className="w-[56px] h-[56px] shrink-0 rounded-[8px] bg-newBgColor border border-newBorder overflow-hidden flex items-center justify-center text-textItemBlur text-[11px]">
           {thumb ? (
@@ -77,6 +89,7 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void }> = ({ clone, onCh
         <div className="flex flex-col gap-[3px] min-w-0 flex-1">
           <div className="flex items-center gap-[8px]">
             <span className="text-[14px] font-[600] text-btnText truncate">{clone.person}</span>
+            <span className="shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em] bg-blue-500 text-white">Human</span>
             <span className={clsx('shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em]', STATUS_BADGE[clone.status])}>
               {clone.status}
             </span>
@@ -167,7 +180,12 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void }> = ({ clone, onCh
   );
 };
 
-export const StudioAvatarLibrary: FC = () => {
+export const StudioAvatarLibrary: FC<{
+  hideHeading?: boolean;
+  selectMode?: boolean;
+  isSelected?: (id: string) => boolean;
+  onToggleSelect?: (id: string) => void;
+}> = ({ hideHeading, selectMode, isSelected, onToggleSelect } = {}) => {
   const { state, dispatch } = useStudio();
   const [error, setError] = useState<string | null>(null);
 
@@ -207,6 +225,8 @@ export const StudioAvatarLibrary: FC = () => {
   }
 
   if (state.avatars.length === 0) {
+    // In the unified inventory the panel owns the empty state — don't render a second prompt.
+    if (hideHeading) return null;
     return (
       <div className="flex flex-col gap-[10px]">
         <h3 className="text-[13px] font-[600] text-btnText">People (real-person clones)</h3>
@@ -229,10 +249,17 @@ export const StudioAvatarLibrary: FC = () => {
 
   return (
     <div className="flex flex-col gap-[10px]">
-      <h3 className="text-[13px] font-[600] text-btnText">People (real-person clones)</h3>
+      {!hideHeading && <h3 className="text-[13px] font-[600] text-btnText">People (real-person clones)</h3>}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-[12px]">
         {state.avatars.map((clone) => (
-          <Avatar key={clone.clone_id} clone={clone} onChanged={load} />
+          <Avatar
+            key={clone.clone_id}
+            clone={clone}
+            onChanged={load}
+            selectMode={selectMode}
+            isSelected={!!isSelected?.(clone.clone_id)}
+            onToggleSelect={() => onToggleSelect?.(clone.clone_id)}
+          />
         ))}
       </div>
     </div>

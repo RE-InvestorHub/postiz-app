@@ -147,6 +147,11 @@ export function revokeClone(cloneId: string, reason?: string): Promise<CloneReco
   return post<CloneRecord>('/clone/revoke', { cloneId, reason });
 }
 
+/** Hard-delete a clone (Avatars bulk delete). Consent record is left intact. */
+export function deleteClone(cloneId: string): Promise<{ deleted: boolean; clone_id: string }> {
+  return post('/clone/delete', { cloneId });
+}
+
 /** Helper for callers that build a consent payload from the wizard draft. */
 export function consentPayloadFromDraft(draft: AvatarConsentDraft, consentId: string) {
   return {
@@ -240,4 +245,17 @@ export interface ConsentSummary {
 /** List consent records for the cleanup UI, newest first. */
 export function listConsentRecords(): Promise<ConsentSummary[]> {
   return req<{ records: ConsentSummary[] }>('/clone/consent/list').then((r) => r.records || []);
+}
+
+/** Full stored consent record — used to reconstruct the wizard's consent form when resuming. */
+export interface FullConsentRecord {
+  consent_id: string;
+  person: string;
+  document_ref: string;
+  scope?: { visual_likeness?: boolean; voice?: boolean; channels?: string[]; duration?: string; commercial_use?: boolean };
+  verification?: { status?: string };
+}
+
+export function getConsentRecord(consentId: string): Promise<FullConsentRecord> {
+  return req<FullConsentRecord>(`/clone/consent/${encodeURIComponent(consentId)}`);
 }

@@ -24,7 +24,7 @@ import {
 } from '@gitroom/frontend/components/studio/studio.synthavatar-client';
 import { listVoiceLibrary, VoiceOption } from '@gitroom/frontend/components/studio/studio.voice-client';
 
-const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: () => void }> = ({ avatar, engines, onChanged }) => {
+const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: () => void; selectMode?: boolean; isSelected?: boolean; onToggleSelect?: () => void }> = ({ avatar, engines, onChanged, selectMode, isSelected, onToggleSelect }) => {
   const toaster = useToaster();
   const [script, setScript] = useState('');
   const [casting, setCasting] = useState(false);
@@ -82,7 +82,19 @@ const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: 
   }, [voices]);
 
   return (
-    <div className="flex flex-col gap-[12px] rounded-[8px] border border-newBorder bg-newBgColorInner p-[14px]">
+    <div className={clsx('relative flex flex-col gap-[12px] rounded-[8px] border bg-newBgColorInner p-[14px]', selectMode && isSelected ? 'border-ai' : 'border-newBorder')}>
+      {selectMode && (
+        <button
+          type="button"
+          onClick={onToggleSelect}
+          aria-label={isSelected ? 'Deselect avatar' : 'Select avatar'}
+          className={clsx('absolute inset-0 z-10 rounded-[8px] border-2 flex items-start justify-end p-[8px] transition-colors', isSelected ? 'border-ai bg-ai/10' : 'border-transparent bg-black/30 hover:bg-black/20')}
+        >
+          <span className={clsx('w-[20px] h-[20px] rounded-[6px] border-2 flex items-center justify-center text-[11px] leading-none', isSelected ? 'bg-ai border-ai text-btnText' : 'bg-newBgColor border-newBorder')}>
+            {isSelected ? '✓' : ''}
+          </span>
+        </button>
+      )}
       <div className="flex items-start gap-[12px]">
         <div className="w-[56px] h-[56px] shrink-0 rounded-[8px] bg-newBgColor border border-newBorder overflow-hidden flex items-center justify-center text-textItemBlur text-[11px]">
           {avatar.portrait_url ? (
@@ -188,7 +200,14 @@ const AvatarCard: FC<{ avatar: SynthAvatar; engines: AvatarEngine[]; onChanged: 
   );
 };
 
-export const StudioSynthAvatarGallery: FC<{ brandKitId: string; reloadSignal?: number }> = ({ brandKitId, reloadSignal }) => {
+export const StudioSynthAvatarGallery: FC<{
+  brandKitId: string;
+  reloadSignal?: number;
+  hideHeading?: boolean;
+  selectMode?: boolean;
+  isSelected?: (id: string) => boolean;
+  onToggleSelect?: (id: string) => void;
+}> = ({ brandKitId, reloadSignal, hideHeading, selectMode, isSelected, onToggleSelect }) => {
   const [avatars, setAvatars] = useState<SynthAvatar[] | null>(null);
   const [engines, setEngines] = useState<AvatarEngine[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -228,10 +247,18 @@ export const StudioSynthAvatarGallery: FC<{ brandKitId: string; reloadSignal?: n
 
   return (
     <div className="flex flex-col gap-[10px]">
-      <h3 className="text-[13px] font-[600] text-btnText">Synthetic avatars</h3>
+      {!hideHeading && <h3 className="text-[13px] font-[600] text-btnText">Synthetic avatars</h3>}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-[12px]">
         {avatars.map((a) => (
-          <AvatarCard key={a.synth_id} avatar={a} engines={engines} onChanged={load} />
+          <AvatarCard
+            key={a.synth_id}
+            avatar={a}
+            engines={engines}
+            onChanged={load}
+            selectMode={selectMode}
+            isSelected={!!isSelected?.(a.synth_id)}
+            onToggleSelect={() => onToggleSelect?.(a.synth_id)}
+          />
         ))}
       </div>
     </div>
