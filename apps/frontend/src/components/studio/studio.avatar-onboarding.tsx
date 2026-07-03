@@ -10,7 +10,7 @@
 //
 // Postiz tokens only; magenta bg-ai accent for primary actions (AI feature).
 
-import { FC, useCallback, useEffect, useState } from 'react';
+import { FC, useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
@@ -21,6 +21,9 @@ import {
   createClone,
   listClones,
   consentPayloadFromDraft,
+  saveAvatarDraft,
+  deleteAvatarDraft,
+  getAvatarDraft,
 } from '@gitroom/frontend/components/studio/studio.clone-client';
 import {
   ConsentType,
@@ -196,6 +199,52 @@ export const StudioAvatarOnboarding: FC = () => {
   const [error, setError] = useState<string | null>(null);
   // After a PVC create: surface the verification/training requirement before close.
   const [pvcNote, setPvcNote] = useState<string | null>(null);
+  const hydrated = useRef(false);
+
+  // Resume: hydrate local likeness/voice/tier from a saved draft when the wizard opens on one.
+  useEffect(() => {
+    if (!ob?.draftId || hydrated.current) return;
+    hydrated.current = true;
+    getAvatarDraft(ob.draftId)
+      .then((d) => {
+        setLikeness((d.likeness || []).map((a) => ({ assetId: a.assetId, url: a.url, kind: 'image' as const, filename: a.filename, provenance: 'user_upload' as const })));
+        setVoice((d.voice || []).map((a) => ({ assetId: a.assetId, url: a.url, kind: 'audio' as const, filename: a.filename, provenance: 'user_upload' as const })));
+        if (d.tier) setTier(d.tier);
+        setAttested(!!d.consent_id);
+      })
+      .catch(() => {});
+  }, [ob?.draftId]);
+
+  // Auto-save wizard progress to a server-side draft (so navigating away can be resumed).
+  useEffect(() => {
+    if (!ob) return;
+    const person = ob.consent.person;
+    const meaningful = !!ob.consentId || likeness.length > 0 || !!person.trim();
+    if (!meaningful) return;
+    const t = setTimeout(() => {
+      saveAvatarDraft({
+        draftId: ob.draftId,
+        person,
+        step: ob.step,
+        tier,
+        wantsVoice: ob.consent.consent_type !== 'visual',
+        consentType: ob.consent.consent_type,
+        consentId: ob.consentId ?? null,
+        consent: ob.consent,
+        likeness: likeness.map((a) => ({ assetId: a.assetId, url: a.url, filename: a.filename })),
+        voice: voice.map((a) => ({ assetId: a.assetId, url: a.url, filename: a.filename })),
+        brandKitId: state.composerBrandKitId || 'default',
+      })
+        .then((d) => {
+          if (d?.draft_id && d.draft_id !== ob.draftId) {
+            dispatch({ type: 'PATCH_AVATAR_ONBOARDING', patch: { draftId: d.draft_id } });
+          }
+        })
+        .catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ob?.step, ob?.consentId, ob?.draftId, ob?.consent, likeness, voice, tier]);
 
   if (!ob) return null;
 
@@ -254,6 +303,8 @@ export const StudioAvatarOnboarding: FC = () => {
         skipVoice: !usingVoice,
         cloneTier: usingVoice ? tier : undefined,
       });
+      // The clone now exists — the draft is obsolete, so remove it.
+      if (ob.draftId) deleteAvatarDraft(ob.draftId).catch(() => {});
       // Refresh the library from the registry.
       const fresh = await listClones();
       dispatch({ type: 'SET_AVATARS', avatars: fresh });

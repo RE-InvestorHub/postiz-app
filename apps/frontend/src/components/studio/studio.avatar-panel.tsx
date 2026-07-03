@@ -14,6 +14,7 @@ import {
   freshAvatarOnboarding,
 } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioAvatarLibrary } from '@gitroom/frontend/components/studio/studio.avatar-library';
+import { StudioAvatarDrafts } from '@gitroom/frontend/components/studio/studio.avatar-drafts';
 import { StudioAvatarOnboarding } from '@gitroom/frontend/components/studio/studio.avatar-onboarding';
 import { StudioSynthAvatarOnboarding } from '@gitroom/frontend/components/studio/studio.synthavatar-onboarding';
 import { StudioSynthAvatarGallery } from '@gitroom/frontend/components/studio/studio.synthavatar-gallery';
@@ -111,6 +112,9 @@ export const StudioAvatarPanel: FC = () => {
 
       {/* Create: human wizard (existing consent flow) */}
       {humanOnboarding && <StudioAvatarOnboarding />}
+
+      {/* In-progress drafts + consent cleanup (only renders if there are any) */}
+      {!creating && <StudioAvatarDrafts brandKitId={brandKitId} reloadSignal={reloadSignal} />}
 
       {/* Galleries */}
       {!creating && (
