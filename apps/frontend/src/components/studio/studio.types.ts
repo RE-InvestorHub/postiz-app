@@ -29,6 +29,7 @@ export interface CloneRecord {
   prep_status?: 'training' | 'ready' | 'failed';
   prep_error?: string;
   soul_model?: string;
+  soul_trained_at?: string; // ISO8601 — when the Soul finished training
   visual_identity?: {
     provider?: string;
     soul_id?: string;

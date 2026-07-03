@@ -46,6 +46,10 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
   const thumb = clone.visual_identity?.reference_images?.[0];
   const voiceTier = clone.voice?.clone_tier;
   const exp = expiryNote(clone.consent_expires);
+  // M/D/YYYY the Soul finished training (shown on the Soul-locked subheading).
+  const soulTrainedOn = clone.soul_trained_at
+    ? (() => { const d = new Date(clone.soul_trained_at); return Number.isNaN(d.getTime()) ? null : `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`; })()
+    : null;
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -102,7 +106,7 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
           ) : clone.prep_status === 'failed' ? (
             <span className="text-[11px] text-red-400">Soul training failed{clone.prep_error ? ` — ${clone.prep_error}` : ''}</span>
           ) : clone.visual_identity?.soul_id ? (
-            <span className="text-[11px] text-textItemBlur">🔒 Soul-locked · {clone.soul_model || 'soul-2'}</span>
+            <span className="text-[11px] text-textItemBlur">🔒 Soul-locked{soulTrainedOn ? ` · trained ${soulTrainedOn}` : ''}</span>
           ) : (
             <span className="text-[11px] text-textItemBlur font-mono truncate">{clone.clone_id}</span>
           )}
