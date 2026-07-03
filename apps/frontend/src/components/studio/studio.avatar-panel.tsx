@@ -143,6 +143,7 @@ export const StudioAvatarPanel: FC = () => {
         />
         <StudioAvatarLibrary
           hideHeading
+          reloadSignal={reloadSignal}
           selectMode={selectMode}
           isSelected={(id) => selected.has(selKey('human', id))}
           onToggleSelect={(id) => toggleSelect('human', id)}

@@ -225,10 +225,12 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
 
 export const StudioAvatarLibrary: FC<{
   hideHeading?: boolean;
+  // Bumped by the parent (e.g. after a bulk delete) to force a reload — mirrors the synthetic gallery.
+  reloadSignal?: number;
   selectMode?: boolean;
   isSelected?: (id: string) => boolean;
   onToggleSelect?: (id: string) => void;
-}> = ({ hideHeading, selectMode, isSelected, onToggleSelect } = {}) => {
+}> = ({ hideHeading, reloadSignal, selectMode, isSelected, onToggleSelect } = {}) => {
   const { state, dispatch } = useStudio();
   const [error, setError] = useState<string | null>(null);
 
@@ -245,7 +247,7 @@ export const StudioAvatarLibrary: FC<{
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, reloadSignal]);
 
   // Poll while any avatar is still training its Soul, so the card flips training → ready on its own
   // (navigate-away-safe: the job runs server-side). Stops once nothing is training.
