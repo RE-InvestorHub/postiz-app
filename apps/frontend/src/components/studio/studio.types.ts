@@ -25,6 +25,11 @@ export interface CloneRecord {
   consent_channels?: string[];
   consent_expires?: string; // ISO8601 or 'perpetual'
   status: CloneStatus;
+  /** Async avatar prep (Soul training) state: 'training' | 'ready' | 'failed'. */
+  prep_status?: 'training' | 'ready' | 'failed';
+  prep_error?: string;
+  soul_model?: string;
+  soul_trained_at?: string; // ISO8601 — when the Soul finished training
   visual_identity?: {
     provider?: string;
     soul_id?: string;
@@ -35,6 +40,7 @@ export interface CloneRecord {
   voice?: {
     provider?: string;
     voice_id?: string;
+    voice_status?: string;
     clone_tier?: CloneTier;
   };
   style_tokens?: Record<string, string>;

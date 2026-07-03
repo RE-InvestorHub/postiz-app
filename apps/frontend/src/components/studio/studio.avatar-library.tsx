@@ -17,7 +17,14 @@ import {
   listClones,
   setCloneStatus,
   revokeClone,
+  castCloneAndWait,
 } from '@gitroom/frontend/components/studio/studio.clone-client';
+
+const CAST_ENGINES = [
+  { id: 'heygen', label: 'HeyGen Avatar IV' },
+  { id: 'omnihuman', label: 'OmniHuman 1.5' },
+  { id: 'kling', label: 'Kling v2 Pro' },
+];
 import { CloneRecord, CloneStatus } from '@gitroom/frontend/components/studio/studio.types';
 
 const STATUS_BADGE: Record<CloneStatus, string> = {
@@ -42,10 +49,34 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [script, setScript] = useState('');
+  const [castEngine, setCastEngine] = useState('heygen');
+  const [casting, setCasting] = useState(false);
+  const [castMsg, setCastMsg] = useState<string | null>(null);
+
+  const doCast = useCallback(async () => {
+    if (!script.trim()) return;
+    setCasting(true);
+    setCastMsg(null);
+    setError(null);
+    try {
+      const job = await castCloneAndWait({ cloneId: clone.clone_id, script: script.trim(), engine: castEngine });
+      if (job.status === 'done') { setCastMsg(job.result?.stub ? 'Cast complete (stub clip).' : 'Cast complete — clip added to the Video Library.'); setScript(''); }
+      else setError(job.error || 'Cast failed');
+    } catch (e) {
+      setError((e as Error)?.message ?? String(e));
+    } finally {
+      setCasting(false);
+    }
+  }, [script, castEngine, clone.clone_id]);
 
   const thumb = clone.visual_identity?.reference_images?.[0];
   const voiceTier = clone.voice?.clone_tier;
   const exp = expiryNote(clone.consent_expires);
+  // M/D/YYYY the Soul finished training (shown on the Soul-locked subheading).
+  const soulTrainedOn = clone.soul_trained_at
+    ? (() => { const d = new Date(clone.soul_trained_at); return Number.isNaN(d.getTime()) ? null : `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`; })()
+    : null;
 
   const run = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -94,7 +125,18 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
               {clone.status}
             </span>
           </div>
-          <span className="text-[11px] text-textItemBlur font-mono truncate">{clone.clone_id}</span>
+          {clone.prep_status === 'training' ? (
+            <span className="inline-flex items-center gap-[6px] text-[11px] text-ai font-[600]">
+              <span className="inline-block w-[11px] h-[11px] rounded-full border-2 border-ai border-t-transparent animate-spin" aria-hidden="true" />
+              Preparing avatar — training the Soul…
+            </span>
+          ) : clone.prep_status === 'failed' ? (
+            <span className="text-[11px] text-red-400">Soul training failed{clone.prep_error ? ` — ${clone.prep_error}` : ''}</span>
+          ) : clone.visual_identity?.soul_id ? (
+            <span className="text-[11px] text-textItemBlur">🔒 Soul-locked{soulTrainedOn ? ` · trained ${soulTrainedOn}` : ''}</span>
+          ) : (
+            <span className="text-[11px] text-textItemBlur font-mono truncate">{clone.clone_id}</span>
+          )}
           <div className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
             {voiceTier && <span className="px-[6px] py-[1px] rounded-[5px] bg-newBgColor border border-newBorder uppercase">{voiceTier} voice</span>}
             {clone.consent_type && <span>{clone.consent_type} consent</span>}
@@ -112,6 +154,29 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
           <span className={exp.tone === 'danger' ? 'text-red-400' : 'text-amber-400'}>{exp.text}</span>
         )}
       </div>
+
+      {/* Cast — only when the Soul is ready + the clone is active (parity with synthetic avatars). */}
+      {clone.status === 'active' && clone.visual_identity?.soul_id && clone.prep_status !== 'training' && (
+        <div className="flex flex-col gap-[8px] rounded-[8px] border border-newBorder bg-newBgColor p-[10px]">
+          <label className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
+            <span className="shrink-0">Model</span>
+            <select value={castEngine} onChange={(e) => setCastEngine(e.target.value)} disabled={casting}
+              className="flex-1 min-w-0 h-[30px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText disabled:opacity-50">
+              {CAST_ENGINES.map((eng) => <option key={eng.id} value={eng.id}>{eng.label}</option>)}
+            </select>
+          </label>
+          <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={2}
+            placeholder={clone.voice?.voice_id ? 'Type a line for this avatar to say…' : 'Assign a voice first (create with a voice, or clone one)'}
+            disabled={casting || !clone.voice?.voice_id}
+            className="w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText p-[10px] resize-y leading-[1.4] disabled:opacity-50" />
+          <button type="button" disabled={!script.trim() || casting || !clone.voice?.voice_id} onClick={doCast}
+            className="h-[36px] px-[14px] rounded-[8px] bg-ai text-btnText font-[600] text-[12px] disabled:opacity-50 inline-flex items-center justify-center gap-[7px]">
+            {casting && <span className="inline-block w-[12px] h-[12px] rounded-full border-2 border-btnText/40 border-t-btnText animate-spin" aria-hidden="true" />}
+            {casting ? 'Generating video…' : 'Cast into video'}
+          </button>
+          {castMsg && <span className="text-[11px] text-textItemBlur">{castMsg}</span>}
+        </div>
+      )}
 
       {error && <span className="text-[11px] text-red-400">{error}</span>}
 
@@ -203,6 +268,15 @@ export const StudioAvatarLibrary: FC<{
   useEffect(() => {
     load();
   }, [load]);
+
+  // Poll while any avatar is still training its Soul, so the card flips training → ready on its own
+  // (navigate-away-safe: the job runs server-side). Stops once nothing is training.
+  const anyTraining = (state.avatars || []).some((c) => c.prep_status === 'training');
+  useEffect(() => {
+    if (!anyTraining) return;
+    const t = setInterval(() => { void load(); }, 8000);
+    return () => clearInterval(t);
+  }, [anyTraining, load]);
 
   const openOnboarding = () =>
     dispatch({ type: 'SET_AVATAR_ONBOARDING', onboarding: freshAvatarOnboarding() });

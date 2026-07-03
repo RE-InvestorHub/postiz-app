@@ -31,6 +31,7 @@ import {
   UploadedAsset,
 } from '@gitroom/frontend/components/studio/studio.types';
 import { StudioVoiceCapture } from '@gitroom/frontend/components/studio/studio.voice-capture';
+import { StudioVoicePicker } from '@gitroom/frontend/components/studio/studio.voice-picker';
 
 const CHANNELS = ['instagram', 'tiktok', 'youtube', 'facebook', 'x', 'linkedin'];
 const STEPS = ['Consent', 'Likeness', 'Voice', 'Review'];
@@ -195,6 +196,7 @@ export const StudioAvatarOnboarding: FC = () => {
   const [likeness, setLikeness] = useState<UploadedAsset[]>([]);
   const [voice, setVoice] = useState<UploadedAsset[]>([]);
   const [tier, setTier] = useState<CloneTier>('ivc');
+  const [stockVoiceId, setStockVoiceId] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // After a PVC create: surface the verification/training requirement before close.
@@ -293,38 +295,30 @@ export const StudioAvatarOnboarding: FC = () => {
     setError(null);
     try {
       const cloneId = `clone_${slug(consent.person)}_${Date.now().toString(36)}`;
-      const usingVoice = wantsVoice && voice.length > 0;
+      // Full-parity create: assign a STOCK voice + kick off async Soul training from the real photos.
+      // The avatar becomes a Soul-locked, castable, scene-usable character while the user waits.
       await createClone({
         cloneId,
         person: consent.person,
         consentId: ob.consentId,
         photos: likeness.map((a) => a.url),
-        voiceSamples: voice.map((a) => a.url),
-        skipVoice: !usingVoice,
-        cloneTier: usingVoice ? tier : undefined,
+        voiceId: stockVoiceId || undefined,
+        skipVoice: true,
+        trainSoul: true,
       });
       // The clone now exists — the draft is obsolete, so remove it.
       if (ob.draftId) deleteAvatarDraft(ob.draftId).catch(() => {});
-      // Refresh the library from the registry.
+      // Refresh the library, then redirect to the Avatars tab — the card shows the prep spinner.
       const fresh = await listClones();
       dispatch({ type: 'SET_AVATARS', avatars: fresh });
-      // PVC needs in-product verification + a training queue — surface that and let
-      // the user close manually. IVC / visual-only is ready immediately, so close.
-      if (usingVoice && tier === 'pvc') {
-        setPvcNote(
-          'Avatar created. The PVC voice is NOT ready yet: the talent must complete voice ' +
-          'verification in ElevenLabs (read the prompted phrase), then training runs (3-6h). ' +
-          'The voice activates once verified + trained.'
-        );
-      } else {
-        close();
-      }
+      close();
     } catch (e: unknown) {
       setError((e as Error)?.message ?? String(e));
     } finally {
       setBusy(false);
     }
-  }, [ob.consentId, likeness, voice, consent.person, wantsVoice, tier, dispatch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ob.consentId, likeness, consent.person, stockVoiceId, dispatch]);
 
   // PVC post-create takeover: the clone exists but the voice needs verification + training.
   if (pvcNote) {
@@ -485,7 +479,18 @@ export const StudioAvatarOnboarding: FC = () => {
             <span><span className="text-btnText font-[600]">Consent:</span> {consent.consent_type} · {consent.consent_channels.join(', ') || 'no channels'} · expires {consent.consent_expires}</span>
             <span><span className="text-btnText font-[600]">Consent ref:</span> {consent.consent_ref}</span>
             <span><span className="text-btnText font-[600]">Likeness:</span> {likeness.length} file(s)</span>
-            <span><span className="text-btnText font-[600]">Voice:</span> {wantsVoice && voice.length > 0 ? `${voice.length} sample(s) (${tier.toUpperCase()})` : 'none (visual-only)'}</span>
+          </div>
+          <label className="flex flex-col gap-[6px]">
+            <span className="text-[12px] font-[600] text-btnText">Voice</span>
+            <StudioVoicePicker value={stockVoiceId} onChange={setStockVoiceId} allowEmpty emptyLabel="Pick a stock voice (optional)" />
+            <span className="text-[11px] text-textItemBlur leading-[1.5]">The avatar speaks with this voice. You can change it later, or add a cloned voice.</span>
+          </label>
+          <div className="flex flex-col gap-[8px] rounded-[8px] border border-newBorder bg-newBgColor p-[12px]">
+            <span className="text-[12px] text-textItemBlur leading-[1.6]">
+              On create, we train a <span className="text-btnText font-[600]">Soul</span> from your {likeness.length} photo(s) so this
+              avatar is identity-locked for scenes and casting. You'll land on the Avatars tab and can keep working while it trains
+              (a few minutes) — the card shows progress. <span className="text-btnText">This spends Soul-training credits.</span>
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <button type="button" onClick={() => goto(2)} className="h-[40px] px-[16px] rounded-[8px] bg-btnSimple text-btnText text-[13px]">Back</button>
