@@ -121,7 +121,7 @@ export const StudioProjectBar: FC = () => {
 
       {error && <span className="text-[12px] text-red-400">{error}</span>}
 
-      {/* Live generation-credit balances (Higgsfield + Hedra), pushed to the right. */}
+      {/* Live generation-credit balances (Higgsfield + HeyGen + ElevenLabs), pushed to the right. */}
       <StudioCreditsBadge />
 
       {/* Naming popup — opened by any ＋ button */}
