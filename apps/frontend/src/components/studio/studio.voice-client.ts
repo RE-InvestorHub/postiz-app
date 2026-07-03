@@ -76,6 +76,7 @@ export interface AudioLineSpan { lineId: string; beatId?: string; characterId: s
 export interface AudioTrack {
   id: string; url: string; stage: string; scriptId: string | null; scriptName?: string | null;
   brandKitId: string; provenance?: string | null; durationS?: number | null; voicesUsed?: string[] | null;
+  singleSpeaker?: boolean;
   lineSpans?: AudioLineSpan[] | null; voiceId?: string | null; text?: string | null;
   srtUrl?: string | null; vttUrl?: string | null; dryRun?: boolean; createdAt?: string | null;
 }
@@ -101,8 +102,12 @@ export function audioRenderStatus(jobId: string): Promise<RenderJob> {
 export function renderAudioLine(payload: { trackId: string; lineId: string; modelId?: string }): Promise<RenderStarted> {
   return req('/studio/audio/render/line', { method: 'POST', body: JSON.stringify(payload) });
 }
-export function listAudioLibrary(brandKitId?: string): Promise<{ tracks: AudioTrack[] }> {
-  return req(`/audio/library${brandKitId ? `?brandKitId=${encodeURIComponent(brandKitId)}` : ''}`);
+export function listAudioLibrary(brandKitId?: string, opts: { singleSpeaker?: boolean } = {}): Promise<{ tracks: AudioTrack[] }> {
+  const q = new URLSearchParams();
+  if (brandKitId) q.set('brandKitId', brandKitId);
+  if (opts.singleSpeaker) q.set('singleSpeaker', '1');
+  const qs = q.toString();
+  return req(`/audio/library${qs ? `?${qs}` : ''}`);
 }
 export function deleteAudioTrack(id: string): Promise<{ ok: boolean; deleted: number }> {
   return req('/audio/delete', { method: 'POST', body: JSON.stringify({ id }) });
