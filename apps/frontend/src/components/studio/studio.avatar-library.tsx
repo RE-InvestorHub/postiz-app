@@ -170,8 +170,9 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
             disabled={casting || !clone.voice?.voice_id}
             className="w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText p-[10px] resize-y leading-[1.4] disabled:opacity-50" />
           <button type="button" disabled={!script.trim() || casting || !clone.voice?.voice_id} onClick={doCast}
-            className="h-[36px] px-[14px] rounded-[8px] bg-ai text-btnText font-[600] text-[12px] disabled:opacity-50">
-            {casting ? 'Casting…' : 'Cast into video'}
+            className="h-[36px] px-[14px] rounded-[8px] bg-ai text-btnText font-[600] text-[12px] disabled:opacity-50 inline-flex items-center justify-center gap-[7px]">
+            {casting && <span className="inline-block w-[12px] h-[12px] rounded-full border-2 border-btnText/40 border-t-btnText animate-spin" aria-hidden="true" />}
+            {casting ? 'Generating video…' : 'Cast into video'}
           </button>
           {castMsg && <span className="text-[11px] text-textItemBlur">{castMsg}</span>}
         </div>
