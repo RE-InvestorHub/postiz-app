@@ -148,7 +148,11 @@ export interface CastJob {
 
 export interface CastPayload {
   synthId: string;
-  script: string;
+  // Script → TTS in the avatar's voice, OR a provided audio clip (record / upload / Writer's-Room
+  // track) → lip-sync. One of script | audioAssetId | audioUrl is required.
+  script?: string;
+  audioAssetId?: string;
+  audioUrl?: string;
   aspectRatio?: string;
   resolution?: string;
   /** Override the avatar's selected engine for this cast (heygen | omnihuman | kling). */

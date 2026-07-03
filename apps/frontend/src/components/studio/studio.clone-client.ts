@@ -143,8 +143,25 @@ export interface CloneCastJob {
   error?: string;
 }
 
-/** Cast a Soul-ready clone as a talking-head (TTS + lip-sync → Video Library). Async → returns a jobId. */
-export function castClone(payload: { cloneId: string; script: string; engine?: string; aspectRatio?: string }): Promise<{ jobId: string; status: string }> {
+// A cast is driven by a script (→ TTS in the avatar's voice) OR a provided audio clip (record / upload
+// / Writer's-Room track → lip-sync). audioContentTypes lets the caller declare a cloned-voice mirror.
+export interface CloneCastPayload {
+  cloneId: string;
+  script?: string;
+  engine?: string;
+  aspectRatio?: string;
+  audioAssetId?: string;
+  audioUrl?: string;
+  audioContentTypes?: string[];
+}
+
+/** ✨ Develop the lines with AI — plain spoken text for an avatar to say (Avatars canvas). Cheap. */
+export function developAvatarLines(payload: { prompt: string; avatarName?: string; brandKitId?: string; maxWords?: number; existing?: string }): Promise<{ lines: string }> {
+  return post('/avatar/develop-lines', payload);
+}
+
+/** Cast a Soul-ready clone as a talking-head (script→TTS or BYO audio → lip-sync → Video Library). */
+export function castClone(payload: CloneCastPayload): Promise<{ jobId: string; status: string }> {
   return post('/clone/cast', payload);
 }
 
@@ -153,7 +170,7 @@ export function cloneCastStatus(jobId: string): Promise<CloneCastJob> {
 }
 
 /** Cast + poll to completion (up to ~6 min). */
-export async function castCloneAndWait(payload: { cloneId: string; script: string; engine?: string }): Promise<CloneCastJob> {
+export async function castCloneAndWait(payload: CloneCastPayload): Promise<CloneCastJob> {
   const { jobId } = await castClone(payload);
   for (let i = 0; i < 120; i++) {
     await new Promise((r) => setTimeout(r, 3000));
