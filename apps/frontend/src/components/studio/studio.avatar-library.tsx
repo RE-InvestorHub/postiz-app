@@ -19,6 +19,7 @@ import {
   revokeClone,
   castCloneAndWait,
 } from '@gitroom/frontend/components/studio/studio.clone-client';
+import { AvatarReadyCard } from '@gitroom/frontend/components/studio/studio.avatar-ready-card';
 
 const CAST_ENGINES = [
   { id: 'heygen', label: 'HeyGen Avatar IV' },
@@ -94,154 +95,131 @@ const Avatar: FC<{ clone: CloneRecord; onChanged: () => void; selectMode?: boole
     [onChanged]
   );
 
+  const castable = clone.status === 'active' && !!clone.visual_identity?.soul_id && clone.prep_status !== 'training';
+
   return (
-    <div className={clsx('relative flex flex-col gap-[12px] rounded-[8px] border bg-newBgColorInner p-[14px]', selectMode && isSelected ? 'border-ai' : 'border-newBorder')}>
-      {selectMode && (
-        <button
-          type="button"
-          onClick={onToggleSelect}
-          aria-label={isSelected ? 'Deselect avatar' : 'Select avatar'}
-          className={clsx('absolute inset-0 z-10 rounded-[8px] border-2 flex items-start justify-end p-[8px] transition-colors', isSelected ? 'border-ai bg-ai/10' : 'border-transparent bg-black/30 hover:bg-black/20')}
-        >
-          <span className={clsx('w-[20px] h-[20px] rounded-[6px] border-2 flex items-center justify-center text-[11px] leading-none', isSelected ? 'bg-ai border-ai text-btnText' : 'bg-newBgColor border-newBorder')}>
-            {isSelected ? '✓' : ''}
+    <AvatarReadyCard
+      kind="human"
+      name={clone.person}
+      thumbUrl={thumb}
+      selectMode={selectMode}
+      isSelected={isSelected}
+      onToggleSelect={onToggleSelect}
+      badges={
+        <>
+          <span className="shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em] bg-blue-500 text-white">Human</span>
+          <span className={clsx('shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em]', STATUS_BADGE[clone.status])}>{clone.status}</span>
+        </>
+      }
+      subheading={
+        clone.prep_status === 'training' ? (
+          <span className="inline-flex items-center gap-[6px] text-[11px] text-ai font-[600]">
+            <span className="inline-block w-[11px] h-[11px] rounded-full border-2 border-ai border-t-transparent animate-spin" aria-hidden="true" />
+            Preparing avatar — training the Soul…
           </span>
-        </button>
-      )}
-      <div className="flex items-start gap-[12px]">
-        <div className="w-[56px] h-[56px] shrink-0 rounded-[8px] bg-newBgColor border border-newBorder overflow-hidden flex items-center justify-center text-textItemBlur text-[11px]">
-          {thumb ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumb} alt={clone.person} className="w-full h-full object-cover" />
-          ) : (
-            'No image'
+        ) : clone.prep_status === 'failed' ? (
+          <span className="text-[11px] text-red-400">Soul training failed{clone.prep_error ? ` — ${clone.prep_error}` : ''}</span>
+        ) : clone.visual_identity?.soul_id ? (
+          <span className="text-[11px] text-textItemBlur">🔒 Soul-locked{soulTrainedOn ? ` · trained ${soulTrainedOn}` : ''}</span>
+        ) : (
+          <span className="text-[11px] text-textItemBlur font-mono truncate">{clone.clone_id}</span>
+        )
+      }
+      meta={
+        <div className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
+          {voiceTier && <span className="px-[6px] py-[1px] rounded-[5px] bg-newBgColor border border-newBorder uppercase">{voiceTier} voice</span>}
+          {clone.consent_type && <span>{clone.consent_type} consent</span>}
+        </div>
+      }
+      beforeCast={
+        <div className="flex flex-col gap-[4px] text-[11px] text-textItemBlur leading-[1.4]">
+          {clone.consent_channels && clone.consent_channels.length > 0 && (
+            <span>Channels: {clone.consent_channels.join(', ')}</span>
+          )}
+          <span>Expires: {clone.consent_expires || 'perpetual'}</span>
+          {exp && (
+            <span className={exp.tone === 'danger' ? 'text-red-400' : 'text-amber-400'}>{exp.text}</span>
           )}
         </div>
-        <div className="flex flex-col gap-[3px] min-w-0 flex-1">
+      }
+      castable={castable}
+      engines={CAST_ENGINES}
+      engineValue={castEngine}
+      onEngineChange={setCastEngine}
+      engineDisabled={casting}
+      script={script}
+      onScriptChange={setScript}
+      castPlaceholder={clone.voice?.voice_id ? 'Type a line for this avatar to say…' : 'Assign a voice first (create with a voice, or clone one)'}
+      castDisabled={!clone.voice?.voice_id}
+      casting={casting}
+      castLabel="Cast into video"
+      castingLabel="Generating video…"
+      onCast={doCast}
+      belowCast={castMsg ? <span className="text-[11px] text-textItemBlur">{castMsg}</span> : null}
+      error={error}
+      actions={
+        clone.status === 'revoked' ? (
+          <span className="text-[11px] text-textItemBlur italic">Revoked{clone.revoke_reason ? ` — ${clone.revoke_reason}` : ''}</span>
+        ) : confirmingRevoke ? (
+          <div className="flex flex-col gap-[8px]">
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason for revoking (recorded)"
+              className="h-[36px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText"
+            />
+            <div className="flex items-center gap-[8px]">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => run(() => revokeClone(clone.clone_id, reason || 'Revoked via Studio')).then(() => setConfirmingRevoke(false))}
+                className="h-[36px] px-[12px] rounded-[8px] bg-red-500 text-white text-[12px] font-[600] disabled:opacity-50"
+              >
+                Confirm revoke
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { setConfirmingRevoke(false); setReason(''); }}
+                className="h-[36px] px-[12px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
           <div className="flex items-center gap-[8px]">
-            <span className="text-[14px] font-[600] text-btnText truncate">{clone.person}</span>
-            <span className="shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em] bg-blue-500 text-white">Human</span>
-            <span className={clsx('shrink-0 px-[8px] py-[2px] rounded-[6px] text-[10px] font-[600] uppercase tracking-[0.04em]', STATUS_BADGE[clone.status])}>
-              {clone.status}
-            </span>
-          </div>
-          {clone.prep_status === 'training' ? (
-            <span className="inline-flex items-center gap-[6px] text-[11px] text-ai font-[600]">
-              <span className="inline-block w-[11px] h-[11px] rounded-full border-2 border-ai border-t-transparent animate-spin" aria-hidden="true" />
-              Preparing avatar — training the Soul…
-            </span>
-          ) : clone.prep_status === 'failed' ? (
-            <span className="text-[11px] text-red-400">Soul training failed{clone.prep_error ? ` — ${clone.prep_error}` : ''}</span>
-          ) : clone.visual_identity?.soul_id ? (
-            <span className="text-[11px] text-textItemBlur">🔒 Soul-locked{soulTrainedOn ? ` · trained ${soulTrainedOn}` : ''}</span>
-          ) : (
-            <span className="text-[11px] text-textItemBlur font-mono truncate">{clone.clone_id}</span>
-          )}
-          <div className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
-            {voiceTier && <span className="px-[6px] py-[1px] rounded-[5px] bg-newBgColor border border-newBorder uppercase">{voiceTier} voice</span>}
-            {clone.consent_type && <span>{clone.consent_type} consent</span>}
-          </div>
-        </div>
-      </div>
-
-      {/* Consent summary */}
-      <div className="flex flex-col gap-[4px] text-[11px] text-textItemBlur leading-[1.4]">
-        {clone.consent_channels && clone.consent_channels.length > 0 && (
-          <span>Channels: {clone.consent_channels.join(', ')}</span>
-        )}
-        <span>Expires: {clone.consent_expires || 'perpetual'}</span>
-        {exp && (
-          <span className={exp.tone === 'danger' ? 'text-red-400' : 'text-amber-400'}>{exp.text}</span>
-        )}
-      </div>
-
-      {/* Cast — only when the Soul is ready + the clone is active (parity with synthetic avatars). */}
-      {clone.status === 'active' && clone.visual_identity?.soul_id && clone.prep_status !== 'training' && (
-        <div className="flex flex-col gap-[8px] rounded-[8px] border border-newBorder bg-newBgColor p-[10px]">
-          <label className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
-            <span className="shrink-0">Model</span>
-            <select value={castEngine} onChange={(e) => setCastEngine(e.target.value)} disabled={casting}
-              className="flex-1 min-w-0 h-[30px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText disabled:opacity-50">
-              {CAST_ENGINES.map((eng) => <option key={eng.id} value={eng.id}>{eng.label}</option>)}
-            </select>
-          </label>
-          <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={2}
-            placeholder={clone.voice?.voice_id ? 'Type a line for this avatar to say…' : 'Assign a voice first (create with a voice, or clone one)'}
-            disabled={casting || !clone.voice?.voice_id}
-            className="w-full min-w-0 rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText p-[10px] resize-y leading-[1.4] disabled:opacity-50" />
-          <button type="button" disabled={!script.trim() || casting || !clone.voice?.voice_id} onClick={doCast}
-            className="h-[36px] px-[14px] rounded-[8px] bg-ai text-btnText font-[600] text-[12px] disabled:opacity-50 inline-flex items-center justify-center gap-[7px]">
-            {casting && <span className="inline-block w-[12px] h-[12px] rounded-full border-2 border-btnText/40 border-t-btnText animate-spin" aria-hidden="true" />}
-            {casting ? 'Generating video…' : 'Cast into video'}
-          </button>
-          {castMsg && <span className="text-[11px] text-textItemBlur">{castMsg}</span>}
-        </div>
-      )}
-
-      {error && <span className="text-[11px] text-red-400">{error}</span>}
-
-      {/* Actions */}
-      {clone.status === 'revoked' ? (
-        <span className="text-[11px] text-textItemBlur italic">Revoked{clone.revoke_reason ? ` — ${clone.revoke_reason}` : ''}</span>
-      ) : confirmingRevoke ? (
-        <div className="flex flex-col gap-[8px]">
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Reason for revoking (recorded)"
-            className="h-[36px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText"
-          />
-          <div className="flex items-center gap-[8px]">
+            {clone.status === 'active' ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => run(() => setCloneStatus(clone.clone_id, 'suspended'))}
+                className="h-[36px] px-[12px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50"
+              >
+                Suspend
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => run(() => setCloneStatus(clone.clone_id, 'active'))}
+                className="h-[36px] px-[12px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50"
+              >
+                Reactivate
+              </button>
+            )}
             <button
               type="button"
               disabled={busy}
-              onClick={() => run(() => revokeClone(clone.clone_id, reason || 'Revoked via Studio')).then(() => setConfirmingRevoke(false))}
-              className="h-[36px] px-[12px] rounded-[8px] bg-red-500 text-white text-[12px] font-[600] disabled:opacity-50"
+              onClick={() => setConfirmingRevoke(true)}
+              className="h-[36px] px-[12px] rounded-[8px] border border-red-500/60 text-red-400 text-[12px] disabled:opacity-50"
             >
-              Confirm revoke
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => { setConfirmingRevoke(false); setReason(''); }}
-              className="h-[36px] px-[12px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50"
-            >
-              Cancel
+              Revoke
             </button>
           </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-[8px]">
-          {clone.status === 'active' ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => run(() => setCloneStatus(clone.clone_id, 'suspended'))}
-              className="h-[36px] px-[12px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50"
-            >
-              Suspend
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => run(() => setCloneStatus(clone.clone_id, 'active'))}
-              className="h-[36px] px-[12px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50"
-            >
-              Reactivate
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => setConfirmingRevoke(true)}
-            className="h-[36px] px-[12px] rounded-[8px] border border-red-500/60 text-red-400 text-[12px] disabled:opacity-50"
-          >
-            Revoke
-          </button>
-        </div>
-      )}
-    </div>
+        )
+      }
+    />
   );
 };
 
