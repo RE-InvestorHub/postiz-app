@@ -172,14 +172,26 @@ export const StudioAvatarResumeModal: FC<{ brandKitId: string; onClose: () => vo
       footer={!empty ? (
         <div className="flex items-center justify-between gap-[8px]">
           <span className="text-[11px] text-textItemBlur">{selected.size > 0 ? `${selected.size} selected` : 'Check rows to delete'}</span>
-          <button
-            type="button"
-            disabled={selected.size === 0 || busy}
-            onClick={deleteSelected}
-            className="h-[38px] px-[14px] rounded-[8px] bg-red-500/90 text-white text-[12px] font-[600] hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? 'Working…' : `Delete selected${selected.size ? ` (${selected.size})` : ''}`}
-          </button>
+          <div className="flex items-center gap-[8px]">
+            {selected.size > 0 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setSelected(new Set())}
+                className="h-[38px] px-[14px] rounded-[8px] bg-btnSimple text-textItemBlur text-[12px] hover:text-btnText disabled:opacity-40"
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={selected.size === 0 || busy}
+              onClick={deleteSelected}
+              className="h-[38px] px-[14px] rounded-[8px] bg-red-500/90 text-white text-[12px] font-[600] hover:opacity-90 disabled:opacity-40"
+            >
+              {busy ? 'Working…' : `Delete selected${selected.size ? ` (${selected.size})` : ''}`}
+            </button>
+          </div>
         </div>
       ) : undefined}
     >
