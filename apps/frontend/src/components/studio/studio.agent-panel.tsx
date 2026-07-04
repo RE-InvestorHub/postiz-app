@@ -546,11 +546,13 @@ export const StudioAgentPanel: FC<{
       toaster.show(line, 'success');
       // Tell the Brand tab to refresh so the new logo shows in its slot.
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:brand-refresh'));
-      if (generation?.slot) {
-        // Pre-scoped to one slot → done, close the window.
+      if (generation?.slot || genKind !== 'logo') {
+        // Pre-scoped to one slot, OR a one-and-done kind (shot / videoshot / image / …) → close.
+        // The multi-target loop below is LOGO-ONLY (fill the 5 brand slots); firing it for a shot
+        // made the agent babble "which logo slot next?" after an ad render.
         onClose();
       } else {
-        // Slot-picker mode → loop: reset the plan and ask the agent which target is next
+        // Logo slot-picker → loop: reset the plan and ask the agent which slot is next
         // (it re-streams with the now-updated brand context, so it knows what's still empty).
         setGenPlan(null);
         setRefAssetIds([]);
