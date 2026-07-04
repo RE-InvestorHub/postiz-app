@@ -143,6 +143,15 @@ export interface CloneCastJob {
   error?: string;
 }
 
+// A swappable backdrop for the cast — composite the matted avatar onto it (HeyGen-style bg swap).
+export interface AvatarBackground {
+  type: 'color' | 'gradient' | 'image';
+  color?: string;
+  colors?: string[];      // 2 stops for a gradient
+  imageAssetId?: string;
+  imageUrl?: string;
+}
+
 // A cast is driven by a script (→ TTS in the avatar's voice) OR a provided audio clip (record / upload
 // / Writer's-Room track → lip-sync). audioContentTypes lets the caller declare a cloned-voice mirror.
 export interface CloneCastPayload {
@@ -153,6 +162,12 @@ export interface CloneCastPayload {
   audioAssetId?: string;
   audioUrl?: string;
   audioContentTypes?: string[];
+  background?: AvatarBackground;
+}
+
+/** Matte the avatar's portrait (rembg, cached, FREE) → a transparent PNG URL for the instant bg preview. */
+export function matteAvatar(kind: 'synthetic' | 'human', id: string): Promise<{ ok: boolean; matteUrl: string }> {
+  return post('/avatar/matte', { kind, id });
 }
 
 /** ✨ Develop the lines with AI — plain spoken text for an avatar to say (Avatars canvas). Cheap. */
