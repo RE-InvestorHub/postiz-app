@@ -17,7 +17,7 @@
 import { FC, useCallback, useEffect, useRef, useState } from 'react';
 
 export interface CropRect { x: number; y: number; width: number; height: number }
-export type CropTool = 'crop' | 'zoom';
+export type CropTool = 'crop' | 'zoom' | 'erase';
 
 // --- Icons (lucide-style, currentColor so they theme with the button) ---------
 const CropIcon: FC = () => (
@@ -28,6 +28,11 @@ const CropIcon: FC = () => (
 const ZoomIcon: FC = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /><path d="M11 8v6" /><path d="M8 11h6" />
+  </svg>
+);
+const EraseIcon: FC = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4L13 5a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11.4 21" /><path d="M22 21H7" /><path d="m5 11 9 9" />
   </svg>
 );
 
@@ -48,6 +53,7 @@ export const CropToolbar: FC<{ active: CropTool | null; onPick: (t: CropTool) =>
     <div className="absolute bottom-[8px] left-[8px] z-10 flex flex-col gap-[4px] rounded-[8px] border border-white/15 bg-black/55 p-[4px] backdrop-blur-sm">
       {btn('crop', 'Crop — trim to a tighter frame', <CropIcon />)}
       {btn('zoom', 'Zoom in — crop then upscale (closer, sharp)', <ZoomIcon />)}
+      {btn('erase', 'Erase — box stray text/marks; fills from a clean neighbour', <EraseIcon />)}
     </div>
   );
 };
@@ -184,21 +190,26 @@ export const ImageCropOverlay: FC<{
 
       {/* Options bar */}
       <div className="flex flex-wrap items-center gap-[8px]">
-        <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
-          {RATIOS.map((x) => (
-            <button key={x.id} type="button" onClick={() => setRatio(x.r)}
-              className={'h-[32px] px-[10px] text-[12px] font-[600] ' + ((ratio === x.r || (x.r === null && ratio === null)) ? 'bg-btnPrimary text-btnText' : 'text-textItemBlur hover:text-btnText')}>
-              {x.label}
-            </button>
-          ))}
+        {/* Aspect presets — for framing (crop/zoom). Erase is free-form, so hide them there. */}
+        {mode !== 'erase' && (
+          <span className="inline-flex rounded-[8px] border border-newBorder overflow-hidden">
+            {RATIOS.map((x) => (
+              <button key={x.id} type="button" onClick={() => setRatio(x.r)}
+                className={'h-[32px] px-[10px] text-[12px] font-[600] ' + ((ratio === x.r || (x.r === null && ratio === null)) ? 'bg-btnPrimary text-btnText' : 'text-textItemBlur hover:text-btnText')}>
+                {x.label}
+              </button>
+            ))}
+          </span>
+        )}
+        <span className="text-[11px] text-textItemBlur">
+          {mode === 'erase' ? 'Box the text/mark to remove' : rect ? `${rect.width}×${rect.height}px` : 'loading…'}
         </span>
-        <span className="text-[11px] text-textItemBlur">{rect ? `${rect.width}×${rect.height}px` : 'loading…'}</span>
         <span className="ml-auto" />
         <button type="button" onClick={onCancel} disabled={busy}
           className="h-[34px] px-[12px] rounded-[8px] border border-newBorder text-[12px] text-textItemBlur hover:text-btnText disabled:opacity-50">Cancel</button>
         <button type="button" onClick={() => rect && onApply(rect, mode)} disabled={busy || !rect}
           className="h-[34px] px-[16px] rounded-[8px] bg-ai text-btnText text-[12px] font-[700] hover:opacity-90 disabled:opacity-50">
-          {busy ? '…' : mode === 'zoom' ? '🔍 Apply zoom' : '⛶ Apply crop'}
+          {busy ? '…' : mode === 'erase' ? '🩹 Apply erase' : mode === 'zoom' ? '🔍 Apply zoom' : '⛶ Apply crop'}
         </button>
       </div>
     </div>

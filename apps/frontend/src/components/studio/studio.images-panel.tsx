@@ -81,19 +81,28 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
   // ops; the new variant is selected via the images-refresh event (pendingSelectRef).
   const onCropApply = useCallback(async (rect: CropRect, mode: CropTool) => {
     if (!selected || cropBusy) return;
+    const box = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     setCropBusy(true);
     try {
-      const cropped = await editImage(selected.id, 'crop', { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-      let finalId = cropped.id;
-      if (mode === 'zoom') {
-        const longEdge = Math.max(rect.width, rect.height);
-        const percent = Math.min(400, Math.max(100, Math.round((1536 / longEdge) * 100))); // toward ~1536px, capped by the op
-        if (percent > 100) finalId = (await editImage(cropped.id, 'scale', { percent })).id;
+      let finalId: string; let msg: string;
+      if (mode === 'erase') {
+        // Heal: clone a clean neighbouring strip over the boxed region (removes stray text/marks).
+        finalId = (await editImage(selected.id, 'heal', box)).id;
+        msg = 'Erased — new variant added. Original kept.';
+      } else {
+        const cropped = await editImage(selected.id, 'crop', box);
+        finalId = cropped.id;
+        if (mode === 'zoom') {
+          const longEdge = Math.max(rect.width, rect.height);
+          const percent = Math.min(400, Math.max(100, Math.round((1536 / longEdge) * 100))); // toward ~1536px, capped by the op
+          if (percent > 100) finalId = (await editImage(cropped.id, 'scale', { percent })).id;
+        }
+        msg = mode === 'zoom' ? 'Zoomed in — new variant added. Original kept.' : 'Cropped — new variant added. Original kept.';
       }
       setCropTool(null);
-      toaster.show(mode === 'zoom' ? 'Zoomed in — new variant added. Original kept.' : 'Cropped — new variant added. Original kept.', 'success');
+      toaster.show(msg, 'success');
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh', { detail: { selectImageId: finalId } }));
-    } catch (e) { toaster.show((e as Error)?.message ?? 'Crop failed', 'warning'); }
+    } catch (e) { toaster.show((e as Error)?.message ?? 'Edit failed', 'warning'); }
     finally { setCropBusy(false); }
   }, [selected, cropBusy, toaster]);
   // After an agent edit, the new variant id should become the canvas selection. We carry it on a
