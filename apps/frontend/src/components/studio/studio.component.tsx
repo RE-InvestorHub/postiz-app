@@ -300,7 +300,7 @@ const StudioInner: FC = () => {
             caps={caps}
             initialInput={state.floatingAgent.seed}
             autoSend={state.floatingAgent.autoSend}
-            generation={state.floatingAgent.kind ? { kind: state.floatingAgent.kind, brandKitId: state.floatingAgent.brandKitId, slot: state.floatingAgent.slot } : undefined}
+            generation={state.floatingAgent.kind ? { kind: state.floatingAgent.kind, brandKitId: state.floatingAgent.brandKitId, slot: state.floatingAgent.slot, anchorId: state.floatingAgent.anchorId, cloneId: state.floatingAgent.cloneId, seedSpec: state.floatingAgent.seedSpec } : undefined}
             onClose={() => dispatch({ type: 'CLOSE_FLOATING_AGENT' })}
             onCreate={handleCreate}
           />
