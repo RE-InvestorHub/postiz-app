@@ -13,7 +13,7 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
-import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, tagImageForAvatar, editImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
+import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, tagImageForAvatar, editImage, removeImageText, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
 import { ImageCropOverlay, CropToolbar, CropRect, CropTool } from '@gitroom/frontend/components/studio/studio.image-crop-overlay';
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
@@ -69,6 +69,7 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
   // cropTool = which on-canvas tool is active (null = off); its icons live in a bottom-left toolbar.
   const [cropTool, setCropTool] = useState<CropTool | null>(null);
   const [cropBusy, setCropBusy] = useState(false);
+  const [removingText, setRemovingText] = useState(false);
 
   const selected = images.find((i) => i.id === selectedId) || null;
   // Share the selection with the store so the AI Agent can see/act on the current image.
@@ -105,6 +106,23 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
     } catch (e) { toaster.show((e as Error)?.message ?? 'Edit failed', 'warning'); }
     finally { setCropBusy(false); }
   }, [selected, cropBusy, toaster]);
+
+  // Remove hallucinated on-image text (fake captions/watermarks) — pixel-safe declutter; keeps the
+  // subject untouched. New variant when text was healed; nudges to install OCR if it's missing.
+  const onRemoveText = useCallback(async () => {
+    if (!selected || removingText) return;
+    setRemovingText(true);
+    try {
+      const r = await removeImageText(selected.id);
+      if (!r.ocr) toaster.show('Text removal needs OCR — run: sudo apt install -y tesseract-ocr', 'warning');
+      else if (!r.healed) toaster.show('No removable text found.', 'success');
+      else {
+        toaster.show(`Removed ${r.healed} text region${r.healed > 1 ? 's' : ''}. Original kept.`, 'success');
+        if (typeof window !== 'undefined' && r.id) window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh', { detail: { selectImageId: r.id } }));
+      }
+    } catch (e) { toaster.show((e as Error)?.message ?? 'Remove text failed', 'warning'); }
+    finally { setRemovingText(false); }
+  }, [selected, removingText, toaster]);
   // After an agent edit, the new variant id should become the canvas selection. We carry it on a
   // ref set by the refresh event (below) and apply it once that variant lands in the library —
   // local `selectedId` stays the single source of truth (no store->local effect ping-pong).
@@ -434,6 +452,10 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
                 <button type="button" onClick={() => { setCaptureName(''); setCaptureOpen(true); }}
                   title="Save this image as a reusable Scene Director component (character / scene / lighting / …)"
                   className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10">★ Save as component</button>
+                <button type="button" disabled={removingText} onClick={onRemoveText}
+                  title="Detect + erase hallucinated text (fake captions / watermarks) — pixel-safe, keeps the subject untouched. New variant; original kept."
+                  className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10 disabled:opacity-50">
+                  {removingText ? '…' : '🧹 Remove text'}</button>
                 {/* Images→Avatar bridge — tag this image so it appears in the avatar canvas portrait picker
                     (the avatar's Soul-generated shot / neutral headshot that HeyGen then animates). */}
                 <button type="button" onClick={() => applyAvatarTag(!selected.avatarUse)}
