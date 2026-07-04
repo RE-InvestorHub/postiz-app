@@ -108,3 +108,10 @@ export function editImage(sourceId: string, op: string, params: Record<string, u
 export function magickImage(sourceId: string, ops: string[]): Promise<ImageEditResult> {
   return req<ImageEditResult>('/images/magick', { method: 'POST', body: JSON.stringify({ sourceId, ops }) });
 }
+
+export interface DeclutterResult { id?: string; url?: string; healed: number; detected?: number; ocr: boolean; note?: string; sourceId?: string }
+/** Detect + heal hallucinated on-image text (fake captions/watermarks) — FREE, pixel-safe, keeps the
+ * subject untouched. Returns a new variant when text was healed; {ocr:false} when tesseract is absent. */
+export function removeImageText(sourceId: string): Promise<DeclutterResult> {
+  return req<DeclutterResult>('/images/declutter', { method: 'POST', body: JSON.stringify({ sourceId }) });
+}
