@@ -254,8 +254,12 @@ export interface StudioState {
   /** Video Editor tab: the multi-track NLE edit (the serializable, agent-drivable timeline document). */
   timeline: TimelineEDL;
   /** Draggable floating agent chat window: null = closed, else open. In generation-interview
-   *  mode it carries the kind + brand + target slot so Create can run that kind's generator. */
-  floatingAgent: { seed?: string; kind?: string; brandKitId?: string; slot?: string; autoSend?: boolean } | null;
+   *  mode it carries the kind + brand + target slot so Create can run that kind's generator.
+   *  For a Scene Director shot it also carries the selected character identity (anchorId for a
+   *  synthetic anchor, cloneId for a consented real-person avatar) and the dropdown/template
+   *  picks (seedSpec) so Create renders the RIGHT person with the RIGHT framing — mirroring the
+   *  ⚡ Generate button through the agent's standard render path. */
+  floatingAgent: { seed?: string; kind?: string; brandKitId?: string; slot?: string; autoSend?: boolean; anchorId?: string | null; cloneId?: string | null; seedSpec?: Record<string, string> } | null;
 }
 
 export interface ModelOption {

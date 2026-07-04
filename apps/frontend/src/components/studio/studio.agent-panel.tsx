@@ -213,7 +213,7 @@ export const StudioAgentPanel: FC<{
    *  immediately instead of parking the request in the box for the user to submit. */
   autoSend?: boolean;
   /** Generation-interview mode: the agent interviews for this kind; Create runs its generator. */
-  generation?: { kind?: string; brandKitId?: string; slot?: string };
+  generation?: { kind?: string; brandKitId?: string; slot?: string; anchorId?: string | null; cloneId?: string | null; seedSpec?: Record<string, string> };
 }> = ({ caps, onClose, onCreate, floating, initialInput, autoSend, generation }) => {
   const { state } = useStudio();
   const toaster = useToaster();
@@ -526,7 +526,20 @@ export const StudioAgentPanel: FC<{
     const brandKitId = generation?.brandKitId || state.composerBrandKitId;
     setGenerating(true);
     try {
-      const spec = { ...genPlan.spec, ...(generation?.slot ? { slot: generation.slot } : {}), referenceAssetIds: refAssetIds };
+      // Layer the spec: the Scene Director's dropdown/template picks (seedSpec) are the BASE and the
+      // agent's developed brief OVERRIDES per field. Then, only when the Director supplied a selected
+      // character, FORCE its identity so Create renders the RIGHT person — a synthetic anchorId or a
+      // consented cloneId (the brain re-asserts consent + ai_clone disclosure on cloneId). When it
+      // did NOT (e.g. the video keyframe interview), we leave the agent's own spec.anchorId intact,
+      // so this stays backward-compatible. Net: the agent's render path is a superset of the ⚡ button.
+      const spec: Record<string, unknown> = {
+        ...(generation?.seedSpec || {}),
+        ...genPlan.spec,
+        ...(generation?.slot ? { slot: generation.slot } : {}),
+        referenceAssetIds: refAssetIds,
+      };
+      if (generation?.anchorId) { spec.anchorId = generation.anchorId; spec.cloneId = null; }
+      if (generation?.cloneId) { spec.cloneId = generation.cloneId; spec.anchorId = null; }
       // Video gap-fill (videoshot, output 'video') morphs the numbered keyframe pool — inject the ids.
       if (genKind === 'videoshot') (spec as Record<string, unknown>).keyframeIds = state.videoKeyframes.map((k) => k.id);
       const line = await runGeneration(genKind, brandKitId, spec);
@@ -556,7 +569,7 @@ export const StudioAgentPanel: FC<{
     } catch (e) {
       appendMessage({ id: makeId(), role: 'system', text: `Generation failed: ${(e as Error)?.message ?? e}` });
     } finally { setGenerating(false); }
-  }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, refAssetIds, state.composerBrandKitId, state.videoKeyframes, toaster, onClose, appendMessage, conversationId, handleEvent, finalizeLastAssistant]);
+  }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, generation?.anchorId, generation?.cloneId, generation?.seedSpec, refAssetIds, state.composerBrandKitId, state.videoKeyframes, toaster, onClose, appendMessage, conversationId, handleEvent, finalizeLastAssistant]);
 
   // Create gate: in generation mode, lit only when the agent published ready + confidence crossed
   // the READY_THRESHOLD (0.92, mirrors services/brain generation-kinds.mjs). Confidence is the

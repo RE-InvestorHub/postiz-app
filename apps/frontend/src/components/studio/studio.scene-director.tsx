@@ -157,21 +157,26 @@ export const StudioSceneDirector: FC<{ brandKitId: string; context?: 'images' | 
         if (p) lines.push(`- ${d.label}: ${p.label} (${p.fragment})${lk}`);
       } else if (v.startsWith('c:')) {
         const c = d.components.find((x) => x.id === v.slice(2));
-        // A real-person avatar (clone) is NOT a synthetic anchor — never hand it to the agent as an
-        // anchorId. Identity-locked clone renders go through the ⚡ Generate button (consent + ai_clone).
+        // The hero character rides through as identity: a synthetic anchorId or a consented clone.
+        // Both are LOCKED automatically at Create (buildSpec → seedSpec + ids below), so the agent
+        // just develops the scene around them — it never needs to reproduce or change a likeness.
         if (c) lines.push((d.component === 'character'
           ? (c.source === 'clone'
-              ? `- ${d.label}: real-person avatar "${c.name}" — consented; render it identity-locked via the ⚡ Generate button, not this chat`
-              : `- ${d.label}: reuse saved character "${c.name}" (anchorId: ${c.id})`)
+              ? `- ${d.label}: the hero is the consented real-person avatar "${c.name}" — their identity is LOCKED automatically for this render. Keep them as the hero and develop the SCENE around them; do NOT describe or alter their face/likeness.`
+              : `- ${d.label}: the hero is the saved character "${c.name}" — identity LOCKED automatically. Develop the scene around them; don't restate their likeness.`)
           : `- ${d.label}: reuse saved "${c.name}"`) + lk);
       }
     }
+    // Structured picks (+ the hero's anchorId/cloneId) — the same shape the ⚡ Generate button
+    // sends. Passed alongside the interview seed so Create renders the RIGHT person with the RIGHT
+    // framing: seedSpec is the base, the agent's developed spec overrides, identity is forced.
+    const { spec: seedSpec, anchorId, cloneId } = buildSpec();
     const seed =
       `I'm directing an ad shot. Here are my picks — develop the rest, anything not listed is your call:\n` +
       `${lines.length ? lines.join('\n') : '- (all on Auto — propose a strong concept)'}\n` +
       (description.trim() ? `Free-text brief: ${description.trim()}\n` : '') +
       `Render mode: ${renderMode}. Aspect ratio: ${aspect}. Resolution: ${state.resolution}. When you're confident, the Create button will render it.`;
-    dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'shot', brandKitId, seed });
+    dispatch({ type: 'OPEN_FLOATING_AGENT', kind: 'shot', brandKitId, seed, anchorId, cloneId, seedSpec: { ...seedSpec, renderMode, aspectRatio: aspect } });
   };
 
   // Video context — open the AI interview ('videoshot'). The agent decides keyframe / clip / video WITH
