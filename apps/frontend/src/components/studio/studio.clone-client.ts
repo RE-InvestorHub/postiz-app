@@ -170,6 +170,26 @@ export function matteAvatar(kind: 'synthetic' | 'human', id: string): Promise<{ 
   return post('/avatar/matte', { kind, id });
 }
 
+export interface AvatarPortrait { id: string; url: string; name: string; cloneId: string | null }
+export interface AvatarClip { id: string; url: string; durationS: number | null; createdAt: string | null }
+
+/** Library images tagged "Use for avatar" for this avatar (the portrait picker). */
+export function listAvatarPortraits(kind: 'synthetic' | 'human', id: string): Promise<AvatarPortrait[]> {
+  return req<{ portraits: AvatarPortrait[] }>(`/avatar/portraits?kind=${kind}&id=${encodeURIComponent(id)}`).then((r) => r.portraits || []);
+}
+/** Every clip cast for this avatar (the cast-history dropdown). */
+export function listAvatarClips(kind: 'synthetic' | 'human', id: string): Promise<AvatarClip[]> {
+  return req<{ clips: AvatarClip[] }>(`/avatar/clips?kind=${kind}&id=${encodeURIComponent(id)}`).then((r) => r.clips || []);
+}
+/** Set the human avatar's cast portrait to a tagged image url (null = revert). */
+export function setClonePortrait(cloneId: string, portraitUrl: string | null): Promise<CloneRecord> {
+  return post<CloneRecord>('/clone/portrait/set', { cloneId, portraitUrl });
+}
+/** Change the human avatar's voice (free). */
+export function setCloneVoice(cloneId: string, voiceId: string, voiceLabel?: string): Promise<CloneRecord> {
+  return post<CloneRecord>('/clone/voice/set', { cloneId, voiceId, voiceLabel });
+}
+
 /** ✨ Develop the lines with AI — plain spoken text for an avatar to say (Avatars canvas). Cheap. */
 export function developAvatarLines(payload: { prompt: string; avatarName?: string; brandKitId?: string; maxWords?: number; existing?: string }): Promise<{ lines: string }> {
   return post('/avatar/develop-lines', payload);

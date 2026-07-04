@@ -36,10 +36,13 @@ export interface CloneRecord {
     reference_images?: string[];
     reference_sheet_id?: string;
     character_seed?: number;
+    /** Cast portrait override — a tagged Images-tab image url the cast + matte prefer. */
+    portrait?: string | null;
   };
   voice?: {
     provider?: string;
     voice_id?: string;
+    voice_label?: string | null;
     voice_status?: string;
     clone_tier?: CloneTier;
   };

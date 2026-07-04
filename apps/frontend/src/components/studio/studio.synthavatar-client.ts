@@ -47,6 +47,8 @@ export interface SynthAvatar {
   portrait_path: string | null;
   portrait_cdn_url: string | null;
   portrait_url: string | null;
+  /** Cast portrait override — a tagged Images-tab image url the cast + matte prefer. */
+  portrait_override?: string | null;
   status: 'active' | 'archived';
   brand_owned: boolean;
   last_clip_asset_id: string | null;
@@ -196,6 +198,10 @@ export function reshootPortrait(synthId: string, aspectRatio?: string): Promise<
 }
 
 /** Reassign the stock voice (free). */
+export function setSynthPortrait(synthId: string, portraitUrl: string | null): Promise<SynthAvatar> {
+  return post<SynthAvatar>('/synthetic-avatar/portrait', { synthId, portraitUrl });
+}
+
 export function setSynthVoice(synthId: string, voiceId: string, voiceLabel?: string): Promise<SynthAvatar> {
   return post<SynthAvatar>('/synthetic-avatar/voice', { synthId, voiceId, voiceLabel });
 }

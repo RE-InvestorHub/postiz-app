@@ -13,7 +13,7 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
-import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
+import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, tagImageForAvatar, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { CanvasSoulButton } from '@gitroom/frontend/components/studio/studio.soul-control';
@@ -179,6 +179,15 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
     if (!state.activeAdId || !selected) return;
     try { await addObject({ adId: state.activeAdId, type: 'image', id: selected.id }); setAdded((s) => new Set(s).add(selected.id)); }
     catch { /* keep resilient */ }
+  };
+  // Images→Avatar bridge: tag this image so it surfaces in the avatar canvas portrait picker.
+  const applyAvatarTag = async (use: boolean, name?: string) => {
+    if (!selected) return;
+    const nm = use ? (name ?? selected.avatarName ?? (selected.prompt ? selected.prompt.slice(0, 40) : '')) : null;
+    try {
+      await tagImageForAvatar(selected.id, use, nm ?? undefined);
+      setImages((prev) => prev.map((i) => (i.id === selected.id ? { ...i, avatarUse: use, avatarName: nm } : i)));
+    } catch (e) { setError((e as Error)?.message ?? String(e)); }
   };
   const doDelete = async () => {
     if (!selected) return;
@@ -379,6 +388,19 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
                 <button type="button" onClick={() => { setCaptureName(''); setCaptureOpen(true); }}
                   title="Save this image as a reusable Scene Director component (character / scene / lighting / …)"
                   className="h-[36px] px-[14px] rounded-[8px] border border-ai/40 text-ai text-[12px] font-[600] hover:bg-ai/10">★ Save as component</button>
+                {/* Images→Avatar bridge — tag this image so it appears in the avatar canvas portrait picker
+                    (the avatar's Soul-generated shot / neutral headshot that HeyGen then animates). */}
+                <button type="button" onClick={() => applyAvatarTag(!selected.avatarUse)}
+                  title={selected.avatarUse ? 'Tagged for the avatar portrait picker — click to remove' : 'Tag this image so it appears in the avatar canvas portrait picker (HeyGen animates it)'}
+                  className={'h-[36px] px-[14px] rounded-[8px] text-[12px] font-[600] ' + (selected.avatarUse ? 'bg-blue-500 text-white hover:opacity-90' : 'border border-blue-400/40 text-blue-400 hover:bg-blue-400/10')}>
+                  {selected.avatarUse ? '🧑 Avatar ✓' : '🧑 Use for avatar'}
+                </button>
+                {selected.avatarUse && (
+                  <input key={selected.id + '|' + (selected.avatarName || '')} defaultValue={selected.avatarName || ''} placeholder="name for the picker"
+                    onBlur={(e) => { if (e.target.value !== (selected.avatarName || '')) applyAvatarTag(true, e.target.value); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                    className="h-[36px] px-[10px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText w-[160px]" />
+                )}
                 {/* Keyframe promote/demote — one-click toggle of the keyframe flag (same asset, shows in
                     both libraries when marked). Filled when already a keyframe. */}
                 <button type="button" disabled={kfBusy} onClick={doToggleKeyframe}
