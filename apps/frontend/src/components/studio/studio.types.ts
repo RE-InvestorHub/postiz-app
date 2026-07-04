@@ -270,7 +270,7 @@ export interface ModelOption {
 
 // Image-generation models (Images tab). Higgsfield job_set_type values.
 export const STUDIO_IMAGE_MODELS: ModelOption[] = [
-  { value: 'nano_banana_flash', label: 'Nano Banana 2', credits: '~1 cr' },
+  { value: 'nano_banana_flash', label: 'Nano Banana', credits: '~1 cr' },
   { value: 'nano_banana_2', label: 'Nano Banana Pro', credits: '~2-4 cr' },
   { value: 'flux_2', label: 'FLUX.2', credits: 'varies' },
   { value: 'text2image_soul_v2', label: 'Higgsfield Soul V2', credits: 'varies' },
