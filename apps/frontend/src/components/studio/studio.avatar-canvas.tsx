@@ -317,7 +317,7 @@ export const StudioAvatarCanvas: FC<{
               </label>
               <button type="button" disabled={!readyToCast || casting} onClick={cast}
                 className="h-[40px] px-[16px] rounded-[8px] bg-ai text-btnText font-[700] text-[13px] disabled:opacity-50 inline-flex items-center justify-center gap-[8px]">
-                {casting && <span className="inline-block w-[14px] h-[14px] rounded-full border-2 border-btnText/40 border-t-btnText animate-spin" aria-hidden="true" />}
+                {casting && <span className="inline-block w-[14px] h-[14px] rounded-full border-2 border-btnText/40 border-t-transparent animate-spin" aria-hidden="true" />}
                 {casting ? 'Generating video…' : '🎬 Cast into video'}
               </button>
               {msg && <span className="text-[11px] text-textItemBlur">{msg}</span>}

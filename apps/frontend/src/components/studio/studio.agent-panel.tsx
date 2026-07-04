@@ -223,6 +223,9 @@ export const StudioAgentPanel: FC<{
   // Generation-interview state: the agent's latest published plan + dropped reference assets.
   const genKind = generation?.kind;
   const [genPlan, setGenPlan] = useState<{ kind?: string; spec?: Record<string, unknown>; confidence?: number; ready?: boolean; summary?: string } | null>(null);
+  // Meter ratchet: the confidence bar only ever climbs within one interview target — a momentary
+  // dip (model reshaping the spec) never yanks the bar backwards. Resets when the target changes.
+  const confRatchet = useRef<{ key: string; max: number }>({ key: '', max: 0 });
   const [refAssetIds, setRefAssetIds] = useState<string[]>([]);
   const [generating, setGenerating] = useState(false);
   const [showRefDrop, setShowRefDrop] = useState(false); // reference uploader popover open?
@@ -386,7 +389,18 @@ export const StudioAgentPanel: FC<{
           // generation_plan is a signal (not a capability): capture it to drive the
           // confidence meter + Create gate. Don't render it as a tool-call card.
           if (event.name === 'generation_plan') {
-            setGenPlan((event.input as { confidence?: number }) || null);
+            const plan = (event.input as { kind?: string; spec?: Record<string, unknown>; confidence?: number; ready?: boolean; summary?: string }) || null;
+            if (plan) {
+              // Ratchet the meter upward within one target (kind + slot). A new target resets it.
+              const key = `${plan.kind ?? ''}:${(plan.spec?.slot as string) ?? ''}`;
+              const r = confRatchet.current;
+              if (r.key !== key) { r.key = key; r.max = 0; }
+              r.max = Math.max(r.max, plan.confidence ?? 0);
+              setGenPlan({ ...plan, confidence: r.max });
+            } else {
+              confRatchet.current = { key: '', max: 0 };
+              setGenPlan(null);
+            }
           } else if (event.name === 'image_edit' || event.name === 'image_magick') {
             // Graphics edit: the brain already ran the op + recorded the new variant. Refresh the
             // library AND tell it to select the new variant (via the event detail) so the canvas
@@ -544,8 +558,10 @@ export const StudioAgentPanel: FC<{
     } finally { setGenerating(false); }
   }, [genKind, genPlan, generating, generation?.brandKitId, generation?.slot, refAssetIds, state.composerBrandKitId, state.videoKeyframes, toaster, onClose, appendMessage, conversationId, handleEvent, finalizeLastAssistant]);
 
-  // Create gate: in generation mode, lit only when the agent published ready + ≥95% confidence.
-  const genReady = !!genPlan?.ready && (genPlan?.confidence ?? 0) >= 0.95;
+  // Create gate: in generation mode, lit only when the agent published ready + confidence crossed
+  // the READY_THRESHOLD (0.92, mirrors services/brain generation-kinds.mjs). Confidence is the
+  // ratcheted, brain-computed coverage score — not the model's raw self-report.
+  const genReady = !!genPlan?.ready && (genPlan?.confidence ?? 0) >= 0.92;
 
   const stopStream = useCallback(() => {
     abortRef.current?.abort();
@@ -692,7 +708,7 @@ export const StudioAgentPanel: FC<{
 
       {/* Input + Create footer */}
       <div className="p-[12px] border-t border-[var(--new-table-border)] flex flex-col gap-[8px]">
-        {/* Create button — generation mode gates on confidence ≥ 95%; brief mode on brief_complete */}
+        {/* Create button — generation mode gates on confidence ≥ 92%; brief mode on brief_complete */}
         {genKind ? (
           <button
             type="button"
@@ -705,7 +721,7 @@ export const StudioAgentPanel: FC<{
                 ? 'bg-btnPrimary text-white cursor-pointer hover:opacity-90'
                 : 'bg-btnSimple text-[var(--new-table-text)] opacity-50 cursor-not-allowed',
             ].join(' ')}
-            title={genReady ? `Generate the ${genKind} (uses image credits)` : 'Keep answering — Create unlocks at 95% confidence'}
+            title={genReady ? `Generate the ${genKind} (uses image credits)` : 'Keep answering — Create unlocks at 92% confidence'}
           >
             <IconCreate />
             {generating ? 'Generating…' : `Create ${genKind}`}
