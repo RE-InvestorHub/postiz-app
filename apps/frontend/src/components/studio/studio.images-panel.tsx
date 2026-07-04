@@ -13,7 +13,8 @@ import { useStudio } from '@gitroom/frontend/components/studio/studio.store';
 import { StudioDropZone } from '@gitroom/frontend/components/studio/studio.drop-zone';
 import { UploadedAsset } from '@gitroom/frontend/components/studio/studio.types';
 import { addObject } from '@gitroom/frontend/components/studio/studio.project-client';
-import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, tagImageForAvatar, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
+import { listBrandImages, deleteBrandImage, deleteBrandImages, listChannelPresets, reshapeImage, tagImageForAvatar, editImage, BrandImage, ChannelPreset } from '@gitroom/frontend/components/studio/studio.image-client';
+import { ImageCropOverlay, CropToolbar, CropRect, CropTool } from '@gitroom/frontend/components/studio/studio.image-crop-overlay';
 import { addKeyframes, removeKeyframe } from '@gitroom/frontend/components/studio/studio.video-client';
 import { StudioSceneDirector } from '@gitroom/frontend/components/studio/studio.scene-director';
 import { CanvasSoulButton } from '@gitroom/frontend/components/studio/studio.soul-control';
@@ -64,10 +65,37 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
   const [reshaping, setReshaping] = useState(false);
   const [channelFilter, setChannelFilter] = useState('all'); // library filter by channel (B3)
   const [exportingAll, setExportingAll] = useState(false);
+  // Manual crop / zoom marquee on the canvas (free, non-destructive — rides /images/edit ops).
+  // cropTool = which on-canvas tool is active (null = off); its icons live in a bottom-left toolbar.
+  const [cropTool, setCropTool] = useState<CropTool | null>(null);
+  const [cropBusy, setCropBusy] = useState(false);
 
   const selected = images.find((i) => i.id === selectedId) || null;
   // Share the selection with the store so the AI Agent can see/act on the current image.
   useEffect(() => { dispatch({ type: 'SET_SELECTED_IMAGE', id: selectedId }); }, [selectedId, dispatch]);
+  // Leave crop mode whenever the selected image changes (never crop a stale target).
+  useEffect(() => { setCropTool(null); }, [selectedId]);
+
+  // Apply the marquee. 'crop' = a tighter frame; 'zoom' = crop then upscale the crop back toward a
+  // hi-res long edge so a closer face stays sharp. Both ride the FREE, lineage-tracked /images/edit
+  // ops; the new variant is selected via the images-refresh event (pendingSelectRef).
+  const onCropApply = useCallback(async (rect: CropRect, mode: CropTool) => {
+    if (!selected || cropBusy) return;
+    setCropBusy(true);
+    try {
+      const cropped = await editImage(selected.id, 'crop', { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+      let finalId = cropped.id;
+      if (mode === 'zoom') {
+        const longEdge = Math.max(rect.width, rect.height);
+        const percent = Math.min(400, Math.max(100, Math.round((1536 / longEdge) * 100))); // toward ~1536px, capped by the op
+        if (percent > 100) finalId = (await editImage(cropped.id, 'scale', { percent })).id;
+      }
+      setCropTool(null);
+      toaster.show(mode === 'zoom' ? 'Zoomed in — new variant added. Original kept.' : 'Cropped — new variant added. Original kept.', 'success');
+      if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('reinvestorhub:images-refresh', { detail: { selectImageId: finalId } }));
+    } catch (e) { toaster.show((e as Error)?.message ?? 'Crop failed', 'warning'); }
+    finally { setCropBusy(false); }
+  }, [selected, cropBusy, toaster]);
   // After an agent edit, the new variant id should become the canvas selection. We carry it on a
   // ref set by the refresh event (below) and apply it once that variant lands in the library —
   // local `selectedId` stays the single source of truth (no store->local effect ping-pong).
@@ -374,10 +402,19 @@ export const StudioImagesPanel: FC<StudioImagesPanelProps> = ({ caps, models }) 
             </div>
           ) : (
             <>
-              <div className="rounded-[8px] border border-newBorder overflow-hidden flex items-center justify-center min-h-[300px] max-h-[58vh]" style={CHECKER}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={selected.url} alt={selected.prompt || selected.id} className="max-w-full max-h-[58vh] object-contain" />
-              </div>
+              {cropTool ? (
+                <div className="rounded-[8px] border border-ai/40 bg-newBgColorInner p-[10px]">
+                  <ImageCropOverlay url={selected.url} mode={cropTool} busy={cropBusy}
+                    onModeChange={setCropTool} onCancel={() => setCropTool(null)} onApply={onCropApply} />
+                </div>
+              ) : (
+                <div className="relative rounded-[8px] border border-newBorder overflow-hidden flex items-center justify-center min-h-[300px] max-h-[58vh]" style={CHECKER}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={selected.url} alt={selected.prompt || selected.id} className="max-w-full max-h-[58vh] object-contain" />
+                  {/* Photoshop-style tool toolbar pinned bottom-left — pick Crop or Zoom to drop a marquee. */}
+                  <CropToolbar active={null} onPick={setCropTool} />
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-[8px]">
                 <a href={selected.url} download className="h-[36px] px-[14px] rounded-[8px] border border-newBorder text-[12px] font-[600] text-btnText flex items-center hover:bg-boxHover">↓ Download</a>
                 <button type="button" disabled={!state.activeAdId || added.has(selected.id)} onClick={addToAd}
