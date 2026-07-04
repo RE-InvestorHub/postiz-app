@@ -1,22 +1,21 @@
 'use client';
 
-// Avatar canvas — the HeyGen-style workspace for the selected avatar: a dialog/lines column on the
-// LEFT and a big avatar canvas on the RIGHT, with a background-selector bar across the top of the
-// canvas. Develop the lines, pick a backdrop (instant preview), and cast a talking-head clip. Focused:
-// avatar + audio → clip (no compositing beyond the backdrop swap — that stays in Scene Director / Editor).
-//
-// Voice sources → the lip-sync engine: ✍ Script→TTS · 🎙 Record (own voice or mirror) · ⬆ Upload ·
-// 📁 Writer's Room. Background swap = matte the portrait once (rembg, free) → composite a backdrop
-// behind it; previewed instantly client-side, baked server-side at cast time. Postiz tokens; bg-ai accent.
+// Avatar canvas — the HeyGen-style workspace for the selected avatar: dialog/lines + settings on the
+// LEFT, a big avatar canvas on the RIGHT with a background + format + history bar on top. Develop lines,
+// pick a portrait (a tagged Images-tab image), swap a backdrop, choose a format + voice, and cast a
+// talking-head clip. Focused: avatar + audio → clip. Postiz tokens; bg-ai accent.
 
 import { FC, useCallback, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { CloneRecord } from '@gitroom/frontend/components/studio/studio.types';
 import {
-  SynthAvatar, AvatarEngine, castAndWait, setSynthEngine, reshootPortrait, deleteSynthAvatar,
+  SynthAvatar, AvatarEngine, castAndWait, setSynthEngine, reshootPortrait, deleteSynthAvatar, setSynthPortrait, setSynthVoice,
 } from '@gitroom/frontend/components/studio/studio.synthavatar-client';
-import { castCloneAndWait, developAvatarLines, setCloneStatus, revokeClone, matteAvatar, AvatarBackground } from '@gitroom/frontend/components/studio/studio.clone-client';
-import { listAudioLibrary, AudioTrack } from '@gitroom/frontend/components/studio/studio.voice-client';
+import {
+  castCloneAndWait, developAvatarLines, matteAvatar, AvatarBackground,
+  listAvatarPortraits, AvatarPortrait, listAvatarClips, AvatarClip, setClonePortrait, setCloneVoice,
+} from '@gitroom/frontend/components/studio/studio.clone-client';
+import { listAudioLibrary, AudioTrack, listVoiceLibrary, VoiceOption } from '@gitroom/frontend/components/studio/studio.voice-client';
 import { listBrandImages, BrandImage } from '@gitroom/frontend/components/studio/studio.image-client';
 import { uploadFileToBrain } from '@gitroom/frontend/components/studio/studio.upload-client';
 import { StudioAvatarRecordModal, RecordedAudio } from '@gitroom/frontend/components/studio/studio.avatar-record-modal';
@@ -33,8 +32,13 @@ const HUMAN_ENGINES = [
   { id: 'omnihuman', label: 'OmniHuman 1.5' },
   { id: 'kling', label: 'Kling v2 Pro' },
 ];
+const FORMATS = [
+  { id: '9:16', label: 'Instagram Reels · 9:16', css: '9 / 16' },
+  { id: '4:5', label: 'Instagram Feed · 4:5', css: '4 / 5' },
+  { id: '1:1', label: 'Square · 1:1', css: '1 / 1' },
+  { id: '16:9', label: 'Landscape · 16:9', css: '16 / 9' },
+];
 
-// Backdrop presets (solid + gradient). No spend; instant preview.
 type BgChoice = (AvatarBackground & { label: string; previewUrl?: string }) | null;
 const BG_PRESETS: (AvatarBackground & { label: string })[] = [
   { label: 'Studio grey', type: 'color', color: '#2b2f36' },
@@ -43,14 +47,6 @@ const BG_PRESETS: (AvatarBackground & { label: string })[] = [
   { label: 'Warm', type: 'gradient', colors: ['#7c2d12', '#111827'] },
   { label: 'Sky', type: 'gradient', colors: ['#0ea5e9', '#1e3a8a'] },
   { label: 'Green screen', type: 'color', color: '#00b140' },
-];
-
-// Common social formats. Defaults to Instagram Reels (9:16), like a HeyGen social project.
-const FORMATS = [
-  { id: '9:16', label: 'Instagram Reels · 9:16', css: '9 / 16' },
-  { id: '4:5', label: 'Instagram Feed · 4:5', css: '4 / 5' },
-  { id: '1:1', label: 'Square · 1:1', css: '1 / 1' },
-  { id: '16:9', label: 'Landscape · 16:9', css: '16 / 9' },
 ];
 
 function bgStyle(bg: BgChoice): React.CSSProperties {
@@ -76,16 +72,17 @@ export const StudioAvatarCanvas: FC<{
 
   const id = isHuman ? human.clone_id : synth.synth_id;
   const name = isHuman ? human.person : synth.name;
-  const portraitUrl = assetUrl(isHuman ? human.visual_identity?.reference_images?.[0] : synth.portrait_url);
+  const portraitOverride = isHuman ? (human.visual_identity?.portrait || null) : (synth.portrait_override || null);
+  const portraitUrl = assetUrl(portraitOverride || (isHuman ? human.visual_identity?.reference_images?.[0] : synth.portrait_url));
   const voiceId = isHuman ? human.voice?.voice_id : synth.voice_id;
-  const voiceLabel = isHuman ? human.voice?.voice_id : (synth.voice_label || synth.voice_id);
+  const voiceLabel = isHuman ? (human.voice?.voice_label || human.voice?.voice_id) : (synth.voice_label || synth.voice_id);
   const castable = isHuman
     ? (human.status === 'active' && !!human.visual_identity?.soul_id && human.prep_status !== 'training')
     : (synth.status === 'active');
   const engineOpts = isHuman ? HUMAN_ENGINES : engines.map((e) => ({ id: e.id, label: `${e.label} · ${e.vendor}` }));
 
   const [engine, setEngine] = useState<string>(isHuman ? 'heygen' : (synth.engine || 'heygen'));
-  const [format, setFormat] = useState('9:16'); // default Instagram Reels
+  const [format, setFormatRaw] = useState('9:16');
   const [source, setSource] = useState<'script' | 'record' | 'library'>('script');
   const [script, setScript] = useState('');
   const [audio, setAudio] = useState<PickedAudio | null>(null);
@@ -98,23 +95,34 @@ export const StudioAvatarCanvas: FC<{
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Background swap
   const [bg, setBg] = useState<BgChoice>(null);
   const [matteUrl, setMatteUrl] = useState<string | null>(null);
   const [matting, setMatting] = useState(false);
   const [bgImages, setBgImages] = useState<BrandImage[] | null>(null);
 
-  // Reset when the selected avatar changes.
+  const [portraits, setPortraits] = useState<AvatarPortrait[]>([]);
+  const [clips, setClips] = useState<AvatarClip[]>([]);
+  const [voices, setVoices] = useState<VoiceOption[] | null>(null);
+  const [pickingVoice, setPickingVoice] = useState(false);
+
+  // Reset + load the portrait/clip lists when the selected avatar changes.
   useEffect(() => {
     setSource('script'); setScript(''); setAudio(null); setClipUrl(null); setMsg(null); setError(null);
-    setBg(null); setMatteUrl(null); setFormat('9:16');
+    setBg(null); setMatteUrl(null); setFormatRaw('9:16');
     setEngine(isHuman ? 'heygen' : (synth.engine || 'heygen'));
+    listAvatarPortraits(kind, id).then(setPortraits).catch(() => setPortraits([]));
+    listAvatarClips(kind, id).then(setClips).catch(() => setClips([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const readyToCast = source === 'script' ? !!script.trim() : !!audio;
+  // A full-image portrait already contains its scene → the flat background swap is disabled for it.
+  const bgLocked = !!portraitOverride;
 
-  // Fetch the matte once when the user first applies a background (rembg, free).
+  // Any edit returns the canvas to the live preview (the clip stays in history + the Video Library).
+  const backToPreview = () => setClipUrl(null);
+  const setFormat = (f: string) => { setFormatRaw(f); backToPreview(); };
+
   const ensureMatte = useCallback(async () => {
     if (matteUrl || matting) return;
     setMatting(true);
@@ -123,17 +131,36 @@ export const StudioAvatarCanvas: FC<{
     finally { setMatting(false); }
   }, [matteUrl, matting, kind, id]);
 
-  const applyBg = useCallback((b: BgChoice) => { setBg(b); if (b) void ensureMatte(); }, [ensureMatte]);
-
-  const openBgLibrary = useCallback(() => {
-    if (bgImages == null) listBrandImages(brandKitId).then(setBgImages).catch(() => setBgImages([]));
-  }, [bgImages, brandKitId]);
-
+  const applyBg = useCallback((b: BgChoice) => { setBg(b); backToPreview(); if (b) void ensureMatte(); }, [ensureMatte]);
+  const openBgLibrary = useCallback(() => { if (bgImages == null) listBrandImages(brandKitId).then(setBgImages).catch(() => setBgImages([])); }, [bgImages, brandKitId]);
   const uploadBg = useCallback(async (file: File) => {
     setError(null);
     try { const a = await uploadFileToBrain(file); applyBg({ label: 'Uploaded', type: 'image', imageAssetId: a.assetId, previewUrl: a.url }); }
     catch (e) { setError((e as Error)?.message ?? 'Upload failed'); }
   }, [applyBg]);
+
+  const selectPortrait = useCallback(async (url: string | null) => {
+    setBusy(true); setError(null);
+    try {
+      if (isHuman) await setClonePortrait(id, url); else await setSynthPortrait(id, url);
+      setBg(null); setMatteUrl(null); backToPreview(); // a new portrait invalidates the matte + preview
+      onChanged();
+    } catch (e) { setError((e as Error)?.message ?? 'Could not set the portrait'); }
+    finally { setBusy(false); }
+  }, [isHuman, id, onChanged]);
+
+  const openVoicePicker = useCallback(() => {
+    setPickingVoice(true);
+    if (!voices) listVoiceLibrary().then((v) => setVoices(v.filter((x) => x.ready))).catch(() => setVoices([]));
+  }, [voices]);
+  const chooseVoice = useCallback(async (v: VoiceOption) => {
+    setBusy(true); setError(null);
+    try {
+      if (isHuman) await setCloneVoice(id, v.voiceId, v.label); else await setSynthVoice(id, v.voiceId, v.label);
+      setPickingVoice(false); backToPreview(); onChanged();
+    } catch (e) { setError((e as Error)?.message ?? 'Could not change the voice'); }
+    finally { setBusy(false); }
+  }, [isHuman, id, onChanged]);
 
   const develop = useCallback(async () => {
     if (!script.trim()) { setError('Type a topic or a rough line first, then Develop.'); return; }
@@ -153,7 +180,7 @@ export const StudioAvatarCanvas: FC<{
     try {
       const audioParams = source !== 'script' && audio ? { audioAssetId: audio.assetId } : {};
       const scriptParams = source === 'script' ? { script: script.trim() } : {};
-      const bgParam = bg ? { background: { type: bg.type, color: bg.color, colors: bg.colors, imageAssetId: bg.imageAssetId, imageUrl: bg.imageUrl } } : {};
+      const bgParam = bg && !bgLocked ? { background: { type: bg.type, color: bg.color, colors: bg.colors, imageAssetId: bg.imageAssetId, imageUrl: bg.imageUrl } } : {};
       if (isHuman) {
         const job = await castCloneAndWait({ cloneId: id, engine, aspectRatio: format, ...scriptParams, ...audioParams, ...bgParam });
         if (job.status === 'done') { setClipUrl(assetUrl(job.result?.publicUrl)); setMsg(job.result?.stub ? 'Cast complete (stub clip).' : 'Clip added to the Video Library.'); }
@@ -162,10 +189,11 @@ export const StudioAvatarCanvas: FC<{
         const r = await castAndWait({ synthId: id, engine, aspectRatio: format, ...scriptParams, ...audioParams, ...bgParam });
         setClipUrl(assetUrl(r.clipUrl)); setMsg(r.stub ? 'Cast complete (stub clip).' : 'Clip added to the Video Library.');
       }
+      listAvatarClips(kind, id).then(setClips).catch(() => {}); // refresh history with the new clip
       onChanged();
     } catch (e) { setError((e as Error)?.message ?? String(e)); }
     finally { setCasting(false); }
-  }, [source, audio, script, bg, format, isHuman, id, engine, onChanged]);
+  }, [source, audio, script, bg, bgLocked, format, isHuman, id, kind, engine, onChanged]);
 
   const runLifecycle = useCallback(async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
@@ -174,8 +202,9 @@ export const StudioAvatarCanvas: FC<{
     finally { setBusy(false); }
   }, [onChanged]);
 
-  const selectCls = 'h-[32px] px-[8px] rounded-[8px] bg-newBgColor border border-newBorder text-[12px] text-btnText';
+  const selectCls = 'h-[30px] px-[8px] rounded-[8px] bg-newBgColorInner border border-newBorder text-[12px] text-btnText';
   const swatch = 'w-[26px] h-[26px] rounded-[6px] border border-newBorder shrink-0';
+  const fmt = FORMATS.find((f) => f.id === format) || FORMATS[0];
 
   return (
     <div className="flex flex-col gap-[12px]">
@@ -198,8 +227,39 @@ export const StudioAvatarCanvas: FC<{
         </div>
       ) : (
         <div className="flex flex-col lg:flex-row gap-[14px]">
-          {/* LEFT — dialog / lines + controls */}
+          {/* LEFT — settings + dialog */}
           <div className="lg:w-[340px] shrink-0 flex flex-col gap-[12px]">
+            {/* Portrait + Voice */}
+            <div className="flex flex-col gap-[8px] rounded-[8px] border border-newBorder bg-newBgColor p-[10px]">
+              <label className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
+                <span className="shrink-0 w-[46px]">Portrait</span>
+                <select className={selectCls + ' flex-1 min-w-0'} disabled={busy}
+                  value={portraitOverride || 'original'}
+                  onChange={(e) => selectPortrait(e.target.value === 'original' ? null : e.target.value)}>
+                  <option value="original">Original</option>
+                  {portraits.map((p) => <option key={p.id} value={p.url}>{p.name}</option>)}
+                </select>
+              </label>
+              <div className="flex items-center gap-[8px] text-[11px] text-textItemBlur">
+                <span className="shrink-0 w-[46px]">Voice</span>
+                <span className="flex-1 min-w-0 truncate">{voiceLabel || '—'}</span>
+                <button type="button" disabled={busy} onClick={openVoicePicker} className="h-[26px] px-[8px] rounded-[6px] bg-btnSimple text-btnText text-[11px] disabled:opacity-50">Change</button>
+              </div>
+              {pickingVoice && (
+                <div className="flex flex-col gap-[4px] max-h-[160px] overflow-y-auto pr-[2px]">
+                  {voices == null ? <span className="text-[11px] text-textItemBlur">Loading voices…</span> : voices.map((v) => (
+                    <div key={v.voiceId} className={clsx('flex items-center gap-[6px] rounded-[6px] border p-[6px]', v.voiceId === voiceId ? 'border-ai bg-ai/10' : 'border-newBorder bg-newBgColorInner')}>
+                      {v.previewUrl && <button type="button" title="Play sample" onClick={() => { try { new Audio(v.previewUrl!).play(); } catch { /* noop */ } }} className="shrink-0 text-[12px]">▶</button>}
+                      <button type="button" disabled={busy} onClick={() => chooseVoice(v)} className="flex-1 min-w-0 text-left text-[12px] text-btnText truncate">{v.label}</button>
+                      {v.voiceId === voiceId && <span className="text-ai text-[10px] shrink-0">current</span>}
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => setPickingVoice(false)} className="h-[28px] rounded-[6px] bg-btnSimple text-btnText text-[11px]">Close</button>
+                </div>
+              )}
+            </div>
+
+            {/* Voice source */}
             <div className="inline-flex rounded-[8px] border border-newBorder overflow-hidden self-start">
               {([['script', '✍ Script'], ['record', '🎙 Record'], ['library', '📁 Writer’s Room']] as const).map(([k, lbl]) => (
                 <button key={k} type="button"
@@ -212,7 +272,7 @@ export const StudioAvatarCanvas: FC<{
 
             {source === 'script' && (
               <div className="flex flex-col gap-[8px]">
-                <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={8}
+                <textarea value={script} onChange={(e) => setScript(e.target.value)} rows={7}
                   placeholder={`What should ${name} say? Type the lines, or a topic + ✨ Develop.`}
                   className="w-full rounded-[8px] bg-newBgColor border border-newBorder text-[13px] text-btnText p-[12px] resize-y leading-[1.5]" />
                 <div className="flex items-center gap-[10px] flex-wrap">
@@ -225,27 +285,23 @@ export const StudioAvatarCanvas: FC<{
                 </div>
               </div>
             )}
-
             {source === 'record' && (
               <div className="rounded-[8px] border border-newBorder bg-newBgColor p-[12px] text-[12px] text-textItemBlur flex items-center justify-between gap-[10px]">
                 <span>{audio ? `Using: ${audio.label}` : 'Record or upload a clip to drive the lip-sync.'}</span>
                 <button type="button" onClick={() => setShowRecord(true)} className="h-[30px] px-[10px] rounded-[8px] bg-btnSimple text-btnText text-[12px]">{audio ? 'Re-record' : '🎙 Record / Upload'}</button>
               </div>
             )}
-
             {source === 'library' && (
               <div className="flex flex-col gap-[6px]">
-                {tracks == null ? (
-                  <span className="text-[12px] text-textItemBlur">Loading your Writer’s Room tracks…</span>
-                ) : tracks.length === 0 ? (
-                  <span className="text-[12px] text-textItemBlur">No single-speaker VO tracks yet — render one in the Audio tab’s Writer’s Room.</span>
-                ) : (
-                  <select className={selectCls + ' w-full'} value={(audio && 'assetId' in audio) ? audio.assetId : ''}
-                    onChange={(e) => { const t = tracks.find((x) => x.id === e.target.value); setAudio(t ? { assetId: t.id, url: t.url, label: t.scriptName || t.text?.slice(0, 40) || t.id } : null); }}>
-                    <option value="">— Pick a VO track —</option>
-                    {tracks.map((t) => <option key={t.id} value={t.id}>{(t.scriptName || t.text?.slice(0, 50) || t.id)}{t.durationS ? ` · ${Math.round(t.durationS)}s` : ''}</option>)}
-                  </select>
-                )}
+                {tracks == null ? <span className="text-[12px] text-textItemBlur">Loading your Writer’s Room tracks…</span>
+                  : tracks.length === 0 ? <span className="text-[12px] text-textItemBlur">No single-speaker VO tracks yet — render one in the Audio tab.</span>
+                  : (
+                    <select className={selectCls + ' w-full'} value={(audio && 'assetId' in audio) ? audio.assetId : ''}
+                      onChange={(e) => { const t = tracks.find((x) => x.id === e.target.value); setAudio(t ? { assetId: t.id, url: t.url, label: t.scriptName || t.text?.slice(0, 40) || t.id } : null); }}>
+                      <option value="">— Pick a VO track —</option>
+                      {tracks.map((t) => <option key={t.id} value={t.id}>{(t.scriptName || t.text?.slice(0, 50) || t.id)}{t.durationS ? ` · ${Math.round(t.durationS)}s` : ''}</option>)}
+                    </select>
+                  )}
                 <span className="text-[11px] text-textItemBlur">One face = one voice — only single-speaker tracks are shown.</span>
               </div>
             )}
@@ -269,75 +325,67 @@ export const StudioAvatarCanvas: FC<{
 
             {error && <span className="text-[12px] text-red-400">{error}</span>}
 
-            {/* Lifecycle */}
-            <div className="flex items-center gap-[8px] flex-wrap">
-              {isHuman ? (
-                <>
-                  {human.status === 'active' ? (
-                    <button type="button" disabled={busy} onClick={() => runLifecycle(() => setCloneStatus(human.clone_id, 'suspended'))} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50">Suspend</button>
-                  ) : human.status === 'suspended' ? (
-                    <button type="button" disabled={busy} onClick={() => runLifecycle(() => setCloneStatus(human.clone_id, 'active'))} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50">Reactivate</button>
-                  ) : null}
-                  {human.status !== 'revoked' && (
-                    <button type="button" disabled={busy} onClick={() => { const r = typeof window !== 'undefined' ? window.prompt('Reason for revoking (recorded):') : ''; if (r != null) runLifecycle(() => revokeClone(human.clone_id, r || 'Revoked via Studio')); }} className="h-[32px] px-[10px] rounded-[8px] border border-red-500/60 text-red-400 text-[12px] disabled:opacity-50">Revoke</button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <button type="button" disabled={busy} onClick={() => { if (typeof window === 'undefined' || window.confirm(`Re-shoot ${synth.name}'s portrait? Small Higgsfield spend.`)) runLifecycle(() => reshootPortrait(synth.synth_id, synth.aspect_ratio)); }} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50">Re-shoot portrait</button>
-                  <button type="button" disabled={busy} onClick={() => { if (typeof window === 'undefined' || window.confirm(`Permanently delete ${synth.name}? Clips already in the Video Library are kept.`)) runLifecycle(() => deleteSynthAvatar(synth.synth_id)); }} className="h-[32px] px-[10px] rounded-[8px] border border-red-500/60 text-red-400 text-[12px] disabled:opacity-50">Delete</button>
-                </>
-              )}
-            </div>
+            {/* Synthetic lifecycle (human removal handled at the top bar via Delete) */}
+            {!isHuman && (
+              <div className="flex items-center gap-[8px] flex-wrap">
+                <button type="button" disabled={busy} onClick={() => { if (typeof window === 'undefined' || window.confirm(`Re-shoot ${synth.name}'s portrait? Small Higgsfield spend.`)) runLifecycle(() => reshootPortrait(synth.synth_id, synth.aspect_ratio)); }} className="h-[32px] px-[10px] rounded-[8px] bg-btnSimple text-btnText text-[12px] disabled:opacity-50">Re-shoot portrait</button>
+                <button type="button" disabled={busy} onClick={() => { if (typeof window === 'undefined' || window.confirm(`Permanently delete ${synth.name}? Clips already in the Video Library are kept.`)) runLifecycle(() => deleteSynthAvatar(synth.synth_id)); }} className="h-[32px] px-[10px] rounded-[8px] border border-red-500/60 text-red-400 text-[12px] disabled:opacity-50">Delete</button>
+              </div>
+            )}
           </div>
 
-          {/* RIGHT — background bar + big canvas */}
+          {/* RIGHT — background + format + history bar, big canvas */}
           <div className="flex-1 min-w-0 flex flex-col gap-[8px]">
-            {/* Background selector bar */}
             <div className="flex items-center gap-[8px] flex-wrap rounded-[8px] border border-newBorder bg-newBgColor px-[10px] py-[8px]">
               <span className="text-[11px] font-[600] text-textItemBlur shrink-0">Background</span>
-              <button type="button" onClick={() => applyBg(null)} title="Original portrait" className={clsx(swatch, 'flex items-center justify-center text-[10px] text-textItemBlur', !bg && 'ring-2 ring-ai')}>None</button>
+              <button type="button" disabled={bgLocked} onClick={() => applyBg(null)} title={bgLocked ? 'This portrait already includes its scene' : 'Original portrait'} className={clsx(swatch, 'flex items-center justify-center text-[10px] text-textItemBlur', !bg && 'ring-2 ring-ai', bgLocked && 'opacity-40')}>None</button>
               {BG_PRESETS.map((p) => (
-                <button key={p.label} type="button" title={p.label} onClick={() => applyBg({ ...p })}
-                  className={clsx(swatch, bg && bg.label === p.label && 'ring-2 ring-ai')} style={bgStyle({ ...p } as BgChoice)} />
+                <button key={p.label} type="button" disabled={bgLocked} title={bgLocked ? 'Disabled — this portrait already includes its scene' : p.label} onClick={() => applyBg({ ...p })}
+                  className={clsx(swatch, bg && bg.label === p.label && 'ring-2 ring-ai', bgLocked && 'opacity-40')} style={bgStyle({ ...p } as BgChoice)} />
               ))}
-              <label className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-btnText flex items-center gap-[4px] cursor-pointer hover:border-ai/50">
+              <label className={clsx('h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-btnText flex items-center gap-[4px]', bgLocked ? 'opacity-40' : 'cursor-pointer hover:border-ai/50')}>
                 ⬆ Upload
-                <input type="file" accept="image/*" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadBg(f); e.target.value = ''; }} />
+                <input type="file" accept="image/*" disabled={bgLocked} className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadBg(f); e.target.value = ''; }} />
               </label>
-              <div className="relative">
-                <button type="button" onClick={openBgLibrary} className="h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-btnText hover:border-ai/50">📁 Library</button>
-              </div>
-              {bgImages && bgImages.length > 0 && (
-                <select className="h-[26px] px-[6px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText max-w-[160px]"
+              <button type="button" disabled={bgLocked} onClick={openBgLibrary} className={clsx('h-[26px] px-[8px] rounded-[6px] border border-newBorder text-[11px] text-btnText', bgLocked ? 'opacity-40' : 'hover:border-ai/50')}>📁 Library</button>
+              {bgImages && bgImages.length > 0 && !bgLocked && (
+                <select className="h-[26px] px-[6px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText max-w-[150px]"
                   value={bg?.type === 'image' && bg.imageAssetId ? bg.imageAssetId : ''}
                   onChange={(e) => { const im = bgImages.find((x) => x.id === e.target.value); if (im) applyBg({ label: 'Library', type: 'image', imageAssetId: im.id, previewUrl: im.url }); }}>
                   <option value="">— brand image —</option>
-                  {bgImages.map((im) => <option key={im.id} value={im.id}>{im.id.slice(0, 22)}</option>)}
+                  {bgImages.map((im) => <option key={im.id} value={im.id}>{im.avatarName || im.id.slice(0, 20)}</option>)}
                 </select>
               )}
               {matting && <span className="text-[11px] text-ai inline-flex items-center gap-[6px]"><span className="inline-block w-[11px] h-[11px] rounded-full border-2 border-ai border-t-transparent animate-spin" />preparing…</span>}
-              {/* Social format — defaults to Instagram Reels 9:16 */}
-              <label className="ml-auto flex items-center gap-[6px] text-[11px] text-textItemBlur">
-                <span className="shrink-0">Format</span>
-                <select value={format} onChange={(e) => setFormat(e.target.value)} className="h-[26px] px-[6px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText">
-                  {FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                </select>
-              </label>
+              <span className="ml-auto flex items-center gap-[10px]">
+                {clips.length > 0 && (
+                  <label className="flex items-center gap-[6px] text-[11px] text-textItemBlur">
+                    <span className="shrink-0">🎞 History</span>
+                    <select className="h-[26px] px-[6px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText max-w-[150px]"
+                      value={clipUrl && clips.find((c) => assetUrl(c.url) === clipUrl)?.id || ''}
+                      onChange={(e) => { const c = clips.find((x) => x.id === e.target.value); setClipUrl(c ? assetUrl(c.url) : null); setMsg(null); }}>
+                      <option value="">Latest / live preview</option>
+                      {clips.map((c, i) => <option key={c.id} value={c.id}>#{clips.length - i}{c.durationS ? ` · ${Math.round(c.durationS)}s` : ''}</option>)}
+                    </select>
+                  </label>
+                )}
+                <label className="flex items-center gap-[6px] text-[11px] text-textItemBlur">
+                  <span className="shrink-0">Format</span>
+                  <select value={format} onChange={(e) => setFormat(e.target.value)} className="h-[26px] px-[6px] rounded-[6px] bg-newBgColorInner border border-newBorder text-[11px] text-btnText">
+                    {FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                  </select>
+                </label>
+              </span>
             </div>
 
-            {/* Big canvas — framed to the chosen social format */}
             <div className="flex-1 min-h-[360px] rounded-[8px] border border-newBorder bg-newBgColorInner flex items-center justify-center p-[10px]">
-              <div className="h-[500px] max-h-[68vh] max-w-full rounded-[8px] overflow-hidden bg-newBgColor flex items-center justify-center"
-                style={{ aspectRatio: (FORMATS.find((f) => f.id === format) || FORMATS[0]).css }}>
+              <div className="h-[500px] max-h-[68vh] max-w-full rounded-[8px] overflow-hidden bg-newBgColor flex items-center justify-center" style={{ aspectRatio: fmt.css }}>
                 {clipUrl ? (
                   // eslint-disable-next-line jsx-a11y/media-has-caption
                   <video src={clipUrl} controls autoPlay className="w-full h-full object-contain bg-black" />
                 ) : bg && matteUrl ? (
                   <div className="relative w-full h-full" style={bgStyle(bg)}>
-                    {/* object-cover (matches the "None" portrait) so swapping a backdrop holds the camera
-                        distance — the matte fills the frame, the backdrop shows through the transparent parts,
-                        and the bottom cutoff is cropped below the frame rather than floating with color under it. */}
+                    {/* object-cover matches "None" so swapping a backdrop holds the camera distance. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={matteUrl} alt={name} className="absolute inset-0 w-full h-full object-cover" />
                   </div>
@@ -350,7 +398,7 @@ export const StudioAvatarCanvas: FC<{
               </div>
             </div>
             <span className="text-[11px] text-textItemBlur leading-[1.4]">
-              {clipUrl ? 'Latest cast — also saved to the Video Library.' : bg ? 'Preview — the backdrop is baked into the clip when you cast.' : 'The rendered clip will play here after you cast.'}
+              {clipUrl ? 'Cast clip — also saved to the Video Library.' : bg ? 'Preview — the backdrop is baked into the clip when you cast.' : 'The rendered clip will play here after you cast.'}
             </span>
           </div>
         </div>
@@ -362,7 +410,7 @@ export const StudioAvatarCanvas: FC<{
           voiceLabel={voiceLabel}
           brandKitId={brandKitId}
           onClose={() => setShowRecord(false)}
-          onDone={(a) => { setAudio(a); setSource('record'); setShowRecord(false); }}
+          onDone={(a) => { setAudio(a); setSource('record'); setShowRecord(false); backToPreview(); }}
         />
       )}
     </div>

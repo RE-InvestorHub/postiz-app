@@ -29,6 +29,15 @@ export interface BrandImage {
   renderMode?: string | null;
   /** Whether this image is also marked as a Video keyframe (drives the canvas toggle + chip). */
   keyframe?: boolean;
+  /** Images→Avatar bridge: tagged "Use for avatar" + a name; cloneId if generated from a clone's Soul. */
+  avatarUse?: boolean;
+  avatarName?: string | null;
+  cloneId?: string | null;
+}
+
+/** Tag / untag a library image for the avatar portrait picker (+ an optional name). */
+export function tagImageForAvatar(id: string, use: boolean, name?: string): Promise<{ ok: boolean; avatarUse: boolean; avatarName: string | null }> {
+  return req('/images/avatar-tag', { method: 'POST', body: JSON.stringify({ id, use, name }) });
 }
 
 export interface ChannelPreset {
