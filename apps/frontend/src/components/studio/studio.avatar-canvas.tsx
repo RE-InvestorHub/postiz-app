@@ -335,8 +335,11 @@ export const StudioAvatarCanvas: FC<{
                   <video src={clipUrl} controls autoPlay className="w-full h-full object-contain bg-black" />
                 ) : bg && matteUrl ? (
                   <div className="relative w-full h-full" style={bgStyle(bg)}>
+                    {/* object-cover (matches the "None" portrait) so swapping a backdrop holds the camera
+                        distance — the matte fills the frame, the backdrop shows through the transparent parts,
+                        and the bottom cutoff is cropped below the frame rather than floating with color under it. */}
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={matteUrl} alt={name} className="absolute inset-0 w-full h-full object-contain" />
+                    <img src={matteUrl} alt={name} className="absolute inset-0 w-full h-full object-cover" />
                   </div>
                 ) : portraitUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
